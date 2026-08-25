@@ -1,0 +1,17 @@
+# Maven
+target/
+
+# NetBeans
+nbproject/private/
+*.class
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Configuracion local sensible
+config.properties
+
+# IDEs adicionales
+.idea/
+.vscode/
