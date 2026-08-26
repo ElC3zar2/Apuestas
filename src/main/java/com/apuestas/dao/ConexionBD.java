@@ -20,7 +20,7 @@ public class ConexionBD {
             + "trustServerCertificate=true;";
 
     private static final String USUARIO = "sa";
-    private static final String PASSWORD = "CONFIGURAR LOCALMENTE";
+    private static final String PASSWORD = "TU CONTRASEÑA";
 
     public static Connection obtenerConexion() throws SQLException {
 
