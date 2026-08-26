@@ -6,8 +6,8 @@
    la estructura de la base de datos.
    ============================================================ */
 
-USE PlataformaApuestas;
-GO
+/*USE PlataformaApuestas;
+GO*/
 
 IF NOT EXISTS
 (

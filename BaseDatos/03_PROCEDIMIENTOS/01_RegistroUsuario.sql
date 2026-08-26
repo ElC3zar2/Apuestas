@@ -12,8 +12,8 @@
    La operación completa es ATOMICA.
    ============================================================ */
 
-USE PlataformaApuestas;
-GO
+/*USE PlataformaApuestas;
+GO*/
 
 CREATE OR ALTER PROCEDURE sp_RegistrarUsuarioCliente
     @Nombre VARCHAR(100),

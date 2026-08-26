@@ -9,6 +9,7 @@ package com.apuestas.dao;
  * @author cesar
  */
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 
 public class PruebaConexion {
 
@@ -16,9 +17,14 @@ public class PruebaConexion {
 
         try (Connection conexion = ConexionBD.obtenerConexion()) {
 
+            DatabaseMetaData meta = conexion.getMetaData();
+
             System.out.println("=================================");
             System.out.println("CONEXION EXITOSA");
+            System.out.println("=================================");
+            System.out.println("Servidor: " + meta.getURL());
             System.out.println("Base de datos: " + conexion.getCatalog());
+            System.out.println("Usuario: " + meta.getUserName());
             System.out.println("=================================");
 
         } catch (Exception e) {

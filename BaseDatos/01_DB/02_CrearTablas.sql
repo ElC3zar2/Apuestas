@@ -12,8 +12,8 @@
    Los nombres de las entidades/tablas se manejan en singular.
    ============================================================ */
 
-USE PlataformaApuestas;
-GO
+/*USE PlataformaApuestas;
+GO*/
 
 
 /* ============================================================

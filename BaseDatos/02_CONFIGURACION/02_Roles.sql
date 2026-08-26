@@ -3,8 +3,8 @@
    ARCHIVO: 02_CONFIGURACION/02_Roles.sql
    ============================================================ */
 
-USE PlataformaApuestas;
-GO
+/*USE PlataformaApuestas;
+GO*/
 
 
 IF NOT EXISTS (SELECT 1 FROM Rol WHERE Nombre = 'ADMINISTRADOR')

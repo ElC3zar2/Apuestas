@@ -15,3 +15,6 @@ config.properties
 # IDEs adicionales
 .idea/
 .vscode/
+
+# Configuración local con credenciales
+src/main/resources/config.properties

@@ -1,0 +1,3 @@
+db.url=jdbc:sqlserver://apuestasumg.database.windows.net:1433;databaseName=PlataformaApuestas;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;
+db.usuario=CONFIGURAR_USUARIO
+db.password=CONFIGURAR_PASSWORD
