@@ -13,18 +13,18 @@ public class Liga {
 
     private int idLiga;
     private int idDeporte;
+    private Integer idPais;
     private String nombre;
-    private String pais;
-    private boolean estado;
+    private boolean activo;
 
     public Liga() {
     }
 
-    public Liga(int idDeporte, String nombre, String pais, boolean estado) {
+    public Liga(int idDeporte, Integer idPais, String nombre, boolean activo) {
         this.idDeporte = idDeporte;
+        this.idPais = idPais;
         this.nombre = nombre;
-        this.pais = pais;
-        this.estado = estado;
+        this.activo = activo;
     }
 
     public int getIdLiga() {
@@ -43,6 +43,14 @@ public class Liga {
         this.idDeporte = idDeporte;
     }
 
+    public Integer getIdPais() {
+        return idPais;
+    }
+
+    public void setIdPais(Integer idPais) {
+        this.idPais = idPais;
+    }
+
     public String getNombre() {
         return nombre;
     }
@@ -51,19 +59,11 @@ public class Liga {
         this.nombre = nombre;
     }
 
-    public String getPais() {
-        return pais;
+    public boolean isActivo() {
+        return activo;
     }
 
-    public void setPais(String pais) {
-        this.pais = pais;
-    }
-
-    public boolean isEstado() {
-        return estado;
-    }
-
-    public void setEstado(boolean estado) {
-        this.estado = estado;
+    public void setActivo(boolean activo) {
+        this.activo = activo;
     }
 }
