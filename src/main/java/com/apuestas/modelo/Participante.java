@@ -13,19 +13,21 @@ public class Participante {
 
     private int idParticipante;
     private int idDeporte;
+    private Integer idPais;
     private String nombre;
     private String tipoParticipante;
-    private boolean estado;
+    private boolean activo;
 
     public Participante() {
     }
 
-    public Participante(int idDeporte, String nombre,
-                        String tipoParticipante, boolean estado) {
+    public Participante(int idDeporte, Integer idPais, String nombre,
+                        String tipoParticipante, boolean activo) {
         this.idDeporte = idDeporte;
+        this.idPais = idPais;
         this.nombre = nombre;
         this.tipoParticipante = tipoParticipante;
-        this.estado = estado;
+        this.activo = activo;
     }
 
     public int getIdParticipante() {
@@ -44,6 +46,14 @@ public class Participante {
         this.idDeporte = idDeporte;
     }
 
+    public Integer getIdPais() {
+        return idPais;
+    }
+
+    public void setIdPais(Integer idPais) {
+        this.idPais = idPais;
+    }
+
     public String getNombre() {
         return nombre;
     }
@@ -60,11 +70,11 @@ public class Participante {
         this.tipoParticipante = tipoParticipante;
     }
 
-    public boolean isEstado() {
-        return estado;
+    public boolean isActivo() {
+        return activo;
     }
 
-    public void setEstado(boolean estado) {
-        this.estado = estado;
+    public void setActivo(boolean activo) {
+        this.activo = activo;
     }
 }
