@@ -4,33 +4,31 @@
  * and open the template in the editor.
  */
 package com.apuestas.modelo;
-
+import java.time.LocalDateTime;
 /**
  *
  * @author farfa
  */
-import java.time.LocalDateTime;
 public class Evento {
 
     private int idEvento;
     private int idLiga;
+    private int idEstado;
     private String nombre;
     private LocalDateTime fechaInicio;
     private LocalDateTime fechaFin;
-    private String estado;
+    private String estadoEvento;
 
     public Evento() {
     }
 
     public Evento(int idLiga, String nombre,
                   LocalDateTime fechaInicio,
-                  LocalDateTime fechaFin,
-                  String estado) {
+                  LocalDateTime fechaFin) {
         this.idLiga = idLiga;
         this.nombre = nombre;
         this.fechaInicio = fechaInicio;
         this.fechaFin = fechaFin;
-        this.estado = estado;
     }
 
     public int getIdEvento() {
@@ -47,6 +45,14 @@ public class Evento {
 
     public void setIdLiga(int idLiga) {
         this.idLiga = idLiga;
+    }
+
+    public int getIdEstado() {
+        return idEstado;
+    }
+
+    public void setIdEstado(int idEstado) {
+        this.idEstado = idEstado;
     }
 
     public String getNombre() {
@@ -73,11 +79,11 @@ public class Evento {
         this.fechaFin = fechaFin;
     }
 
-    public String getEstado() {
-        return estado;
+    public String getEstadoEvento() {
+        return estadoEvento;
     }
 
-    public void setEstado(String estado) {
-        this.estado = estado;
+    public void setEstadoEvento(String estadoEvento) {
+        this.estadoEvento = estadoEvento;
     }
 }
