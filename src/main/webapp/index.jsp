@@ -4,13 +4,16 @@
     Author     : cesar
 --%>
 
-<%@page contentType="text/html" pageEncoding="UTF-8"%>
+<%@page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
+
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
     <title>Plataforma de Apuestas</title>
 </head>
+
 <body>
 
     <h1>Plataforma de Apuestas Deportivas</h1>
@@ -19,21 +22,22 @@
 
     <p>Seleccione una opción:</p>
 
-    <a href="usuario/login.jsp">
+    <a href="${pageContext.request.contextPath}/usuario/login.jsp">
         Iniciar sesión como usuario
     </a>
 
     <br><br>
 
-    <a href="usuario/registro.jsp">
+    <a href="${pageContext.request.contextPath}/registro">
         Crear cuenta
     </a>
 
     <br><br>
 
-    <a href="administrador/login.jsp">
+    <a href="${pageContext.request.contextPath}/administrador/login.jsp">
         Acceso administrativo
     </a>
 
 </body>
+
 </html>

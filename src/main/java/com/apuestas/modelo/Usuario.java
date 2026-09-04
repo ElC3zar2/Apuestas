@@ -17,17 +17,46 @@ public class Usuario {
     private String correo;
     private String contrasena;
     private LocalDate fechaNacimiento;
+    private String genero;
+    private String telefono;
+    private String tipoDocumento;
+    private String numeroDocumento;
+    private int idPais;
+    private Integer idMunicipio;
+    private String ciudadExterior;
+    private String direccion;
 
     public Usuario() {
     }
 
-    public Usuario(String nombre, String apellido, String correo,
-                   String contrasena, LocalDate fechaNacimiento) {
+    public Usuario(
+            String nombre,
+            String apellido,
+            String correo,
+            String contrasena,
+            LocalDate fechaNacimiento,
+            String genero,
+            String telefono,
+            String tipoDocumento,
+            String numeroDocumento,
+            int idPais,
+            Integer idMunicipio,
+            String ciudadExterior,
+            String direccion) {
+
         this.nombre = nombre;
         this.apellido = apellido;
         this.correo = correo;
         this.contrasena = contrasena;
         this.fechaNacimiento = fechaNacimiento;
+        this.genero = genero;
+        this.telefono = telefono;
+        this.tipoDocumento = tipoDocumento;
+        this.numeroDocumento = numeroDocumento;
+        this.idPais = idPais;
+        this.idMunicipio = idMunicipio;
+        this.ciudadExterior = ciudadExterior;
+        this.direccion = direccion;
     }
 
     public int getIdUsuario() {
@@ -76,5 +105,69 @@ public class Usuario {
 
     public void setFechaNacimiento(LocalDate fechaNacimiento) {
         this.fechaNacimiento = fechaNacimiento;
+    }
+
+    public String getGenero() {
+        return genero;
+    }
+
+    public void setGenero(String genero) {
+        this.genero = genero;
+    }
+
+    public String getTelefono() {
+        return telefono;
+    }
+
+    public void setTelefono(String telefono) {
+        this.telefono = telefono;
+    }
+
+    public String getTipoDocumento() {
+        return tipoDocumento;
+    }
+
+    public void setTipoDocumento(String tipoDocumento) {
+        this.tipoDocumento = tipoDocumento;
+    }
+
+    public String getNumeroDocumento() {
+        return numeroDocumento;
+    }
+
+    public void setNumeroDocumento(String numeroDocumento) {
+        this.numeroDocumento = numeroDocumento;
+    }
+
+    public int getIdPais() {
+        return idPais;
+    }
+
+    public void setIdPais(int idPais) {
+        this.idPais = idPais;
+    }
+
+    public Integer getIdMunicipio() {
+        return idMunicipio;
+    }
+
+    public void setIdMunicipio(Integer idMunicipio) {
+        this.idMunicipio = idMunicipio;
+    }
+
+    public String getCiudadExterior() {
+        return ciudadExterior;
+    }
+
+    public void setCiudadExterior(String ciudadExterior) {
+        this.ciudadExterior = ciudadExterior;
+    }
+
+    public String getDireccion() {
+        return direccion;
+    }
+
+    public void setDireccion(String direccion) {
+        this.direccion = direccion;
     }
 }
