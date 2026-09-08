@@ -14,15 +14,19 @@ public class EventoParticipante {
     private int idEventoParticipante;
     private int idEvento;
     private int idParticipante;
-    private boolean esLocal;
+    private int ordenParticipante;
+    private Boolean esLocal;
 
     public EventoParticipante() {
     }
 
-    public EventoParticipante(int idEvento, int idParticipante,
-                              boolean esLocal) {
+    public EventoParticipante(int idEvento,
+                              int idParticipante,
+                              int ordenParticipante,
+                              Boolean esLocal) {
         this.idEvento = idEvento;
         this.idParticipante = idParticipante;
+        this.ordenParticipante = ordenParticipante;
         this.esLocal = esLocal;
     }
 
@@ -50,11 +54,19 @@ public class EventoParticipante {
         this.idParticipante = idParticipante;
     }
 
-    public boolean isEsLocal() {
+    public int getOrdenParticipante() {
+        return ordenParticipante;
+    }
+
+    public void setOrdenParticipante(int ordenParticipante) {
+        this.ordenParticipante = ordenParticipante;
+    }
+
+    public Boolean getEsLocal() {
         return esLocal;
     }
 
-    public void setEsLocal(boolean esLocal) {
+    public void setEsLocal(Boolean esLocal) {
         this.esLocal = esLocal;
     }
 }
