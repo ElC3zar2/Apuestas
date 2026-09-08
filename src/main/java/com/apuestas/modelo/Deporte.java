@@ -14,15 +14,15 @@ public class Deporte {
     private int idDeporte;
     private String nombre;
     private String descripcion;
-    private boolean estado;
+    private boolean activo;
 
     public Deporte() {
     }
 
-    public Deporte(String nombre, String descripcion, boolean estado) {
+    public Deporte(String nombre, String descripcion, boolean activo) {
         this.nombre = nombre;
         this.descripcion = descripcion;
-        this.estado = estado;
+        this.activo = activo;
     }
 
     public int getIdDeporte() {
@@ -49,11 +49,11 @@ public class Deporte {
         this.descripcion = descripcion;
     }
 
-    public boolean isEstado() {
-        return estado;
+    public boolean isActivo() {
+        return activo;
     }
 
-    public void setEstado(boolean estado) {
-        this.estado = estado;
+    public void setActivo(boolean activo) {
+        this.activo = activo;
     }
 }
