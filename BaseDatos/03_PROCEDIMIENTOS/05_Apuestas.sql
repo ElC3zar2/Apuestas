@@ -31,7 +31,8 @@
    - La verificación administrativa más reciente debe estar APROBADA.
    - No puede existir una restricción APOSTAR o TODAS_OPERACIONES vigente.
    - El mercado debe estar ABIERTO.
-   - El evento debe estar PROGRAMADO o EN_VIVO.
+   - El evento debe estar PROGRAMADO.
+   - La apuesta debe registrarse antes del cierre configurado previo al inicio del evento.
    - La selección debe estar activa.
    - Debe existir exactamente una cuota activa por selección.
    - No se permiten dos selecciones del mismo mercado.
@@ -95,6 +96,27 @@ BEGIN
     IF @Monto < @MontoMinimo
         THROW 60005, 'El monto es menor que el mínimo permitido para apostar.', 1;
 
+    DECLARE @AnticipacionCierre INT;
+
+    SELECT @AnticipacionCierre =
+        TRY_CONVERT(INT, Valor)
+    FROM dbo.ConfiguracionSistema
+    WHERE Clave = 'ANTICIPACION_CIERRE_APUESTA_MIN';
+
+    IF @AnticipacionCierre IS NULL
+    OR @AnticipacionCierre < 0
+        THROW 60053,
+            'ANTICIPACION_CIERRE_APUESTA_MIN no contiene un valor válido.',
+            1;
+
+
+    DECLARE @AhoraSistema DATETIME2 =
+        CAST(
+            SYSUTCDATETIME()
+            AT TIME ZONE 'UTC'
+            AT TIME ZONE 'Central America Standard Time'
+            AS DATETIME2
+        );
 
     DECLARE @Entrada TABLE
     (
@@ -152,6 +174,7 @@ BEGIN
         IdEvento INT NOT NULL,
         NombreEvento VARCHAR(200) NOT NULL,
         EstadoEvento VARCHAR(40) NOT NULL,
+        FechaInicio DATETIME2 NOT NULL,
 
         IdCuota INT NOT NULL,
         Cuota DECIMAL(10,4) NOT NULL
@@ -169,6 +192,7 @@ BEGIN
         IdEvento,
         NombreEvento,
         EstadoEvento,
+        FechaInicio,
         IdCuota,
         Cuota
     )
@@ -184,6 +208,7 @@ BEGIN
         EV.IdEvento,
         EV.Nombre,
         EE.Codigo,
+        EV.FechaInicio,
 
         C.IdCuota,
         C.Valor
@@ -246,13 +271,31 @@ BEGIN
         THROW 60011, 'Todas las selecciones deben pertenecer a mercados ABIERTOS.', 1;
 
 
+        IF EXISTS
+    (
+        SELECT 1
+        FROM @Detalle
+        WHERE EstadoEvento <> 'PROGRAMADO'
+    )
+        THROW 60012,
+            'Todas las selecciones deben pertenecer a eventos PROGRAMADOS.',
+            1;
+
+
     IF EXISTS
     (
         SELECT 1
         FROM @Detalle
-        WHERE EstadoEvento NOT IN ('PROGRAMADO', 'EN_VIVO')
+        WHERE @AhoraSistema >=
+            DATEADD(
+                MINUTE,
+                -@AnticipacionCierre,
+                FechaInicio
+            )
     )
-        THROW 60012, 'Todas las selecciones deben pertenecer a eventos disponibles para apuestas.', 1;
+        THROW 60054,
+            'El periodo de apuestas para uno o más eventos ya se encuentra cerrado.',
+            1;
 
 
     IF EXISTS
@@ -416,6 +459,19 @@ BEGIN
 
     IF @Monto < @MontoMinimo
         THROW 60022, 'El monto es menor que el mínimo permitido para apostar.', 1;
+
+    DECLARE @AnticipacionCierre INT;
+
+    SELECT @AnticipacionCierre =
+        TRY_CONVERT(INT, Valor)
+    FROM dbo.ConfiguracionSistema
+    WHERE Clave = 'ANTICIPACION_CIERRE_APUESTA_MIN';
+
+    IF @AnticipacionCierre IS NULL
+    OR @AnticipacionCierre < 0
+        THROW 60055,
+            'ANTICIPACION_CIERRE_APUESTA_MIN no contiene un valor válido.',
+            1;
 
 
     /* ========================================================
@@ -687,7 +743,10 @@ BEGIN
            VALIDAR RESTRICCIONES VIGENTES
            ==================================================== */
 
-        DECLARE @Ahora DATETIME2 = SYSDATETIME();
+        /* Hora utilizada por las fechas internas del sistema,
+        manteniendo compatibilidad con RestriccionUsuario. */
+        DECLARE @AhoraRestricciones DATETIME2 =
+            SYSDATETIME();
 
         IF EXISTS
         (
@@ -696,11 +755,11 @@ BEGIN
             WHERE RU.IdUsuario = @IdUsuario
               AND RU.Activa = 1
               AND RU.TipoRestriccion IN ('APOSTAR', 'TODAS_OPERACIONES')
-              AND RU.FechaInicio <= @Ahora
+              AND RU.FechaInicio <= @AhoraRestricciones
               AND
               (
                   RU.FechaFin IS NULL
-                  OR RU.FechaFin > @Ahora
+                  OR RU.FechaFin > @AhoraRestricciones
               )
         )
             THROW 60039, 'El usuario posee una restricción vigente que impide realizar apuestas.', 1;
@@ -717,6 +776,7 @@ BEGIN
             IdSeleccion INT NOT NULL,
             IdMercado INT NOT NULL,
             IdEvento INT NOT NULL,
+            FechaInicio DATETIME2 NOT NULL,
             IdCuota INT NOT NULL,
             Cuota DECIMAL(10,4) NOT NULL
         );
@@ -728,6 +788,7 @@ BEGIN
             IdSeleccion,
             IdMercado,
             IdEvento,
+            FechaInicio,
             IdCuota,
             Cuota
         )
@@ -736,6 +797,7 @@ BEGIN
             S.IdSeleccion,
             M.IdMercado,
             EV.IdEvento,
+            EV.FechaInicio,
             C.IdCuota,
             C.Valor
 
@@ -770,12 +832,37 @@ BEGIN
            AND C.Activo = 1
 
         WHERE EM.Codigo = 'ABIERTO'
-          AND EE.Codigo IN ('PROGRAMADO', 'EN_VIVO');
+            AND EE.Codigo = 'PROGRAMADO';
 
 
         IF (SELECT COUNT(*) FROM @Detalle)
            <> @CantidadSelecciones
             THROW 60040, 'Una o más selecciones ya no están disponibles para apostar.', 1;
+
+        /* Se obtiene la hora lo más cerca posible de la
+        validación definitiva del cierre de apuesta. */
+        DECLARE @AhoraEvento DATETIME2 =
+            CAST(
+                SYSUTCDATETIME()
+                AT TIME ZONE 'UTC'
+                AT TIME ZONE 'Central America Standard Time'
+                AS DATETIME2
+            );
+
+        IF EXISTS
+        (
+            SELECT 1
+            FROM @Detalle
+            WHERE @AhoraEvento >=
+                DATEADD(
+                    MINUTE,
+                    -@AnticipacionCierre,
+                    FechaInicio
+                )
+        )
+            THROW 60056,
+                'El periodo de apuestas para uno o más eventos ya se encuentra cerrado.',
+                1;
 
 
         IF EXISTS

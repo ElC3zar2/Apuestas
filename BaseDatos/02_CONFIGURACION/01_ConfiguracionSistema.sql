@@ -215,11 +215,35 @@ BEGIN TRY
         VALUES
         (
             'MONTO_MINIMO_APUESTA',
-            '1.00',
+            '100.00',
             'Monto virtual mínimo permitido para registrar una apuesta.'
         );
     END;
 
+    /* ========================================================
+    ANTICIPACION PARA CIERRE DE APUESTAS
+    ======================================================== */
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.ConfiguracionSistema
+        WHERE Clave = 'ANTICIPACION_CIERRE_APUESTA_MIN'
+    )
+    BEGIN
+        INSERT INTO dbo.ConfiguracionSistema
+        (
+            Clave,
+            Valor,
+            Descripcion
+        )
+        VALUES
+        (
+            'ANTICIPACION_CIERRE_APUESTA_MIN',
+            '5',
+            'Minutos de anticipación al inicio del evento en que se cierran las apuestas.'
+        );
+    END;
 
     COMMIT TRANSACTION;
 
