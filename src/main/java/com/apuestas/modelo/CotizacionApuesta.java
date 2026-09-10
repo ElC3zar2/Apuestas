@@ -17,9 +17,15 @@ public class CotizacionApuesta {
 
     private String tipoBoleto;
     private int cantidadSelecciones;
+
     private BigDecimal montoApostado;
+    private BigDecimal comisionServicioPorcentaje;
+    private BigDecimal comisionServicio;
+    private BigDecimal totalCargo;
+
     private BigDecimal cuotaTotal;
     private BigDecimal gananciaPotencial;
+
     private List<DetalleCotizacionApuesta> detalles;
 
     public CotizacionApuesta() {
@@ -50,6 +56,34 @@ public class CotizacionApuesta {
         this.montoApostado = montoApostado;
     }
 
+    public BigDecimal getComisionServicioPorcentaje() {
+        return comisionServicioPorcentaje;
+    }
+
+    public void setComisionServicioPorcentaje(
+            BigDecimal comisionServicioPorcentaje) {
+        this.comisionServicioPorcentaje =
+                comisionServicioPorcentaje;
+    }
+
+    public BigDecimal getComisionServicio() {
+        return comisionServicio;
+    }
+
+    public void setComisionServicio(
+            BigDecimal comisionServicio) {
+        this.comisionServicio = comisionServicio;
+    }
+
+    public BigDecimal getTotalCargo() {
+        return totalCargo;
+    }
+
+    public void setTotalCargo(
+            BigDecimal totalCargo) {
+        this.totalCargo = totalCargo;
+    }
+
     public BigDecimal getCuotaTotal() {
         return cuotaTotal;
     }
@@ -62,7 +96,8 @@ public class CotizacionApuesta {
         return gananciaPotencial;
     }
 
-    public void setGananciaPotencial(BigDecimal gananciaPotencial) {
+    public void setGananciaPotencial(
+            BigDecimal gananciaPotencial) {
         this.gananciaPotencial = gananciaPotencial;
     }
 
@@ -70,7 +105,8 @@ public class CotizacionApuesta {
         return detalles;
     }
 
-    public void setDetalles(List<DetalleCotizacionApuesta> detalles) {
+    public void setDetalles(
+            List<DetalleCotizacionApuesta> detalles) {
         this.detalles = detalles;
     }
 }

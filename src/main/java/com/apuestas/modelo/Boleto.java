@@ -25,6 +25,9 @@ public class Boleto {
     private String tipoBoleto;
 
     private BigDecimal montoApostado;
+    private BigDecimal comisionServicio;
+    private BigDecimal totalCargo;
+
     private BigDecimal cuotaTotal;
     private BigDecimal gananciaPotencial;
 
@@ -54,7 +57,8 @@ public class Boleto {
         return codigoBoleto;
     }
 
-    public void setCodigoBoleto(String codigoBoleto) {
+    public void setCodigoBoleto(
+            String codigoBoleto) {
         this.codigoBoleto = codigoBoleto;
     }
 
@@ -78,7 +82,8 @@ public class Boleto {
         return tipoBoleto;
     }
 
-    public void setTipoBoleto(String tipoBoleto) {
+    public void setTipoBoleto(
+            String tipoBoleto) {
         this.tipoBoleto = tipoBoleto;
     }
 
@@ -86,15 +91,35 @@ public class Boleto {
         return montoApostado;
     }
 
-    public void setMontoApostado(BigDecimal montoApostado) {
+    public void setMontoApostado(
+            BigDecimal montoApostado) {
         this.montoApostado = montoApostado;
+    }
+
+    public BigDecimal getComisionServicio() {
+        return comisionServicio;
+    }
+
+    public void setComisionServicio(
+            BigDecimal comisionServicio) {
+        this.comisionServicio = comisionServicio;
+    }
+
+    public BigDecimal getTotalCargo() {
+        return totalCargo;
+    }
+
+    public void setTotalCargo(
+            BigDecimal totalCargo) {
+        this.totalCargo = totalCargo;
     }
 
     public BigDecimal getCuotaTotal() {
         return cuotaTotal;
     }
 
-    public void setCuotaTotal(BigDecimal cuotaTotal) {
+    public void setCuotaTotal(
+            BigDecimal cuotaTotal) {
         this.cuotaTotal = cuotaTotal;
     }
 
@@ -102,15 +127,18 @@ public class Boleto {
         return gananciaPotencial;
     }
 
-    public void setGananciaPotencial(BigDecimal gananciaPotencial) {
-        this.gananciaPotencial = gananciaPotencial;
+    public void setGananciaPotencial(
+            BigDecimal gananciaPotencial) {
+        this.gananciaPotencial =
+                gananciaPotencial;
     }
 
     public String getResultado() {
         return resultado;
     }
 
-    public void setResultado(String resultado) {
+    public void setResultado(
+            String resultado) {
         this.resultado = resultado;
     }
 
@@ -118,7 +146,8 @@ public class Boleto {
         return estadoBoleto;
     }
 
-    public void setEstadoBoleto(String estadoBoleto) {
+    public void setEstadoBoleto(
+            String estadoBoleto) {
         this.estadoBoleto = estadoBoleto;
     }
 
@@ -126,7 +155,8 @@ public class Boleto {
         return fechaCreacion;
     }
 
-    public void setFechaCreacion(LocalDateTime fechaCreacion) {
+    public void setFechaCreacion(
+            LocalDateTime fechaCreacion) {
         this.fechaCreacion = fechaCreacion;
     }
 
@@ -134,23 +164,28 @@ public class Boleto {
         return fechaLiquidacion;
     }
 
-    public void setFechaLiquidacion(LocalDateTime fechaLiquidacion) {
-        this.fechaLiquidacion = fechaLiquidacion;
+    public void setFechaLiquidacion(
+            LocalDateTime fechaLiquidacion) {
+        this.fechaLiquidacion =
+                fechaLiquidacion;
     }
 
     public String getReferenciaOperacion() {
         return referenciaOperacion;
     }
 
-    public void setReferenciaOperacion(String referenciaOperacion) {
-        this.referenciaOperacion = referenciaOperacion;
+    public void setReferenciaOperacion(
+            String referenciaOperacion) {
+        this.referenciaOperacion =
+                referenciaOperacion;
     }
 
     public List<DetalleBoleto> getDetalles() {
         return detalles;
     }
 
-    public void setDetalles(List<DetalleBoleto> detalles) {
+    public void setDetalles(
+            List<DetalleBoleto> detalles) {
         this.detalles = detalles;
     }
 }

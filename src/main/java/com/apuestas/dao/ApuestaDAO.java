@@ -70,28 +70,57 @@ public class ApuestaDAO {
                 if (!rs.next()) {
                     throw new SQLException(
                             "El procedimiento sp_CotizarApuesta "
-                            + "no devolvió el resumen de la cotización."
+                            + "no devolvió el resumen "
+                            + "de la cotización."
                     );
                 }
 
                 cotizacion.setTipoBoleto(
-                        rs.getString("TipoBoleto")
+                        rs.getString(
+                                "TipoBoleto"
+                        )
                 );
 
                 cotizacion.setCantidadSelecciones(
-                        rs.getInt("CantidadSelecciones")
+                        rs.getInt(
+                                "CantidadSelecciones"
+                        )
                 );
 
                 cotizacion.setMontoApostado(
-                        rs.getBigDecimal("MontoApostado")
+                        rs.getBigDecimal(
+                                "MontoApostado"
+                        )
+                );
+
+                cotizacion.setComisionServicioPorcentaje(
+                        rs.getBigDecimal(
+                                "ComisionServicioPorcentaje"
+                        )
+                );
+
+                cotizacion.setComisionServicio(
+                        rs.getBigDecimal(
+                                "ComisionServicio"
+                        )
+                );
+
+                cotizacion.setTotalCargo(
+                        rs.getBigDecimal(
+                                "TotalCargo"
+                        )
                 );
 
                 cotizacion.setCuotaTotal(
-                        rs.getBigDecimal("CuotaTotal")
+                        rs.getBigDecimal(
+                                "CuotaTotal"
+                        )
                 );
 
                 cotizacion.setGananciaPotencial(
-                        rs.getBigDecimal("GananciaPotencial")
+                        rs.getBigDecimal(
+                                "GananciaPotencial"
+                        )
                 );
             }
 
@@ -112,39 +141,57 @@ public class ApuestaDAO {
                                 new DetalleCotizacionApuesta();
 
                         detalle.setOrden(
-                                rs.getInt("Orden")
+                                rs.getInt(
+                                        "Orden"
+                                )
                         );
 
                         detalle.setIdEvento(
-                                rs.getInt("IdEvento")
+                                rs.getInt(
+                                        "IdEvento"
+                                )
                         );
 
                         detalle.setNombreEvento(
-                                rs.getString("NombreEvento")
+                                rs.getString(
+                                        "NombreEvento"
+                                )
                         );
 
                         detalle.setIdMercado(
-                                rs.getInt("IdMercado")
+                                rs.getInt(
+                                        "IdMercado"
+                                )
                         );
 
                         detalle.setNombreMercado(
-                                rs.getString("NombreMercado")
+                                rs.getString(
+                                        "NombreMercado"
+                                )
                         );
 
                         detalle.setIdSeleccion(
-                                rs.getInt("IdSeleccion")
+                                rs.getInt(
+                                        "IdSeleccion"
+                                )
                         );
 
                         detalle.setNombreSeleccion(
-                                rs.getString("NombreSeleccion")
+                                rs.getString(
+                                        "NombreSeleccion"
+                                )
                         );
 
                         detalle.setIdCuota(
-                                rs.getInt("IdCuota")
+                                rs.getInt(
+                                        "IdCuota"
+                                )
                         );
 
                         detalle.setCuota(
-                                rs.getBigDecimal("Cuota")
+                                rs.getBigDecimal(
+                                        "Cuota"
+                                )
                         );
 
                         detalles.add(
@@ -223,31 +270,63 @@ public class ApuestaDAO {
                             new ResultadoApuesta();
 
                     resultado.setIdBoleto(
-                            rs.getInt("IdBoleto")
+                            rs.getInt(
+                                    "IdBoleto"
+                            )
                     );
 
                     resultado.setCodigoBoleto(
-                            rs.getString("CodigoBoleto")
+                            rs.getString(
+                                    "CodigoBoleto"
+                            )
                     );
 
                     resultado.setTipoBoleto(
-                            rs.getString("TipoBoleto")
+                            rs.getString(
+                                    "TipoBoleto"
+                            )
                     );
 
                     resultado.setCantidadSelecciones(
-                            rs.getInt("CantidadSelecciones")
+                            rs.getInt(
+                                    "CantidadSelecciones"
+                            )
                     );
 
                     resultado.setMontoApostado(
-                            rs.getBigDecimal("MontoApostado")
+                            rs.getBigDecimal(
+                                    "MontoApostado"
+                            )
+                    );
+
+                    resultado.setComisionServicioPorcentaje(
+                            rs.getBigDecimal(
+                                    "ComisionServicioPorcentaje"
+                            )
+                    );
+
+                    resultado.setComisionServicio(
+                            rs.getBigDecimal(
+                                    "ComisionServicio"
+                            )
+                    );
+
+                    resultado.setTotalCargo(
+                            rs.getBigDecimal(
+                                    "TotalCargo"
+                            )
                     );
 
                     resultado.setCuotaTotal(
-                            rs.getBigDecimal("CuotaTotal")
+                            rs.getBigDecimal(
+                                    "CuotaTotal"
+                            )
                     );
 
                     resultado.setGananciaPotencial(
-                            rs.getBigDecimal("GananciaPotencial")
+                            rs.getBigDecimal(
+                                    "GananciaPotencial"
+                            )
                     );
 
                     return resultado;
@@ -332,72 +411,113 @@ public class ApuestaDAO {
 
                     throw new SQLException(
                             "El procedimiento sp_ObtenerBoleto "
-                            + "no devolvió información del boleto."
+                            + "no devolvió información "
+                            + "del boleto."
                     );
                 }
 
                 boleto.setIdBoleto(
-                        rs.getInt("IdBoleto")
+                        rs.getInt(
+                                "IdBoleto"
+                        )
                 );
 
                 boleto.setCodigoBoleto(
-                        rs.getString("CodigoBoleto")
+                        rs.getString(
+                                "CodigoBoleto"
+                        )
                 );
 
                 boleto.setIdUsuario(
-                        rs.getInt("IdUsuario")
+                        rs.getInt(
+                                "IdUsuario"
+                        )
                 );
 
                 boleto.setCorreo(
-                        rs.getString("Correo")
+                        rs.getString(
+                                "Correo"
+                        )
                 );
 
                 boleto.setTipoBoleto(
-                        rs.getString("TipoBoleto")
+                        rs.getString(
+                                "TipoBoleto"
+                        )
                 );
 
                 boleto.setMontoApostado(
-                        rs.getBigDecimal("MontoApostado")
+                        rs.getBigDecimal(
+                                "MontoApostado"
+                        )
+                );
+
+                boleto.setComisionServicio(
+                        rs.getBigDecimal(
+                                "ComisionServicio"
+                        )
+                );
+
+                boleto.setTotalCargo(
+                        rs.getBigDecimal(
+                                "TotalCargo"
+                        )
                 );
 
                 boleto.setCuotaTotal(
-                        rs.getBigDecimal("CuotaTotal")
+                        rs.getBigDecimal(
+                                "CuotaTotal"
+                        )
                 );
 
                 boleto.setGananciaPotencial(
-                        rs.getBigDecimal("GananciaPotencial")
+                        rs.getBigDecimal(
+                                "GananciaPotencial"
+                        )
                 );
 
                 boleto.setResultado(
-                        rs.getString("Resultado")
+                        rs.getString(
+                                "Resultado"
+                        )
                 );
 
                 boleto.setEstadoBoleto(
-                        rs.getString("EstadoBoleto")
+                        rs.getString(
+                                "EstadoBoleto"
+                        )
                 );
 
                 Timestamp fechaCreacion =
-                        rs.getTimestamp("FechaCreacion");
+                        rs.getTimestamp(
+                                "FechaCreacion"
+                        );
 
                 if (fechaCreacion != null) {
 
                     boleto.setFechaCreacion(
-                            fechaCreacion.toLocalDateTime()
+                            fechaCreacion
+                                    .toLocalDateTime()
                     );
                 }
 
                 Timestamp fechaLiquidacion =
-                        rs.getTimestamp("FechaLiquidacion");
+                        rs.getTimestamp(
+                                "FechaLiquidacion"
+                        );
 
                 if (fechaLiquidacion != null) {
 
                     boleto.setFechaLiquidacion(
-                            fechaLiquidacion.toLocalDateTime()
+                            fechaLiquidacion
+                                    .toLocalDateTime()
                     );
                 }
 
                 boleto.setReferenciaOperacion(
-                        rs.getString("ReferenciaOperacion")
+                        rs.getString(
+                                "ReferenciaOperacion"
+                        )
                 );
             }
 
@@ -415,39 +535,57 @@ public class ApuestaDAO {
                                 new DetalleBoleto();
 
                         detalle.setIdDetalle(
-                                rs.getInt("IdDetalle")
+                                rs.getInt(
+                                        "IdDetalle"
+                                )
                         );
 
                         detalle.setIdEvento(
-                                rs.getInt("IdEvento")
+                                rs.getInt(
+                                        "IdEvento"
+                                )
                         );
 
                         detalle.setEvento(
-                                rs.getString("Evento")
+                                rs.getString(
+                                        "Evento"
+                                )
                         );
 
                         detalle.setIdMercado(
-                                rs.getInt("IdMercado")
+                                rs.getInt(
+                                        "IdMercado"
+                                )
                         );
 
                         detalle.setMercado(
-                                rs.getString("Mercado")
+                                rs.getString(
+                                        "Mercado"
+                                )
                         );
 
                         detalle.setIdSeleccion(
-                                rs.getInt("IdSeleccion")
+                                rs.getInt(
+                                        "IdSeleccion"
+                                )
                         );
 
                         detalle.setSeleccion(
-                                rs.getString("Seleccion")
+                                rs.getString(
+                                        "Seleccion"
+                                )
                         );
 
                         detalle.setCuotaAplicada(
-                                rs.getBigDecimal("CuotaAplicada")
+                                rs.getBigDecimal(
+                                        "CuotaAplicada"
+                                )
                         );
 
                         detalle.setResultado(
-                                rs.getString("Resultado")
+                                rs.getString(
+                                        "Resultado"
+                                )
                         );
 
                         detalles.add(
