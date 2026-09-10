@@ -283,6 +283,7 @@ BEGIN
     DECLARE @IdTipoPremio INT;
     DECLARE @IdTipoPerdidaApuesta INT;
     DECLARE @IdTipoDevolucion INT;
+    DECLARE @IdTipoDevolucionComision INT;
     DECLARE @IdTipoGananciaCasa INT;
     DECLARE @IdTipoPagoPremio INT;
 
@@ -349,6 +350,10 @@ BEGIN
     WHERE Codigo = 'DEVOLUCION'
       AND Activo = 1;
 
+    SELECT @IdTipoDevolucionComision = IdTipoTransaccion
+    FROM dbo.TipoTransaccion
+    WHERE Codigo = 'DEVOLUCION_COMISION'
+    AND Activo = 1;
 
     SELECT @IdTipoGananciaCasa = IdTipoTransaccion
     FROM dbo.TipoTransaccion
@@ -386,6 +391,11 @@ BEGIN
     IF @IdTipoDevolucion IS NULL
         THROW 62014, 'No existe el tipo de transacción DEVOLUCION.', 1;
 
+    IF @IdTipoDevolucionComision IS NULL
+        THROW 62038,
+            'No existe el tipo de transacción DEVOLUCION_COMISION.',
+            1;
+
     IF @IdTipoGananciaCasa IS NULL
         THROW 62015, 'No existe el tipo de transacción GANANCIA_CASA.', 1;
 
@@ -406,6 +416,7 @@ BEGIN
         DECLARE @ResultadoBoletoActual VARCHAR(20);
 
         DECLARE @MontoApostado DECIMAL(12,2);
+        DECLARE @ComisionServicio DECIMAL(12,2);
         DECLARE @CodigoBoleto VARCHAR(40);
 
 
@@ -414,6 +425,7 @@ BEGIN
             @EstadoBoleto = E.Codigo,
             @ResultadoBoletoActual = B.Resultado,
             @MontoApostado = B.MontoApostado,
+            @ComisionServicio = B.ComisionServicio,
             @CodigoBoleto = B.CodigoBoleto
 
         FROM dbo.Boleto AS B WITH (UPDLOCK, HOLDLOCK)
@@ -479,6 +491,11 @@ BEGIN
                 B.CodigoBoleto,
                 B.Resultado,
                 EB.Codigo AS EstadoBoleto,
+
+                B.MontoApostado,
+                B.ComisionServicio,
+                (B.MontoApostado + B.ComisionServicio) AS TotalCargo,
+
                 LB.MontoLiquidado,
                 LB.IdTransaccion,
                 LB.FechaFinalizacion,
@@ -637,8 +654,7 @@ BEGIN
 
             SET @GananciaNeta =
                 @MontoLiquidado - @MontoApostado;
-
-
+            
             IF @GananciaNeta < 0
                 THROW 62025, 'La ganancia neta calculada es inválida.', 1;
 
@@ -769,11 +785,23 @@ BEGIN
             THROW 62030, 'El saldo comprometido del usuario es insuficiente para liquidar el boleto.', 1;
 
 
-        /* CASA solo necesita solvencia para GANADOR. */
+        /* CASA necesita solvencia para pagar ganancias
+        y para devolver la comisión de un boleto anulado. */
+
         IF @ResultadoFinal = 'GANADOR'
-           AND @GananciaNeta > 0
-           AND @CasaDisponibleAnterior < @GananciaNeta
-            THROW 62031, 'La billetera CASA no posee saldo virtual suficiente para pagar la ganancia neta.', 1;
+        AND @GananciaNeta > 0
+        AND @CasaDisponibleAnterior < @GananciaNeta
+            THROW 62031,
+                'La billetera CASA no posee saldo virtual suficiente para pagar la ganancia neta.',
+                1;
+
+        DECLARE @FechaTransaccionLiquidacion DATETIME2 = NULL;
+        IF @ResultadoFinal = 'ANULADO'
+        AND @ComisionServicio > 0
+        AND @CasaDisponibleAnterior < @ComisionServicio
+            THROW 62039,
+                'La billetera CASA no posee saldo virtual suficiente para devolver la comisión de servicio.',
+                1;
 
 
         /* ====================================================
@@ -854,7 +882,8 @@ BEGIN
 
                 ELSE @IdTipoDevolucion
             END;
-
+        
+        SET @FechaTransaccionLiquidacion = SYSDATETIME();
 
         INSERT INTO dbo.TransaccionFinanciera
         (
@@ -864,6 +893,7 @@ BEGIN
             IdBoleto,
             ReferenciaOperacion,
             Monto,
+            FechaSolicitud,
             FechaProcesamiento,
             IdUsuarioProceso,
             Descripcion
@@ -882,34 +912,35 @@ BEGIN
                 ELSE @MontoApostado
             END,
 
-            SYSDATETIME(),
+            @FechaTransaccionLiquidacion,
+            @FechaTransaccionLiquidacion,
             @IdUsuarioProceso,
 
             CASE
                 WHEN @ResultadoFinal = 'GANADOR'
                     THEN CONCAT
-                         (
-                             'Premio virtual de boleto ',
-                             @CodigoBoleto,
-                             '. Monto liquidado=',
-                             CONVERT(VARCHAR(30), @MontoLiquidado),
-                             '.'
-                         )
+                    (
+                        'Premio virtual de boleto ',
+                        @CodigoBoleto,
+                        '. Monto liquidado=',
+                        CONVERT(VARCHAR(30), @MontoLiquidado),
+                        '.'
+                    )
 
                 WHEN @ResultadoFinal = 'PERDEDOR'
                     THEN CONCAT
-                         (
-                             'Liquidación de apuesta perdida ',
-                             @CodigoBoleto,
-                             '.'
-                         )
+                    (
+                        'Liquidación de apuesta perdida ',
+                        @CodigoBoleto,
+                        '.'
+                    )
 
                 ELSE CONCAT
-                     (
-                         'Devolución virtual por boleto anulado ',
-                         @CodigoBoleto,
-                         '.'
-                     )
+                (
+                    'Devolución virtual por boleto anulado ',
+                    @CodigoBoleto,
+                    '.'
+                )
             END
         );
 
@@ -948,26 +979,35 @@ BEGIN
             @UsuarioComprometidoPosterior
         );
 
-
-        /* ====================================================
-           CONTRAPARTE CASA
-           ==================================================== */
-
         DECLARE @IdTransaccionCasa BIGINT = NULL;
         DECLARE @ReferenciaCasa UNIQUEIDENTIFIER = NULL;
         DECLARE @CasaDisponiblePosterior DECIMAL(12,2) =
             @CasaDisponibleAnterior;
 
+        /* ====================================================
+        DEVOLVER COMISION AL USUARIO SI EL BOLETO
+        FUE TOTALMENTE ANULADO
+        ==================================================== */
 
-        /* PERDEDOR:
-           CASA recibe el monto apostado completo. */
-        IF @ResultadoFinal = 'PERDEDOR'
+        DECLARE @IdTransaccionDevolucionComisionUsuario BIGINT = NULL;
+        DECLARE @ReferenciaDevolucionComisionUsuario UNIQUEIDENTIFIER = NULL;
+
+
+        IF @ResultadoFinal = 'ANULADO'
+        AND @ComisionServicio > 0
         BEGIN
 
-            SET @CasaDisponiblePosterior =
-                @CasaDisponibleAnterior + @MontoApostado;
+            DECLARE @UsuarioDisponiblePostDevolucionBase DECIMAL(12,2) =
+                @UsuarioDisponiblePosterior;
 
-            SET @ReferenciaCasa = NEWID();
+
+            SET @UsuarioDisponiblePosterior =
+                @UsuarioDisponiblePosterior + @ComisionServicio;
+
+
+            SET @ReferenciaDevolucionComisionUsuario = NEWID();
+
+            SET @FechaTransaccionLiquidacion = SYSDATETIME();
 
 
             INSERT INTO dbo.TransaccionFinanciera
@@ -978,6 +1018,93 @@ BEGIN
                 IdBoleto,
                 ReferenciaOperacion,
                 Monto,
+                FechaSolicitud,
+                FechaProcesamiento,
+                IdUsuarioProceso,
+                Descripcion
+            )
+            VALUES
+            (
+                @IdBilleteraUsuario,
+                @IdTipoDevolucionComision,
+                @IdEstadoTransaccionCompletada,
+                @IdBoleto,
+                @ReferenciaDevolucionComisionUsuario,
+                @ComisionServicio,
+                @FechaTransaccionLiquidacion,
+                @FechaTransaccionLiquidacion,
+                @IdUsuarioProceso,
+                CONCAT
+                (
+                    'Devolución de comisión de servicio por boleto anulado ',
+                    @CodigoBoleto,
+                    '. Comisión=',
+                    CONVERT(VARCHAR(30), @ComisionServicio),
+                    '.'
+                )
+            );
+
+
+            SET @IdTransaccionDevolucionComisionUsuario =
+                CONVERT(BIGINT, SCOPE_IDENTITY());
+
+
+            UPDATE dbo.Billetera
+            SET
+                SaldoDisponible = @UsuarioDisponiblePosterior,
+                SaldoComprometido = @UsuarioComprometidoPosterior
+            WHERE IdBilletera = @IdBilleteraUsuario;
+
+
+            INSERT INTO dbo.MovimientoBilletera
+            (
+                IdBilletera,
+                IdTransaccion,
+
+                SaldoDisponibleAnterior,
+                SaldoDisponiblePosterior,
+
+                SaldoComprometidoAnterior,
+                SaldoComprometidoPosterior
+            )
+            VALUES
+            (
+                @IdBilleteraUsuario,
+                @IdTransaccionDevolucionComisionUsuario,
+
+                @UsuarioDisponiblePostDevolucionBase,
+                @UsuarioDisponiblePosterior,
+
+                @UsuarioComprometidoPosterior,
+                @UsuarioComprometidoPosterior
+            );
+
+        END;
+
+        /* ====================================================
+           CONTRAPARTE CASA
+           ==================================================== */
+
+        /* PERDEDOR:
+           CASA recibe el monto apostado completo. */
+        IF @ResultadoFinal = 'PERDEDOR'
+        BEGIN
+
+            SET @CasaDisponiblePosterior =
+                @CasaDisponibleAnterior + @MontoApostado;
+
+            SET @ReferenciaCasa = NEWID();
+            SET @FechaTransaccionLiquidacion = SYSDATETIME();
+
+            INSERT INTO dbo.TransaccionFinanciera
+            (
+                IdBilletera,
+                IdTipoTransaccion,
+                IdEstado,
+                IdBoleto,
+                ReferenciaOperacion,
+                Monto,
+                FechaSolicitud,
                 FechaProcesamiento,
                 IdUsuarioProceso,
                 Descripcion
@@ -990,7 +1117,8 @@ BEGIN
                 @IdBoleto,
                 @ReferenciaCasa,
                 @MontoApostado,
-                SYSDATETIME(),
+                @FechaTransaccionLiquidacion,
+                @FechaTransaccionLiquidacion,
                 @IdUsuarioProceso,
                 CONCAT
                 (
@@ -1047,7 +1175,7 @@ BEGIN
                 @CasaDisponibleAnterior - @GananciaNeta;
 
             SET @ReferenciaCasa = NEWID();
-
+            SET @FechaTransaccionLiquidacion = SYSDATETIME();
 
             INSERT INTO dbo.TransaccionFinanciera
             (
@@ -1057,6 +1185,7 @@ BEGIN
                 IdBoleto,
                 ReferenciaOperacion,
                 Monto,
+                FechaSolicitud,
                 FechaProcesamiento,
                 IdUsuarioProceso,
                 Descripcion
@@ -1069,7 +1198,8 @@ BEGIN
                 @IdBoleto,
                 @ReferenciaCasa,
                 @GananciaNeta,
-                SYSDATETIME(),
+                @FechaTransaccionLiquidacion,
+                @FechaTransaccionLiquidacion,
                 @IdUsuarioProceso,
                 CONCAT
                 (
@@ -1118,12 +1248,92 @@ BEGIN
 
 
         /* ANULADO:
-           No existe movimiento de CASA. */
+        CASA devuelve la comisión de servicio cobrada
+        al momento de registrar la apuesta. */
 
+        IF @ResultadoFinal = 'ANULADO'
+        AND @ComisionServicio > 0
+        BEGIN
+
+            SET @CasaDisponiblePosterior =
+                @CasaDisponibleAnterior - @ComisionServicio;
+
+
+            SET @ReferenciaCasa = NEWID();
+            SET @FechaTransaccionLiquidacion = SYSDATETIME();
+
+            INSERT INTO dbo.TransaccionFinanciera
+            (
+                IdBilletera,
+                IdTipoTransaccion,
+                IdEstado,
+                IdBoleto,
+                ReferenciaOperacion,
+                Monto,
+                FechaSolicitud,
+                FechaProcesamiento,
+                IdUsuarioProceso,
+                Descripcion
+            )
+            VALUES
+            (
+                @IdBilleteraCasa,
+                @IdTipoDevolucionComision,
+                @IdEstadoTransaccionCompletada,
+                @IdBoleto,
+                @ReferenciaCasa,
+                @ComisionServicio,
+                @FechaTransaccionLiquidacion,
+                @FechaTransaccionLiquidacion,
+                @IdUsuarioProceso,
+                CONCAT
+                (
+                    'Devolución de comisión de servicio de CASA por boleto anulado ',
+                    @CodigoBoleto,
+                    '. Comisión=',
+                    CONVERT(VARCHAR(30), @ComisionServicio),
+                    '.'
+                )
+            );
+
+
+            SET @IdTransaccionCasa =
+                CONVERT(BIGINT, SCOPE_IDENTITY());
+
+
+            UPDATE dbo.Billetera
+            SET SaldoDisponible = @CasaDisponiblePosterior
+            WHERE IdBilletera = @IdBilleteraCasa;
+
+
+            INSERT INTO dbo.MovimientoBilletera
+            (
+                IdBilletera,
+                IdTransaccion,
+
+                SaldoDisponibleAnterior,
+                SaldoDisponiblePosterior,
+
+                SaldoComprometidoAnterior,
+                SaldoComprometidoPosterior
+            )
+            VALUES
+            (
+                @IdBilleteraCasa,
+                @IdTransaccionCasa,
+
+                @CasaDisponibleAnterior,
+                @CasaDisponiblePosterior,
+
+                @CasaComprometidoAnterior,
+                @CasaComprometidoAnterior
+            );
+
+        END;
 
         /* ====================================================
-           ACTUALIZAR BOLETO
-           ==================================================== */
+        ACTUALIZAR BOLETO
+        ==================================================== */
 
         UPDATE dbo.Boleto
         SET
@@ -1138,7 +1348,6 @@ BEGIN
             FechaLiquidacion = SYSDATETIME()
 
         WHERE IdBoleto = @IdBoleto;
-
 
         /* ====================================================
            COMPLETAR LIQUIDACION
@@ -1197,6 +1406,18 @@ BEGIN
                 @ResultadoFinal,
                 '. MontoApostado=',
                 CONVERT(VARCHAR(30), @MontoApostado),
+                '. ComisionServicio=',
+                CONVERT(VARCHAR(30), @ComisionServicio),
+                '. ComisionDevuelta=',
+                CONVERT
+                (
+                    VARCHAR(30),
+                    CASE
+                        WHEN @ResultadoFinal = 'ANULADO'
+                            THEN @ComisionServicio
+                        ELSE 0
+                    END
+                ),
                 '. MontoLiquidado=',
                 CONVERT(VARCHAR(30), @MontoLiquidado),
                 '. GananciaNeta=',
@@ -1230,11 +1451,26 @@ BEGIN
             END AS EstadoBoleto,
 
             @MontoApostado AS MontoApostado,
+            @ComisionServicio AS ComisionServicio,
+            (@MontoApostado + @ComisionServicio) AS TotalCargo,
+
             @MontoLiquidado AS MontoLiquidado,
             @GananciaNeta AS GananciaNeta,
 
+            CASE
+                WHEN @ResultadoFinal = 'ANULADO'
+                    THEN @ComisionServicio
+                ELSE 0
+            END AS ComisionDevuelta,
+
             @IdTransaccionUsuario AS IdTransaccionUsuario,
             @ReferenciaUsuario AS ReferenciaUsuario,
+
+            @IdTransaccionDevolucionComisionUsuario
+                AS IdTransaccionDevolucionComisionUsuario,
+
+            @ReferenciaDevolucionComisionUsuario
+                AS ReferenciaDevolucionComisionUsuario,
 
             @IdTransaccionCasa AS IdTransaccionCasa,
             @ReferenciaCasa AS ReferenciaCasa,
@@ -1369,7 +1605,12 @@ BEGIN
        AND RC.Nombre = 'CASA'
 
     WHERE TF.IdBoleto = @IdBoleto
-      AND TT.Codigo IN ('GANANCIA_CASA', 'PAGO_PREMIO')
+      AND TT.Codigo IN
+    (
+        'GANANCIA_CASA',
+        'PAGO_PREMIO',
+        'DEVOLUCION_COMISION'
+    )
 
     ORDER BY TF.IdTransaccion DESC;
 
@@ -1387,6 +1628,8 @@ BEGIN
         EB.Codigo AS EstadoBoleto,
 
         B.MontoApostado,
+        B.ComisionServicio,
+        (B.MontoApostado + B.ComisionServicio) AS TotalCargo,
         B.CuotaTotal,
         B.GananciaPotencial,
 

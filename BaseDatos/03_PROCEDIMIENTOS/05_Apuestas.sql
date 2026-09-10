@@ -109,6 +109,59 @@ BEGIN
             'ANTICIPACION_CIERRE_APUESTA_MIN no contiene un valor válido.',
             1;
 
+    /* ========================================================
+    COMISION DE SERVICIO
+    ======================================================== */
+
+    DECLARE @ComisionPorcentaje DECIMAL(7,4);
+
+    SELECT @ComisionPorcentaje =
+        TRY_CONVERT(DECIMAL(7,4), Valor)
+    FROM dbo.ConfiguracionSistema
+    WHERE Clave = 'COMISION_SERVICIO_PORCENTAJE';
+
+
+    IF @ComisionPorcentaje IS NULL
+    OR @ComisionPorcentaje < 0
+    OR @ComisionPorcentaje > 100
+        THROW 60057,
+            'COMISION_SERVICIO_PORCENTAJE no contiene un valor válido.',
+            1;
+
+
+    DECLARE @ComisionCalculo DECIMAL(38,4) =
+        CONVERT(DECIMAL(38,4), @Monto)
+        * CONVERT(DECIMAL(38,4), @ComisionPorcentaje)
+        / 100;
+
+
+    IF @ComisionCalculo > 9999999999.99
+        THROW 60058,
+            'La comisión de servicio excede el rango permitido por el sistema.',
+            1;
+
+
+    DECLARE @ComisionServicio DECIMAL(12,2) =
+        CONVERT
+        (
+            DECIMAL(12,2),
+            ROUND(@ComisionCalculo, 2)
+        );
+
+
+    DECLARE @TotalCargoCalculo DECIMAL(38,2) =
+        CONVERT(DECIMAL(38,2), @Monto)
+        + CONVERT(DECIMAL(38,2), @ComisionServicio);
+
+
+    IF @TotalCargoCalculo > 9999999999.99
+        THROW 60059,
+            'El monto total de la apuesta y comisión excede el rango permitido.',
+            1;
+
+
+    DECLARE @TotalCargo DECIMAL(12,2) =
+        CONVERT(DECIMAL(12,2), @TotalCargoCalculo);
 
     DECLARE @AhoraSistema DATETIME2 =
         CAST(
@@ -359,10 +412,15 @@ BEGIN
     SELECT
         @TipoBoleto AS TipoBoleto,
         @CantidadSelecciones AS CantidadSelecciones,
+
         @Monto AS MontoApostado,
+
+        @ComisionPorcentaje AS ComisionServicioPorcentaje,
+        @ComisionServicio AS ComisionServicio,
+        @TotalCargo AS TotalCargo,
+
         @CuotaTotal AS CuotaTotal,
         @GananciaPotencial AS GananciaPotencial;
-
 
     /* Segundo result set: detalle de selecciones y cuotas actuales. */
     SELECT
@@ -473,6 +531,60 @@ BEGIN
             'ANTICIPACION_CIERRE_APUESTA_MIN no contiene un valor válido.',
             1;
 
+    /* ========================================================
+    COMISION DE SERVICIO
+    ======================================================== */
+
+    DECLARE @ComisionPorcentaje DECIMAL(7,4);
+
+    SELECT @ComisionPorcentaje =
+        TRY_CONVERT(DECIMAL(7,4), Valor)
+    FROM dbo.ConfiguracionSistema
+    WHERE Clave = 'COMISION_SERVICIO_PORCENTAJE';
+
+
+    IF @ComisionPorcentaje IS NULL
+    OR @ComisionPorcentaje < 0
+    OR @ComisionPorcentaje > 100
+        THROW 60060,
+            'COMISION_SERVICIO_PORCENTAJE no contiene un valor válido.',
+            1;
+
+
+    DECLARE @ComisionCalculo DECIMAL(38,4) =
+        CONVERT(DECIMAL(38,4), @Monto)
+        * CONVERT(DECIMAL(38,4), @ComisionPorcentaje)
+        / 100;
+
+
+    IF @ComisionCalculo > 9999999999.99
+        THROW 60061,
+            'La comisión de servicio excede el rango permitido por el sistema.',
+            1;
+
+
+    DECLARE @ComisionServicio DECIMAL(12,2) =
+        CONVERT
+        (
+            DECIMAL(12,2),
+            ROUND(@ComisionCalculo, 2)
+        );
+
+
+    DECLARE @TotalCargoCalculo DECIMAL(38,2) =
+        CONVERT(DECIMAL(38,2), @Monto)
+        + CONVERT(DECIMAL(38,2), @ComisionServicio);
+
+
+    IF @TotalCargoCalculo > 9999999999.99
+        THROW 60062,
+            'El monto total de la apuesta y comisión excede el rango permitido.',
+            1;
+
+
+    DECLARE @TotalCargo DECIMAL(12,2) =
+        CONVERT(DECIMAL(12,2), @TotalCargoCalculo);
+
 
     /* ========================================================
        PARSEAR SELECCIONES
@@ -538,6 +650,7 @@ BEGIN
     DECLARE @IdEstadoBoletoPendiente INT;
     DECLARE @IdEstadoTransaccionCompletada INT;
     DECLARE @IdTipoTransaccionApuesta INT;
+    DECLARE @IdTipoTransaccionComision INT;
 
 
     SELECT @IdEstadoBoletoPendiente = E.IdEstado
@@ -572,6 +685,16 @@ BEGIN
     IF @IdTipoTransaccionApuesta IS NULL
         THROW 60028, 'No existe el tipo de transacción APUESTA activo.', 1;
 
+    SELECT @IdTipoTransaccionComision = IdTipoTransaccion
+    FROM dbo.TipoTransaccion
+    WHERE Codigo = 'COMISION_SERVICIO'
+    AND Activo = 1;
+
+
+    IF @IdTipoTransaccionComision IS NULL
+        THROW 60063,
+            'No existe el tipo de transacción COMISION_SERVICIO activo.',
+            1;
 
     BEGIN TRY
         BEGIN TRANSACTION;
@@ -649,6 +772,8 @@ BEGIN
                 B.CodigoBoleto,
                 B.TipoBoleto,
                 B.MontoApostado,
+                B.ComisionServicio,
+                (B.MontoApostado + B.ComisionServicio) AS TotalCargo,
                 B.CuotaTotal,
                 B.GananciaPotencial,
                 B.Resultado,
@@ -929,6 +1054,81 @@ BEGIN
         DECLARE @GananciaPotencial DECIMAL(12,2) =
             CONVERT(DECIMAL(12,2), ROUND(@GananciaCalculo, 2));
 
+        /* ====================================================
+        LOCALIZAR CASA
+        ==================================================== */
+
+        DECLARE @CantidadCuentasCasa INT;
+
+        SELECT @CantidadCuentasCasa = COUNT(*)
+        FROM dbo.Usuario AS UC
+
+        INNER JOIN dbo.Rol AS RC
+            ON RC.IdRol = UC.IdRol
+        AND RC.Nombre = 'CASA'
+
+        INNER JOIN dbo.Estado AS EC
+            ON EC.IdEstado = UC.IdEstado
+
+        INNER JOIN dbo.TipoEstado AS TEC
+            ON TEC.IdTipoEstado = EC.IdTipoEstado
+        AND TEC.Codigo = 'USUARIO'
+
+        INNER JOIN dbo.Billetera AS BC
+            ON BC.IdUsuario = UC.IdUsuario
+
+        WHERE EC.Codigo = 'ACTIVO';
+
+
+        IF @CantidadCuentasCasa <> 1
+            THROW 60064,
+                'Debe existir exactamente una cuenta CASA activa con billetera.',
+                1;
+
+
+        DECLARE @IdUsuarioCasa INT;
+        DECLARE @IdBilleteraCasa INT;
+
+        SELECT
+            @IdUsuarioCasa = UC.IdUsuario,
+            @IdBilleteraCasa = BC.IdBilletera
+        FROM dbo.Usuario AS UC
+
+        INNER JOIN dbo.Rol AS RC
+            ON RC.IdRol = UC.IdRol
+        AND RC.Nombre = 'CASA'
+
+        INNER JOIN dbo.Estado AS EC
+            ON EC.IdEstado = UC.IdEstado
+
+        INNER JOIN dbo.TipoEstado AS TEC
+            ON TEC.IdTipoEstado = EC.IdTipoEstado
+        AND TEC.Codigo = 'USUARIO'
+
+        INNER JOIN dbo.Billetera AS BC
+            ON BC.IdUsuario = UC.IdUsuario
+
+        WHERE EC.Codigo = 'ACTIVO';
+
+
+        /* Bloquear CASA primero para mantener el mismo orden
+        utilizado por el proceso de liquidación. */
+
+        DECLARE @CasaDisponibleAnterior DECIMAL(12,2);
+        DECLARE @CasaComprometidoAnterior DECIMAL(12,2);
+
+        SELECT
+            @CasaDisponibleAnterior = SaldoDisponible,
+            @CasaComprometidoAnterior = SaldoComprometido
+        FROM dbo.Billetera WITH (UPDLOCK, ROWLOCK)
+        WHERE IdBilletera = @IdBilleteraCasa;
+
+
+        IF @CasaDisponibleAnterior IS NULL
+            THROW 60065,
+                'No fue posible bloquear la billetera de CASA.',
+                1;
+
 
         /* ====================================================
            BLOQUEAR BILLETERA Y VALIDAR SALDO
@@ -949,15 +1149,18 @@ BEGIN
         IF @IdBilletera IS NULL
             THROW 60045, 'El usuario no posee una billetera.', 1;
 
-        IF @SaldoDisponibleAnterior < @Monto
-            THROW 60046, 'Saldo disponible insuficiente para realizar la apuesta.', 1;
+        IF @SaldoDisponibleAnterior < @TotalCargo
+        THROW 60046,
+            'Saldo disponible insuficiente para cubrir la apuesta y la comisión de servicio.', 1;
 
-
-        DECLARE @SaldoDisponiblePosterior DECIMAL(12,2) =
+        DECLARE @SaldoDisponiblePostApuesta DECIMAL(12,2) =
             @SaldoDisponibleAnterior - @Monto;
 
         DECLARE @SaldoComprometidoPosterior DECIMAL(12,2) =
             @SaldoComprometidoAnterior + @Monto;
+
+        DECLARE @SaldoDisponiblePosterior DECIMAL(12,2) =
+            @SaldoDisponiblePostApuesta - @ComisionServicio;
 
 
         /* ====================================================
@@ -981,6 +1184,7 @@ BEGIN
             IdEstado,
             ReferenciaOperacion,
             MontoApostado,
+            ComisionServicio,
             CuotaTotal,
             GananciaPotencial,
             TipoBoleto,
@@ -993,6 +1197,7 @@ BEGIN
             @IdEstadoBoletoPendiente,
             @ReferenciaOperacion,
             @Monto,
+            @ComisionServicio,
             @CuotaTotal,
             @GananciaPotencial,
             @TipoBoleto,
@@ -1070,7 +1275,7 @@ BEGIN
 
         UPDATE dbo.Billetera
         SET
-            SaldoDisponible = @SaldoDisponiblePosterior,
+            SaldoDisponible = @SaldoDisponiblePostApuesta,
             SaldoComprometido = @SaldoComprometidoPosterior
         WHERE IdBilletera = @IdBilletera;
 
@@ -1092,11 +1297,181 @@ BEGIN
             @IdTransaccion,
 
             @SaldoDisponibleAnterior,
-            @SaldoDisponiblePosterior,
+            @SaldoDisponiblePostApuesta,
 
             @SaldoComprometidoAnterior,
             @SaldoComprometidoPosterior
         );
+
+    /* ====================================================
+    COMISION DE SERVICIO
+    ==================================================== */
+
+    DECLARE @IdTransaccionComisionUsuario BIGINT = NULL;
+    DECLARE @IdTransaccionComisionCasa BIGINT = NULL;
+
+    DECLARE @ReferenciaComisionUsuario UNIQUEIDENTIFIER = NULL;
+    DECLARE @ReferenciaComisionCasa UNIQUEIDENTIFIER = NULL;
+
+    DECLARE @CasaDisponiblePosterior DECIMAL(12,2) =
+        @CasaDisponibleAnterior;
+
+
+    IF @ComisionServicio > 0
+    BEGIN
+
+        /* ==================================================
+        COBRO DE COMISION AL USUARIO
+        ================================================== */
+
+        SET @ReferenciaComisionUsuario = NEWID();
+
+
+        INSERT INTO dbo.TransaccionFinanciera
+        (
+            IdBilletera,
+            IdTipoTransaccion,
+            IdEstado,
+            IdBoleto,
+            ReferenciaOperacion,
+            Monto,
+            FechaProcesamiento,
+            IdUsuarioProceso,
+            Descripcion
+        )
+        VALUES
+        (
+            @IdBilletera,
+            @IdTipoTransaccionComision,
+            @IdEstadoTransaccionCompletada,
+            @IdBoleto,
+            @ReferenciaComisionUsuario,
+            @ComisionServicio,
+            SYSDATETIME(),
+            @IdUsuario,
+            CONCAT
+            (
+                'Comisión de servicio cobrada por boleto ',
+                @CodigoBoleto,
+                '. Comisión=',
+                CONVERT(VARCHAR(30), @ComisionServicio),
+                '.'
+            )
+        );
+
+
+        SET @IdTransaccionComisionUsuario =
+            CONVERT(BIGINT, SCOPE_IDENTITY());
+
+
+        UPDATE dbo.Billetera
+        SET
+            SaldoDisponible = @SaldoDisponiblePosterior,
+            SaldoComprometido = @SaldoComprometidoPosterior
+        WHERE IdBilletera = @IdBilletera;
+
+
+        INSERT INTO dbo.MovimientoBilletera
+        (
+            IdBilletera,
+            IdTransaccion,
+
+            SaldoDisponibleAnterior,
+            SaldoDisponiblePosterior,
+
+            SaldoComprometidoAnterior,
+            SaldoComprometidoPosterior
+        )
+        VALUES
+        (
+            @IdBilletera,
+            @IdTransaccionComisionUsuario,
+
+            @SaldoDisponiblePostApuesta,
+            @SaldoDisponiblePosterior,
+
+            @SaldoComprometidoPosterior,
+            @SaldoComprometidoPosterior
+        );
+
+
+        /* ==================================================
+        ACREDITAR COMISION A CASA
+        ================================================== */
+
+        SET @CasaDisponiblePosterior =
+            @CasaDisponibleAnterior + @ComisionServicio;
+
+
+        SET @ReferenciaComisionCasa = NEWID();
+
+
+        INSERT INTO dbo.TransaccionFinanciera
+        (
+            IdBilletera,
+            IdTipoTransaccion,
+            IdEstado,
+            IdBoleto,
+            ReferenciaOperacion,
+            Monto,
+            FechaProcesamiento,
+            IdUsuarioProceso,
+            Descripcion
+        )
+        VALUES
+        (
+            @IdBilleteraCasa,
+            @IdTipoTransaccionComision,
+            @IdEstadoTransaccionCompletada,
+            @IdBoleto,
+            @ReferenciaComisionCasa,
+            @ComisionServicio,
+            SYSDATETIME(),
+            @IdUsuario,
+            CONCAT
+            (
+                'Comisión de servicio acreditada a CASA por boleto ',
+                @CodigoBoleto,
+                '. Comisión=',
+                CONVERT(VARCHAR(30), @ComisionServicio),
+                '.'
+            )
+        );
+
+
+        SET @IdTransaccionComisionCasa =
+            CONVERT(BIGINT, SCOPE_IDENTITY());
+
+
+        UPDATE dbo.Billetera
+        SET SaldoDisponible = @CasaDisponiblePosterior
+        WHERE IdBilletera = @IdBilleteraCasa;
+
+
+        INSERT INTO dbo.MovimientoBilletera
+        (
+            IdBilletera,
+            IdTransaccion,
+
+            SaldoDisponibleAnterior,
+            SaldoDisponiblePosterior,
+
+            SaldoComprometidoAnterior,
+            SaldoComprometidoPosterior
+        )
+        VALUES
+        (
+            @IdBilleteraCasa,
+            @IdTransaccionComisionCasa,
+
+            @CasaDisponibleAnterior,
+            @CasaDisponiblePosterior,
+
+            @CasaComprometidoAnterior,
+            @CasaComprometidoAnterior
+        );
+
+    END;
 
 
         /* ====================================================
@@ -1129,6 +1504,10 @@ BEGIN
                 @TipoBoleto,
                 '. Monto=',
                 CONVERT(VARCHAR(30), @Monto),
+                '. ComisionServicio=',
+                CONVERT(VARCHAR(30), @ComisionServicio),
+                '. TotalCargo=',
+                CONVERT(VARCHAR(30), @TotalCargo),
                 '. CuotaTotal=',
                 CONVERT(VARCHAR(30), @CuotaTotal),
                 '. GananciaPotencial=',
@@ -1152,6 +1531,9 @@ BEGIN
             @CantidadSelecciones AS CantidadSelecciones,
 
             @Monto AS MontoApostado,
+            @ComisionPorcentaje AS ComisionServicioPorcentaje,
+            @ComisionServicio AS ComisionServicio,
+            @TotalCargo AS TotalCargo,
             @CuotaTotal AS CuotaTotal,
             @GananciaPotencial AS GananciaPotencial,
 
@@ -1160,6 +1542,8 @@ BEGIN
 
             @IdBilletera AS IdBilletera,
             @IdTransaccion AS IdTransaccion,
+            @IdTransaccionComisionUsuario AS IdTransaccionComisionUsuario,
+            @IdTransaccionComisionCasa AS IdTransaccionComisionCasa,
             @ReferenciaOperacion AS ReferenciaOperacion,
 
             @SaldoDisponibleAnterior AS SaldoDisponibleAnterior,
@@ -1168,7 +1552,10 @@ BEGIN
             @SaldoComprometidoAnterior AS SaldoComprometidoAnterior,
             @SaldoComprometidoPosterior AS SaldoComprometidoPosterior,
 
-            CAST(0 AS BIT) AS SolicitudIdempotente;
+            @CasaDisponibleAnterior AS CasaDisponibleAnterior,
+            @CasaDisponiblePosterior AS CasaDisponiblePosterior,
+
+            CAST(0 AS BIT) AS SolicitudIdempotente
 
     END TRY
     BEGIN CATCH
@@ -1279,6 +1666,8 @@ BEGIN
 
         B.TipoBoleto,
         B.MontoApostado,
+        B.ComisionServicio,
+        (B.MontoApostado + B.ComisionServicio) AS TotalCargo,
         B.CuotaTotal,
         B.GananciaPotencial,
 

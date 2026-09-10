@@ -996,6 +996,10 @@ BEGIN
         ReferenciaOperacion UNIQUEIDENTIFIER NOT NULL,
 
         MontoApostado DECIMAL(12,2) NOT NULL,
+
+        ComisionServicio DECIMAL(12,2) NOT NULL
+            CONSTRAINT DF_Boleto_ComisionServicio DEFAULT 0,
+
         CuotaTotal DECIMAL(12,4) NOT NULL,
         GananciaPotencial DECIMAL(12,2) NOT NULL,
 
@@ -1028,6 +1032,9 @@ BEGIN
 
         CONSTRAINT CK_Boleto_Monto
             CHECK (MontoApostado > 0),
+        
+        CONSTRAINT CK_Boleto_ComisionServicio
+            CHECK (ComisionServicio >= 0),
 
         CONSTRAINT CK_Boleto_CuotaTotal
             CHECK (CuotaTotal > 1),

@@ -47,6 +47,16 @@ BEGIN TRY
             'Movimiento de saldo disponible a saldo comprometido al registrar una apuesta.'
         ),
         (
+            'COMISION_SERVICIO',
+            'Comisión de servicio',
+            'Cargo de comisión de servicio al usuario y acreditación correspondiente a la cuenta CASA.'
+        ),
+        (
+            'DEVOLUCION_COMISION',
+            'Devolución de comisión',
+            'Reversión de la comisión de servicio cuando un boleto es totalmente anulado.'
+        ),
+        (
             'PREMIO',
             'Premio',
             'Acreditación de saldo virtual al usuario por un boleto ganador.'

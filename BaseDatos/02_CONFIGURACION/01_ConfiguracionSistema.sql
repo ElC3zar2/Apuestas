@@ -245,6 +245,31 @@ BEGIN TRY
         );
     END;
 
+    /* ========================================================
+    COMISION DE SERVICIO CASA
+    ======================================================== */
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.ConfiguracionSistema
+        WHERE Clave = 'COMISION_SERVICIO_PORCENTAJE'
+    )
+    BEGIN
+        INSERT INTO dbo.ConfiguracionSistema
+        (
+            Clave,
+            Valor,
+            Descripcion
+        )
+        VALUES
+        (
+            'COMISION_SERVICIO_PORCENTAJE',
+            '1.00',
+            'Porcentaje de comisión de servicio aplicado al monto apostado y acreditado a CASA.'
+        );
+    END;
+
     COMMIT TRANSACTION;
 
     PRINT 'ConfiguracionSistema cargada correctamente.';
