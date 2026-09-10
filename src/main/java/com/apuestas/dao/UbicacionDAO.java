@@ -26,7 +26,7 @@ public class UbicacionDAO {
         List<Pais> paises = new ArrayList<>();
 
         String sql =
-                "SELECT IdPais, CodigoISO2, Nombre "
+                "SELECT IdPais, CodigoISO2, Nombre, CodigoTelefonico  "
                 + "FROM dbo.Pais "
                 + "WHERE Activo = 1 "
                 + "ORDER BY Nombre";
@@ -39,9 +39,21 @@ public class UbicacionDAO {
 
                 Pais pais = new Pais();
 
-                pais.setIdPais(rs.getInt("IdPais"));
-                pais.setCodigoISO2(rs.getString("CodigoISO2"));
-                pais.setNombre(rs.getString("Nombre"));
+                pais.setIdPais(
+                        rs.getInt("IdPais")
+                );
+
+                pais.setCodigoISO2(
+                        rs.getString("CodigoISO2")
+                );
+
+                pais.setNombre(
+                        rs.getString("Nombre")
+                );
+
+                pais.setCodigoTelefonico(
+                        rs.getString("CodigoTelefonico")
+                );
 
                 paises.add(pais);
             }
@@ -142,6 +154,37 @@ public class UbicacionDAO {
         return municipios;
     }
 
+    public String obtenerCodigoTelefonicoPorPais(int idPais)
+        throws SQLException {
+
+        String sql =
+                "SELECT CodigoTelefonico "
+                + "FROM dbo.Pais "
+                + "WHERE IdPais = ? "
+                + "AND Activo = 1 "
+                + "AND CodigoTelefonico IS NOT NULL";
+
+        try (Connection conexion =
+                ConexionBD.obtenerConexion();
+             PreparedStatement ps =
+                conexion.prepareStatement(sql)) {
+
+            ps.setInt(1, idPais);
+
+            try (ResultSet rs = ps.executeQuery()) {
+
+                if (rs.next()) {
+
+                    return rs.getString(
+                            "CodigoTelefonico"
+                    );
+                }
+            }
+        }
+
+        return null;
+    }
+    
     public boolean esGuatemala(int idPais)
             throws SQLException {
 

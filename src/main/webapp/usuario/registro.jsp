@@ -136,13 +136,58 @@
 
     <label>Teléfono:</label>
 
+    <select
+        id="idPaisTelefono"
+        name="idPaisTelefono"
+        required>
+
+        <option value="">
+            Código de área
+        </option>
+
+        <%
+            List<Pais> paisesTelefono =
+                    (List<Pais>)
+                    request.getAttribute("paises");
+
+            if (paisesTelefono != null) {
+
+                for (Pais pais : paisesTelefono) {
+
+                if (pais.getCodigoTelefonico() == null
+                        || pais.getCodigoTelefonico().trim().isEmpty()) {
+
+                    continue;
+                }
+        %>
+
+        <option
+            value="<%= pais.getIdPais() %>"
+            <%= "GT".equals(pais.getCodigoISO2())
+                    ? "selected" : "" %>>
+
+            <%= pais.getNombre() %>
+            (<%= pais.getCodigoTelefonico() %>)
+
+        </option>
+
+        <%
+                }
+            }
+        %>
+
+    </select>
+
+
     <input
         type="tel"
+        id="telefono"
         name="telefono"
-        maxlength="25"
-        pattern="[0-9+() -]+"
-        title="Puede utilizar números, +, espacios, paréntesis y guiones."
-        placeholder="+502 5555-5555"
+        maxlength="15"
+        pattern="[0-9]+"
+        inputmode="numeric"
+        title="Ingrese únicamente los números del teléfono, sin código de país."
+        placeholder="55555555"
         required>
 
     <br><br>

@@ -92,7 +92,10 @@ public class RegistroUsuarioServlet extends HttpServlet {
             String genero =
                     request.getParameter("genero");
 
-            String telefono =
+            String paisTelefonoTexto =
+                    request.getParameter("idPaisTelefono");
+
+            String telefonoLocal =
                     request.getParameter("telefono");
 
             String tipoDocumento =
@@ -164,6 +167,70 @@ public class RegistroUsuarioServlet extends HttpServlet {
                 }
             }
 
+            int idPaisTelefono = 0;
+
+            if (paisTelefonoTexto != null
+                    && !paisTelefonoTexto.trim().isEmpty()) {
+
+                idPaisTelefono =
+                        Integer.parseInt(
+                                paisTelefonoTexto
+                        );
+            }
+
+            if (idPaisTelefono <= 0) {
+
+                throw new IllegalArgumentException(
+                        "Debe seleccionar un código telefónico."
+                );
+            }
+
+
+            if (telefonoLocal == null
+                    || telefonoLocal.trim().isEmpty()) {
+
+                throw new IllegalArgumentException(
+                        "El número de teléfono es obligatorio."
+                );
+            }
+
+            telefonoLocal =
+                    telefonoLocal.trim();
+
+            if (!telefonoLocal.matches("[0-9]+")) {
+
+                throw new IllegalArgumentException(
+                        "El teléfono debe contener únicamente números."
+                );
+            }
+
+
+            String codigoTelefonico =
+                    ubicacionDAO
+                            .obtenerCodigoTelefonicoPorPais(
+                                    idPaisTelefono
+                            );
+
+            if (codigoTelefonico == null
+                    || codigoTelefonico.trim().isEmpty()) {
+
+                throw new IllegalArgumentException(
+                        "El código telefónico seleccionado no es válido."
+                );
+            }
+
+
+            String telefono =
+                    codigoTelefonico.trim()
+                    + telefonoLocal;
+
+            if (telefono.length() > 25) {
+
+                throw new IllegalArgumentException(
+                        "El teléfono completo supera la longitud permitida."
+                );
+            }
+            
             Usuario usuario =
                     new Usuario(
                             nombre,

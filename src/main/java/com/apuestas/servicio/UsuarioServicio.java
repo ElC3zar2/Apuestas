@@ -97,38 +97,42 @@ public class UsuarioServicio {
         }
 
         /*
-         * TELÉFONO
-         *
-         * La base permite VARCHAR(25).
-         * Se permiten números, espacios,
-         * +, -, paréntesis.
-         */
-        if (usuario.getTelefono() == null
-                || usuario.getTelefono().trim().isEmpty()) {
+        * TELÉFONO
+        *
+        * El teléfono debe llegar normalizado desde
+        * RegistroUsuarioServlet con el formato:
+        *
+        * +CodigoPaisNumeroLocal
+        *
+        * Ejemplo:
+        * +50255555555
+        */
+       if (usuario.getTelefono() == null
+               || usuario.getTelefono().trim().isEmpty()) {
 
-            throw new IllegalArgumentException(
-                    "El teléfono es obligatorio."
-            );
-        }
+           throw new IllegalArgumentException(
+                   "El teléfono es obligatorio."
+           );
+       }
 
-        String telefono =
-                usuario.getTelefono().trim();
+       String telefono =
+               usuario.getTelefono().trim();
 
-        if (telefono.length() > 25) {
+       if (telefono.length() > 25) {
 
-            throw new IllegalArgumentException(
-                    "El teléfono no puede superar los 25 caracteres."
-            );
-        }
+           throw new IllegalArgumentException(
+                   "El teléfono no puede superar los 25 caracteres."
+           );
+       }
 
-        if (!telefono.matches("[0-9+()\\-\\s]+")) {
+       if (!telefono.matches("\\+[0-9]+")) {
 
-            throw new IllegalArgumentException(
-                    "El teléfono contiene caracteres no válidos."
-            );
-        }
+           throw new IllegalArgumentException(
+                   "El teléfono debe utilizar un formato internacional válido."
+           );
+       }
 
-        usuario.setTelefono(telefono);
+       usuario.setTelefono(telefono);
 
         /*
          * TIPO DE DOCUMENTO

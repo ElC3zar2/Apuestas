@@ -14,7 +14,7 @@ public class Pais {
     private int idPais;
     private String codigoISO2;
     private String nombre;
-
+    private String codigoTelefonico;
     public Pais() {
     }
 
@@ -46,5 +46,13 @@ public class Pais {
 
     public void setNombre(String nombre) {
         this.nombre = nombre;
+    }
+    
+    public String getCodigoTelefonico() {
+        return codigoTelefonico;
+    }
+
+    public void setCodigoTelefonico(String codigoTelefonico) {
+        this.codigoTelefonico = codigoTelefonico;
     }
 }
