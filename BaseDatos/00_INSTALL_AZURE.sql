@@ -135,13 +135,28 @@ PRINT '17. ADMINISTRACION DE USUARIO...';
 :r .\03_PROCEDIMIENTOS\08_AdministracionUsuario.sql
 GO
 
+PRINT '';
+PRINT '18. ANALITICA DE USUARIO...';
+:r .\03_PROCEDIMIENTOS\09_AnaliticaUsuario.sql
+GO
+
+PRINT '';
+PRINT '19. EXPLORACION DE EVENTOS...';
+:r .\03_PROCEDIMIENTOS\10_ExploracionEventos.sql
+GO
+
+PRINT '';
+PRINT '20. ANALITICA ADMINISTRATIVA...';
+:r .\03_PROCEDIMIENTOS\11_AnaliticaAdministrativa.sql
+GO
+
 
 /* ============================================================
    4. INDICES
    ============================================================ */
 
 PRINT '';
-PRINT '18. INDICES...';
+PRINT '21. INDICES...';
 :r .\04_INDICES\01_Indices.sql
 GO
 
@@ -151,7 +166,7 @@ GO
    ============================================================ */
 
 PRINT '';
-PRINT '19. VISTAS...';
+PRINT '22. VISTAS...';
 :r .\05_VISTAS\01_Vistas.sql
 GO
 
@@ -161,7 +176,7 @@ GO
    ============================================================ */
 
 PRINT '';
-PRINT '20. AUDITORIA Y TRIGGERS...';
+PRINT '23. AUDITORIA Y TRIGGERS...';
 :r .\06_AUDITORIA\01_AuditoriaTriggers.sql
 GO
 
