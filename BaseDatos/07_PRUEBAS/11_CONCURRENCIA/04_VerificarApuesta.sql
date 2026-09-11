@@ -113,7 +113,79 @@ BEGIN TRY
 
 
     /* ========================================================
-       3. SALDOS
+       3. VALIDAR BOLETO, COMISION Y SALDOS
+       ======================================================== */
+
+    DECLARE @IdBoleto INT;
+    DECLARE @MontoApuesta DECIMAL(12,2);
+    DECLARE @SaldoInicialUsuario DECIMAL(12,2);
+
+    DECLARE @ComisionServicio DECIMAL(12,2);
+    DECLARE @TotalCargo DECIMAL(12,2);
+
+    DECLARE @DisponibleEsperado DECIMAL(12,2);
+    DECLARE @ComprometidoEsperado DECIMAL(12,2);
+
+
+    SELECT
+        @MontoApuesta = MontoApuesta,
+        @SaldoInicialUsuario = SaldoInicialUsuario
+    FROM dbo.PruebaConcurrenciaContexto
+    WHERE IdContexto = 1;
+
+
+    /* ========================================================
+       IDENTIFICAR EL UNICO BOLETO QUE LOGRO CREARSE
+       ======================================================== */
+
+    SELECT @IdBoleto = IdBoleto
+    FROM dbo.Boleto
+    WHERE ReferenciaOperacion IN
+    (
+        @ReferenciaA,
+        @ReferenciaB
+    );
+
+
+    IF @IdBoleto IS NULL
+        THROW 71304,
+            'No fue posible identificar el boleto creado.',
+            1;
+
+
+    /* ========================================================
+       OBTENER COMISION REAL DEL BOLETO
+
+       No se fija 1% manualmente para que la prueba se adapte
+       a la configuracion vigente del sistema.
+       ======================================================== */
+
+    SELECT
+        @ComisionServicio = ComisionServicio
+    FROM dbo.Boleto
+    WHERE IdBoleto = @IdBoleto;
+
+
+    IF @ComisionServicio IS NULL
+        THROW 71305,
+            'El boleto no contiene la comisión de servicio esperada.',
+            1;
+
+
+    SET @TotalCargo =
+        @MontoApuesta + @ComisionServicio;
+
+
+    SET @DisponibleEsperado =
+        @SaldoInicialUsuario - @TotalCargo;
+
+
+    SET @ComprometidoEsperado =
+        @MontoApuesta;
+
+
+    /* ========================================================
+       SALDOS ACTUALES DEL USUARIO
        ======================================================== */
 
     DECLARE @Disponible DECIMAL(12,2);
@@ -123,40 +195,82 @@ BEGIN TRY
     SELECT
         @Disponible = SaldoDisponible,
         @Comprometido = SaldoComprometido
-
     FROM dbo.Billetera
     WHERE IdBilletera = @IdBilletera;
 
 
-    PRINT 'Saldo disponible: Q'
+    PRINT '';
+    PRINT 'Monto apostado: Q'
+        + CONVERT(VARCHAR(30), @MontoApuesta);
+
+    PRINT 'Comision de servicio: Q'
+        + CONVERT(VARCHAR(30), @ComisionServicio);
+
+    PRINT 'Cargo total: Q'
+        + CONVERT(VARCHAR(30), @TotalCargo);
+
+    PRINT 'Saldo disponible esperado: Q'
+        + CONVERT(VARCHAR(30), @DisponibleEsperado);
+
+    PRINT 'Saldo disponible real: Q'
         + CONVERT(VARCHAR(30), @Disponible);
 
-    PRINT 'Saldo comprometido: Q'
+    PRINT 'Saldo comprometido esperado: Q'
+        + CONVERT(VARCHAR(30), @ComprometidoEsperado);
+
+    PRINT 'Saldo comprometido real: Q'
         + CONVERT(VARCHAR(30), @Comprometido);
 
 
-    IF @Disponible <> 100.00
-        THROW 71304,
-              'ERROR: SaldoDisponible debía quedar en Q100.',
-              1;
+    /* ========================================================
+       VALIDAR SALDO DISPONIBLE
+       ======================================================== */
+
+    IF @Disponible <> @DisponibleEsperado
+        THROW 71306,
+            'ERROR: SaldoDisponible no refleja apuesta más comisión.',
+            1;
 
 
-    IF @Comprometido <> 400.00
-        THROW 71305,
-              'ERROR: SaldoComprometido debía quedar en Q400.',
-              1;
+    /* ========================================================
+       VALIDAR SALDO COMPROMETIDO
+
+       La comisión se cobra aparte.
+       Solo el monto apostado queda comprometido.
+       ======================================================== */
+
+    IF @Comprometido <> @ComprometidoEsperado
+        THROW 71307,
+            'ERROR: SaldoComprometido no coincide con el monto apostado.',
+            1;
 
 
-    DECLARE @IdBoleto INT;
+    /* ========================================================
+       VALIDAR QUE CASA RECIBIO LA COMISION
+       ======================================================== */
 
+    IF @ComisionServicio > 0
+    BEGIN
 
-    SELECT @IdBoleto = IdBoleto
-    FROM dbo.Boleto
-    WHERE ReferenciaOperacion IN
-          (
-              @ReferenciaA,
-              @ReferenciaB
-          );
+        IF
+        (
+            SELECT COUNT(*)
+
+            FROM dbo.TransaccionFinanciera AS TF
+
+            INNER JOIN dbo.TipoTransaccion AS TT
+                ON TT.IdTipoTransaccion = TF.IdTipoTransaccion
+
+            WHERE TF.IdBoleto = @IdBoleto
+              AND TF.IdBilletera = @IdBilleteraCasa
+              AND TT.Codigo = 'COMISION_SERVICIO'
+              AND TF.Monto = @ComisionServicio
+        ) <> 1
+            THROW 71308,
+                'CASA no recibió correctamente la comisión de la apuesta concurrente.',
+                1;
+
+    END;
 
 
     PRINT '';

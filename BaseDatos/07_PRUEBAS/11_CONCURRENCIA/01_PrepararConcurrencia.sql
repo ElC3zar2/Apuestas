@@ -190,6 +190,9 @@ BEGIN TRY
     DECLARE @Correo VARCHAR(150) =
         CONCAT('concurrencia.', @Codigo, '@apuestas.test');
 
+    DECLARE @Documento VARCHAR(50) =
+        CONCAT('CON-', @Codigo);
+
 
     EXEC dbo.sp_RegistrarUsuarioCliente
 
@@ -209,7 +212,7 @@ BEGIN TRY
 
         @TipoDocumento = 'DPI',
 
-        @NumeroDocumento = 'CON-' + @Codigo,
+        @NumeroDocumento = @Documento,
 
         @IdPais = @IdPais,
 
@@ -236,7 +239,9 @@ BEGIN TRY
 
     IF @IdUsuario IS NULL
        OR @IdBilleteraUsuario IS NULL
-        THROW 71003, 'No se creó correctamente el usuario de concurrencia.', 1;
+        THROW 71003,
+            'No se creó correctamente el usuario de concurrencia.',
+            1;
 
 
     /* ========================================================
@@ -324,6 +329,9 @@ BEGIN TRY
 
     DECLARE @SaldoActual DECIMAL(12,2);
 
+    DECLARE @MontoAjuste DECIMAL(12,2);
+    DECLARE @ReferenciaAjuste UNIQUEIDENTIFIER;
+
 
     SELECT @SaldoActual = SaldoDisponible
     FROM dbo.Billetera
@@ -333,6 +341,13 @@ BEGIN TRY
     IF @SaldoActual < 500.00
     BEGIN
 
+        SET @MontoAjuste =
+            500.00 - @SaldoActual;
+
+        SET @ReferenciaAjuste =
+            NEWID();
+
+
         EXEC dbo.sp_AjustarSaldoVirtual
 
             @IdUsuarioObjetivo = @IdUsuario,
@@ -341,12 +356,12 @@ BEGIN TRY
 
             @Operacion = 'CREDITO',
 
-            @Monto = 500.00 - @SaldoActual,
+            @Monto = @MontoAjuste,
 
             @Motivo =
                 'Preparación de saldo para prueba de concurrencia.',
 
-            @ReferenciaOperacion = NEWID(),
+            @ReferenciaOperacion = @ReferenciaAjuste,
 
             @IpOrigen = '127.0.0.1';
 
@@ -356,6 +371,13 @@ BEGIN TRY
     IF @SaldoActual > 500.00
     BEGIN
 
+        SET @MontoAjuste =
+            @SaldoActual - 500.00;
+
+        SET @ReferenciaAjuste =
+            NEWID();
+
+
         EXEC dbo.sp_AjustarSaldoVirtual
 
             @IdUsuarioObjetivo = @IdUsuario,
@@ -364,12 +386,12 @@ BEGIN TRY
 
             @Operacion = 'DEBITO',
 
-            @Monto = @SaldoActual - 500.00,
+            @Monto = @MontoAjuste,
 
             @Motivo =
                 'Preparación de saldo para prueba de concurrencia.',
 
-            @ReferenciaOperacion = NEWID(),
+            @ReferenciaOperacion = @ReferenciaAjuste,
 
             @IpOrigen = '127.0.0.1';
 
@@ -382,7 +404,9 @@ BEGIN TRY
 
 
     IF @SaldoActual <> 500.00
-        THROW 71005, 'No fue posible dejar el saldo del usuario en Q500.', 1;
+        THROW 71005,
+            'No fue posible dejar el saldo del usuario en Q500.',
+            1;
 
 
     /* ========================================================
@@ -447,13 +471,20 @@ BEGIN TRY
        9. PARTICIPANTES
        ======================================================== */
 
+    DECLARE @NombreParticipanteA VARCHAR(150) =
+        CONCAT('Concurrente A ', @Codigo);
+
+    DECLARE @NombreParticipanteB VARCHAR(150) =
+        CONCAT('Concurrente B ', @Codigo);
+
+
     EXEC dbo.sp_CrearParticipante
 
         @IdUsuarioProceso = @IdAdministrador,
 
         @IdDeporte = @IdDeporte,
 
-        @Nombre = 'Concurrente A ' + @Codigo,
+        @Nombre = @NombreParticipanteA,
 
         @TipoParticipante = 'EQUIPO',
 
@@ -468,7 +499,7 @@ BEGIN TRY
 
         @IdDeporte = @IdDeporte,
 
-        @Nombre = 'Concurrente B ' + @Codigo,
+        @Nombre = @NombreParticipanteB,
 
         @TipoParticipante = 'EQUIPO',
 
@@ -483,12 +514,21 @@ BEGIN TRY
 
     SELECT @IdParticipanteA = IdParticipante
     FROM dbo.Participante
-    WHERE Nombre = 'Concurrente A ' + @Codigo;
+    WHERE IdDeporte = @IdDeporte
+      AND Nombre = @NombreParticipanteA;
 
 
     SELECT @IdParticipanteB = IdParticipante
     FROM dbo.Participante
-    WHERE Nombre = 'Concurrente B ' + @Codigo;
+    WHERE IdDeporte = @IdDeporte
+      AND Nombre = @NombreParticipanteB;
+
+
+    IF @IdParticipanteA IS NULL
+       OR @IdParticipanteB IS NULL
+        THROW 71007,
+            'No se crearon correctamente los participantes.',
+            1;
 
 
     /* ========================================================
@@ -496,11 +536,13 @@ BEGIN TRY
        ======================================================== */
 
     DECLARE @NombreEvento VARCHAR(200) =
-        'Concurrencia A vs B ' + @Codigo;
-
+        CONCAT('Concurrencia A vs B ', @Codigo);
 
     DECLARE @FechaInicio DATETIME2 =
         DATEADD(DAY, 1, SYSDATETIME());
+
+    DECLARE @FechaFin DATETIME2 =
+        DATEADD(HOUR, 2, @FechaInicio);
 
 
     EXEC dbo.sp_CrearEvento
@@ -513,7 +555,7 @@ BEGIN TRY
 
         @FechaInicio = @FechaInicio,
 
-        @FechaFin = DATEADD(HOUR, 2, @FechaInicio),
+        @FechaFin = @FechaFin,
 
         @IpOrigen = '127.0.0.1';
 
@@ -523,7 +565,14 @@ BEGIN TRY
 
     SELECT @IdEvento = IdEvento
     FROM dbo.Evento
-    WHERE Nombre = @NombreEvento;
+    WHERE IdLiga = @IdLiga
+      AND Nombre = @NombreEvento;
+
+
+    IF @IdEvento IS NULL
+        THROW 71008,
+            'No se creó correctamente el evento de concurrencia.',
+            1;
 
 
     EXEC dbo.sp_AgregarParticipanteEvento
