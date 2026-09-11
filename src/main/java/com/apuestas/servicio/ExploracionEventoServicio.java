@@ -6,6 +6,7 @@
 package com.apuestas.servicio;
 
 import com.apuestas.dao.ExploracionEventoDAO;
+import com.apuestas.modelo.DetalleEventoExploracion;
 import com.apuestas.modelo.EventoExploracion;
 
 import java.sql.SQLException;
@@ -59,6 +60,27 @@ public class ExploracionEventoServicio {
                 );
     }
 
+    public DetalleEventoExploracion
+            obtenerDetalleEvento(
+                    int idEvento,
+                    int horasPrevia)
+            throws SQLException {
+
+        validarIdEvento(
+                idEvento
+        );
+
+        validarHorasPrevia(
+                horasPrevia
+        );
+
+        return exploracionEventoDAO
+                .obtenerDetalleEvento(
+                        idEvento,
+                        horasPrevia
+                );
+    }
+
     private void validarIdDeporte(
             int idDeporte) {
 
@@ -66,6 +88,18 @@ public class ExploracionEventoServicio {
 
             throw new IllegalArgumentException(
                     "El deporte seleccionado "
+                    + "no es válido."
+            );
+        }
+    }
+
+    private void validarIdEvento(
+            int idEvento) {
+
+        if (idEvento <= 0) {
+
+            throw new IllegalArgumentException(
+                    "El evento seleccionado "
                     + "no es válido."
             );
         }
