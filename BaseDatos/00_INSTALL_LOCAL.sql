@@ -232,6 +232,29 @@ GO
 
 GO
 
+PRINT '4.9 Analitica de usuario...';
+GO
+
+:r .\03_PROCEDIMIENTOS\09_AnaliticaUsuario.sql
+
+GO
+
+
+PRINT '4.10 Exploracion de eventos...';
+GO
+
+:r .\03_PROCEDIMIENTOS\10_ExploracionEventos.sql
+
+GO
+
+
+PRINT '4.11 Analitica administrativa...';
+GO
+
+:r .\03_PROCEDIMIENTOS\11_AnaliticaAdministrativa.sql
+
+GO
+
 
 /* ============================================================
    PASO 5
@@ -353,10 +376,10 @@ BEGIN
 END;
 
 
-IF @CantidadProcedimientos <> 47
+IF @CantidadProcedimientos <> 54
 BEGIN
     THROW 65002,
-          'ERROR DE INSTALACION: deben existir exactamente 47 procedimientos.',
+          'ERROR DE INSTALACION: deben existir exactamente 54 procedimientos.',
           1;
 END;
 
@@ -549,7 +572,7 @@ PRINT ' INSTALACION LOCAL COMPLETADA CORRECTAMENTE';
 PRINT '=======================================================';
 PRINT '';
 PRINT '30 tablas                OK';
-PRINT '47 procedimientos        OK';
+PRINT '54 procedimientos        OK';
 PRINT '11 vistas                OK';
 PRINT '5 triggers               OK';
 PRINT '22 departamentos         OK';

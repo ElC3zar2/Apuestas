@@ -103,7 +103,7 @@ PRINT '';
 
 
 /* ============================================================
-   2. VERIFICAR LOS 47 PROCEDIMIENTOS
+   2. VERIFICAR LOS 54 PROCEDIMIENTOS
    ============================================================ */
 
 DECLARE @ProcedimientosEsperados TABLE
@@ -175,7 +175,20 @@ VALUES
 ('sp_ReabrirVerificacionUsuario'),
 ('sp_CambiarEstadoUsuarioAdministrativo'),
 ('sp_AgregarRestriccionUsuario'),
-('sp_LevantarRestriccionUsuario');
+('sp_LevantarRestriccionUsuario'),
+
+/* Analitica del usuario */
+('sp_ObtenerAnaliticaBoletosUsuario'),
+('sp_ObtenerResumenUsuarioPorDeporte'),
+('sp_ObtenerResumenGeneralUsuario'),
+
+/* Exploracion de eventos */
+('sp_ObtenerEventosExploracion'),
+('sp_ObtenerDetalleEventoExploracion'),
+
+/* Analitica administrativa */
+('sp_ObtenerAnaliticaEventosAdministracion'),
+('sp_ObtenerDashboardAdministrativo');
 
 
 DECLARE @CantidadProcedimientos INT;
@@ -189,10 +202,10 @@ WHERE SCHEMA_NAME(P.schema_id) = 'dbo';
 
 PRINT 'PROCEDIMIENTOS encontrados: '
     + CONVERT(VARCHAR(10), @CantidadProcedimientos)
-    + ' / 47';
+    + ' / 54';
 
 
-IF @CantidadProcedimientos <> 47
+IF @CantidadProcedimientos <> 54
 BEGIN
 
     PRINT 'ERROR: faltan procedimientos.';
@@ -211,7 +224,7 @@ BEGIN
 END
 ELSE
 BEGIN
-    PRINT 'OK: los 47 procedimientos existen.';
+    PRINT 'OK: los 54 procedimientos existen.';
 END;
 
 PRINT '';
@@ -354,7 +367,9 @@ VALUES
 ('TIEMPO_BLOQUEO_LOGIN_MIN'),
 ('TIEMPO_TOKEN_RECUPERACION_MIN'),
 ('TIEMPO_TOKEN_VERIFICACION_MIN'),
-('MONTO_MINIMO_APUESTA');
+('MONTO_MINIMO_APUESTA'),
+('ANTICIPACION_CIERRE_APUESTA_MIN'),
+('COMISION_SERVICIO_PORCENTAJE');
 
 
 DECLARE @CantidadConfiguraciones INT;
@@ -367,10 +382,10 @@ INNER JOIN @ConfiguracionesEsperadas AS E
 
 PRINT 'CONFIGURACIONES encontradas: '
     + CONVERT(VARCHAR(10), @CantidadConfiguraciones)
-    + ' / 8';
+    + ' / 10';
 
 
-IF @CantidadConfiguraciones <> 8
+IF @CantidadConfiguraciones <> 10
 BEGIN
 
     PRINT 'ERROR: faltan configuraciones.';
@@ -388,7 +403,7 @@ BEGIN
 END
 ELSE
 BEGIN
-    PRINT 'OK: las 8 configuraciones existen.';
+    PRINT 'OK: las 10 configuraciones existen.';
 END;
 
 PRINT '';
@@ -534,6 +549,8 @@ INSERT INTO @TiposTransaccionEsperados (Codigo)
 VALUES
 ('CARGA_INICIAL'),
 ('APUESTA'),
+('COMISION_SERVICIO'),
+('DEVOLUCION_COMISION'),
 ('PREMIO'),
 ('PERDIDA_APUESTA'),
 ('DEVOLUCION'),
@@ -552,13 +569,13 @@ INNER JOIN @TiposTransaccionEsperados AS E
 
 PRINT 'TIPOS TRANSACCION encontrados: '
     + CONVERT(VARCHAR(10), @CantidadTiposTransaccion)
-    + ' / 8';
+    + ' / 10';
 
 
-IF @CantidadTiposTransaccion <> 8
+IF @CantidadTiposTransaccion <> 10
     PRINT 'ERROR: faltan tipos de transacción.';
 ELSE
-    PRINT 'OK: los 8 tipos de transacción existen.';
+    PRINT 'OK: los 10 tipos de transacción existen.';
 
 PRINT '';
 
@@ -672,7 +689,7 @@ DECLARE @Errores INT = 0;
 IF @CantidadTablas <> 30
     SET @Errores += 1;
 
-IF @CantidadProcedimientos <> 47
+IF @CantidadProcedimientos <> 54
     SET @Errores += 1;
 
 IF @CantidadVistas <> 11
@@ -681,7 +698,7 @@ IF @CantidadVistas <> 11
 IF @CantidadTriggers <> 5
     SET @Errores += 1;
 
-IF @CantidadConfiguraciones <> 8
+IF @CantidadConfiguraciones <> 10
     SET @Errores += 1;
 
 IF @CantidadRoles <> 6
@@ -696,7 +713,7 @@ IF @CantidadDepartamentos <> 22
 IF @CantidadMunicipios <> 340
     SET @Errores += 1;
 
-IF @CantidadTiposTransaccion <> 8
+IF @CantidadTiposTransaccion <> 10
     SET @Errores += 1;
 
 IF @CantidadCasa <> 1
