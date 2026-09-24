@@ -86,8 +86,8 @@
             <span class="dot"></span> BetZone
         </a>
         <div class="navbar__actions">
-            <a href="${pageContext.request.contextPath}/login.jsp" class="btn btn--login">Iniciar sesión</a>
-            <a href="${pageContext.request.contextPath}/registro.jsp" class="btn btn--signup">Crear cuenta</a>
+            <a href="${pageContext.request.contextPath}/usuario/login.jsp" class="btn btn--login">Iniciar sesión</a>
+            <a href="${pageContext.request.contextPath}/usuario/registro.jsp" class="btn btn--signup">Crear cuenta</a>
             <a href="${pageContext.request.contextPath}/admin/login.jsp" class="btn btn--admin" aria-label="Acceso administrador" title="Acceso administrador">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -121,7 +121,7 @@
             desde tu teléfono o tu computadora.
         </p>
         <div class="hero__cta">
-            <a href="${pageContext.request.contextPath}/registro.jsp" class="btn btn--signup">Crear cuenta gratis</a>
+            <a href="${pageContext.request.contextPath}/usuario/registro.jsp" class="btn btn--signup">Crear cuenta gratis</a>
             <a href="#catalogo" class="btn btn--ghost">Ver cuotas de hoy</a>
         </div>
     </header>

@@ -1,0 +1,406 @@
+/* 
+    Created on : 23 sep. 2026, 23:03:20
+    Author     : Otto
+*/
+/* =========================================================
+   BETZONE — registro.jsp
+   Neon Glassmorphism · Tokens propios de esta página
+   Formulario extendido: datos, documento y ubicación dinámica
+   ========================================================= */
+
+:root {
+  --bg-void: #0B0F19;
+  --bg-void-deep: #06080f;
+
+  --neon-amber: #FFEA00;
+  --neon-orange: #FF6600;
+  --neon-green: #00FF66;
+  --neon-cyan: #00FFFF;
+  --neon-magenta: #FF2D9E;
+
+  --text-primary: #F4F6FB;
+  --text-muted: #8A93A6;
+
+  --glass-bg: rgba(18, 22, 36, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-blur: 14px;
+
+  --font-display: "Space Grotesk", "Montserrat", sans-serif;
+  --font-body: "Inter", "Roboto", sans-serif;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-fast: 0.3s;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* =========================================================
+   FONDO DE PÁGINA
+   ========================================================= */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  position: relative;
+  isolation: isolate;
+}
+
+.auth-page__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(ellipse 60% 45% at 15% 10%, rgba(0, 255, 255, 0.08), transparent 60%),
+    radial-gradient(ellipse 55% 45% at 85% 90%, rgba(255, 102, 0, 0.08), transparent 60%),
+    linear-gradient(180deg, var(--bg-void-deep) 0%, var(--bg-void) 100%);
+}
+
+.auth-page__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(4, 5, 10, 0.80);
+}
+
+/* =========================================================
+   TARJETA (más ancha que la de login por la cantidad de campos)
+   ========================================================= */
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 40px 36px;
+}
+
+.auth-card--registro {
+  max-width: 760px;
+  padding: 44px 48px 40px;
+}
+
+.auth-card__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  margin-bottom: 8px;
+}
+.auth-card__brand .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--neon-green);
+  box-shadow: 0 0 8px var(--neon-green);
+}
+
+.auth-card h1 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 6px;
+}
+
+.auth-card__sub {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0 0 28px;
+}
+
+/* =========================================================
+   GRID DEL FORMULARIO
+   ========================================================= */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 26px 28px;
+  margin-bottom: 8px;
+}
+
+.field--full { grid-column: 1 / -1; }
+
+@media (max-width: 620px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+.form-section__title {
+  grid-column: 1 / -1;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neon-cyan);
+  margin: 18px 0 -4px;
+  padding-top: 18px;
+  border-top: 1px solid var(--glass-border);
+}
+.form-grid > .form-section__title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* =========================================================
+   CAMPOS CON FLOATING LABEL (texto, correo, contraseña, tel)
+   ========================================================= */
+
+.field { position: relative; }
+
+.field__input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  padding: 8px 32px 8px 2px;
+  outline: none;
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.field__input:focus { border-bottom: 2px solid var(--neon-cyan); }
+
+.field__input.is-invalid { border-bottom-color: #FF0033; }
+
+.field__input:disabled {
+  color: var(--text-muted);
+  border-bottom-style: dashed;
+  cursor: not-allowed;
+}
+
+.field__label {
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  font-size: 15px;
+  color: var(--text-muted);
+  pointer-events: none;
+  transform-origin: left top;
+  transition: transform var(--t-fast) ease, color var(--t-fast) ease, top var(--t-fast) ease;
+}
+
+.field__input:focus + .field__label,
+.field__input:not(:placeholder-shown) + .field__label,
+.field__input.has-value + .field__label {
+  top: -14px;
+  transform: scale(0.82);
+  color: var(--neon-cyan);
+}
+
+.field__toggle {
+  position: absolute;
+  right: 0;
+  top: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  display: flex;
+  transition: color var(--t-fast) var(--ease);
+}
+.field__toggle:hover { color: var(--neon-cyan); }
+.field__toggle svg { display: block; width: 20px; height: 20px; }
+
+.field__error {
+  display: block;
+  min-height: 16px;
+  font-size: 12.5px;
+  color: #FF0033;
+  margin-top: 6px;
+}
+
+.field__hint {
+  display: block;
+  min-height: 16px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+/* =========================================================
+   CAMPOS ESTÁTICOS (selects, fecha) — label fija arriba
+   ========================================================= */
+
+.field--static > label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.field__select,
+.field__input[type="date"] {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  padding: 8px 28px 8px 2px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.field__select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%238A93A6' stroke-width='1.8'%3E%3Cpath d='M5 7l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 2px center;
+  background-size: 16px;
+}
+
+.field__select option {
+  background: #10141f;
+  color: var(--text-primary);
+}
+
+.field__select:focus,
+.field__input[type="date"]:focus {
+  border-bottom: 2px solid var(--neon-cyan);
+}
+
+.field__select:disabled,
+.field__input[type="date"]:disabled {
+  color: var(--text-muted);
+  border-bottom-style: dashed;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.field__input[type="date"] {
+  color-scheme: dark;
+}
+
+/* =========================================================
+   TELÉFONO — select de código + input numérico en una fila
+   ========================================================= */
+
+.field-phone {
+  display: grid;
+  grid-template-columns: minmax(150px, 42%) 1fr;
+  gap: 14px;
+  align-items: end;
+}
+
+@media (max-width: 460px) {
+  .field-phone { grid-template-columns: 1fr; }
+}
+
+/* =========================================================
+   BLOQUES CONDICIONALES (Guatemala / Exterior)
+   ========================================================= */
+
+.field-conditional {
+  grid-column: 1 / -1;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--glass-border);
+  border-radius: 12px;
+  padding: 20px 22px 4px;
+  margin-top: -6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px 24px;
+}
+
+@media (max-width: 620px) {
+  .field-conditional { grid-template-columns: 1fr; }
+}
+
+/* =========================================================
+   BOTÓN Y PIE
+   ========================================================= */
+
+.btn--submit {
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  color: #1a0a05;
+  cursor: pointer;
+  background: linear-gradient(100deg, var(--neon-orange), var(--neon-magenta));
+  box-shadow: 0 0 0 rgba(255, 45, 158, 0);
+  transition: box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  margin-top: 20px;
+}
+.btn--submit:hover {
+  box-shadow: 0 0 22px rgba(255, 45, 158, 0.5);
+  transform: translateY(-1px);
+}
+
+.auth-card__footer {
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  margin-top: 20px;
+}
+.auth-card__footer a {
+  color: var(--neon-green);
+  font-weight: 600;
+}
+.auth-card__footer a:hover { text-decoration: underline; }
+
+.form-alert {
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  display: none;
+}
+.form-alert.is-visible { display: block; }
+.form-alert--error {
+  background: rgba(255, 0, 51, 0.1);
+  border: 1px solid rgba(255, 0, 51, 0.35);
+  color: #ff5470;
+}
+.form-alert--success {
+  background: rgba(0, 255, 102, 0.1);
+  border: 1px solid rgba(0, 255, 102, 0.35);
+  color: var(--neon-green);
+}
+
+
