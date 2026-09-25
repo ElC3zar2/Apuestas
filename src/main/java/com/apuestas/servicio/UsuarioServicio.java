@@ -6,6 +6,10 @@
 package com.apuestas.servicio;
 import com.apuestas.dao.UsuarioDAO;
 import com.apuestas.modelo.Usuario;
+import com.apuestas.modelo.UsuarioAutenticacion;
+import com.apuestas.modelo.ResultadoIntentoLogin;
+import com.apuestas.modelo.ResultadoLogin;
+import java.util.Locale;
 import com.apuestas.seguridad.EncriptadorContrasena;
 
 import java.sql.SQLException;
@@ -307,4 +311,82 @@ public class UsuarioServicio {
                 usuario
         );
     }
+
+    public UsuarioServicio(UsuarioDAO usuarioDAO) {
+        this.usuarioDAO = java.util.Objects.requireNonNull(usuarioDAO);
+    }
+
+    public ResultadoLogin autenticar(String correo, String contrasena, String ipOrigen)
+            throws SQLException {
+        if (correo == null || correo.trim().isEmpty()) {
+            throw new IllegalArgumentException("El correo es obligatorio.");
+        }
+        String correoNormalizado = correo.trim().toLowerCase(Locale.ROOT);
+        if (correoNormalizado.length() > 150
+                || !correoNormalizado.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            throw new IllegalArgumentException("El correo no tiene un formato o longitud válido.");
+        }
+        if (contrasena == null || contrasena.isEmpty()) {
+            throw new IllegalArgumentException("La contraseña es obligatoria.");
+        }
+
+        UsuarioAutenticacion usuario =
+                usuarioDAO.obtenerUsuarioAutenticacion(correoNormalizado);
+        if (usuario == null) {
+            // Hash ficticio fijo de coste 12: no generar uno nuevo por solicitud.
+            EncriptadorContrasena.verificar(contrasena, HASH_FICTICIO);
+            return ResultadoLogin.rechazado();
+        }
+        if (usuario.getIdUsuario() <= 0 || usuario.getIdRol() <= 0
+                || usuario.getIdEstado() <= 0 || usuario.getIntentosFallidos() < 0
+                || usuario.getCorreo() == null || usuario.getCorreo().trim().isEmpty()) {
+            throw new IllegalStateException("Datos de autenticacion inconsistentes.");
+        }
+        if (!"USUARIO".equals(usuario.getRol())
+                || !estadoAdmitido(usuario.getEstadoUsuario())) {
+            return ResultadoLogin.rechazado();
+        }
+
+        String hash = usuario.getHashContrasena();
+        if (hash == null || !hash.matches(
+                "^\\$2(?:a)?\\$(?:0[4-9]|[12][0-9]|30)\\$[./A-Za-z0-9]{53}$")) {
+            throw new IllegalStateException("Hash de autenticacion invalido.");
+        }
+        final boolean coincide;
+        try {
+            coincide = EncriptadorContrasena.verificar(contrasena, hash);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("No fue posible verificar el hash.");
+        }
+
+        ResultadoIntentoLogin intento = usuarioDAO.registrarIntentoLogin(
+                usuario.getIdUsuario(), coincide, ipOrigen);
+        if (intento == null || intento.getIdUsuario() != usuario.getIdUsuario()
+                || intento.getIntentosFallidos() < 0
+                || intento.getEstadoUsuario() == null
+                || intento.getEstadoUsuario().trim().isEmpty()
+                || (intento.isBloqueoVigente() && intento.getBloqueadoHasta() == null)
+                || (intento.isAutenticacionPermitida()
+                    && (!coincide || intento.isBloqueoVigente()
+                        || intento.getIntentosFallidos() != 0
+                        || intento.getBloqueadoHasta() != null))) {
+            throw new IllegalStateException("Resultado del intento de login inconsistente.");
+        }
+        // Una consulta inicial bloqueada o no habilitada tampoco concede una sesion.
+        if (!coincide || usuario.isBloqueoVigente() || !usuario.isPuedeIniciarSesion()
+                || !intento.isAutenticacionPermitida() || intento.isBloqueoVigente()
+                || !estadoAdmitido(intento.getEstadoUsuario())) {
+            return ResultadoLogin.rechazado();
+        }
+        return ResultadoLogin.autenticado(usuario.getIdUsuario(), usuario.getCorreo(),
+                usuario.getIdRol(), usuario.getRol(), intento.getEstadoUsuario(),
+                usuario.isCorreoVerificado());
+    }
+
+    private static boolean estadoAdmitido(String estado) {
+        return "PENDIENTE".equals(estado) || "ACTIVO".equals(estado);
+    }
+
+    private static final String HASH_FICTICIO =
+            "$2a$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW";
 }
