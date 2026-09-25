@@ -48,6 +48,13 @@
             <artifactId>jasperreports</artifactId>
             <version>6.21.5</version>
         </dependency>
+        
+        <!-- Pool de conexiones JDBC -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>7.1.0</version>
+        </dependency>
     </dependencies>
 
     <build>
