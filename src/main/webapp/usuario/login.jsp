@@ -86,7 +86,7 @@
             </form>
 
             <p class="auth-card__footer">
-                ¿No tenés cuenta? <a href="${pageContext.request.contextPath}/usuario/registro.jsp">Crear una cuenta</a>
+                ¿No tenés cuenta? <a href="${pageContext.request.contextPath}/registro">Crear una cuenta</a>
             </p>
             <p class="auth-card__footer">
                 <a href="${pageContext.request.contextPath}/index.jsp">Volver al inicio</a>

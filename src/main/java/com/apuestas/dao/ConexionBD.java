@@ -48,6 +48,7 @@ public class ConexionBD {
 
             HikariConfig hikariConfig = new HikariConfig();
 
+            hikariConfig.setDriverClassName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
             hikariConfig.setJdbcUrl(url);
             hikariConfig.setUsername(usuario);
             hikariConfig.setPassword(password);

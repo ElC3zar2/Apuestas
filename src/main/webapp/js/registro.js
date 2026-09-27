@@ -7,7 +7,27 @@
 document.addEventListener("DOMContentLoaded", () => {
   initPasswordToggles();
   initFloatingLabels();
+  initSincronizacionPaises();
 });
+
+function initSincronizacionPaises() {
+  const paisTelefono = document.getElementById("idPaisTelefono");
+  const pais = document.getElementById("idPais");
+
+  const sincronizar = () => {
+    pais.value = paisTelefono.value;
+    cambiarPais();
+  };
+
+  paisTelefono.addEventListener("change", sincronizar);
+
+  // Respeta una residencia ya seleccionada al cargar la página.
+  if (!pais.value && paisTelefono.value) {
+    sincronizar();
+  } else {
+    cambiarPais();
+  }
+}
 
 /**
  * Alterna la visibilidad de los inputs de contraseña
@@ -52,6 +72,8 @@ function cambiarTipoDocumento() {
     const numeroDocumento = document.getElementById("numeroDocumento");
     const ayudaDocumento = document.getElementById("ayudaDocumento");
 
+    numeroDocumento.placeholder = " ";
+
     /* DPI DE GUATEMALA */
     if (tipoDocumento === "DPI") {
 
@@ -59,7 +81,6 @@ function cambiarTipoDocumento() {
         numeroDocumento.maxLength = 13;
         numeroDocumento.minLength = 13;
         numeroDocumento.pattern = "[0-9]{13}";
-        numeroDocumento.placeholder = "13 dígitos";
         numeroDocumento.title = "El DPI debe contener exactamente 13 dígitos.";
         ayudaDocumento.textContent = "El DPI debe contener 13 dígitos.";
 
@@ -71,7 +92,6 @@ function cambiarTipoDocumento() {
         numeroDocumento.maxLength = 50;
         numeroDocumento.removeAttribute("minlength");
         numeroDocumento.removeAttribute("pattern");
-        numeroDocumento.placeholder = "Número de pasaporte";
         numeroDocumento.title = "Ingrese el número de pasaporte.";
         ayudaDocumento.textContent = "El formato depende del país.";
 
@@ -83,7 +103,6 @@ function cambiarTipoDocumento() {
         numeroDocumento.maxLength = 50;
         numeroDocumento.removeAttribute("minlength");
         numeroDocumento.removeAttribute("pattern");
-        numeroDocumento.placeholder = "Número de documento";
         numeroDocumento.title = "Ingrese el número del documento.";
         ayudaDocumento.textContent = "Máximo 50 caracteres.";
 
@@ -95,7 +114,6 @@ function cambiarTipoDocumento() {
         numeroDocumento.maxLength = 50;
         numeroDocumento.removeAttribute("minlength");
         numeroDocumento.removeAttribute("pattern");
-        numeroDocumento.placeholder = "";
         ayudaDocumento.textContent = "";
     }
 
@@ -111,7 +129,7 @@ function cambiarTipoDocumento() {
  */
 function cambiarPais() {
 
-    const pais = document.getElementById("IdPais");
+    const pais = document.getElementById("idPais");
     const opcion = pais.options[pais.selectedIndex];
     const codigo = opcion.getAttribute("data-codigo");
 
