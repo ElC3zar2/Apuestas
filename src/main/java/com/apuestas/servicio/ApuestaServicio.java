@@ -28,6 +28,10 @@ public class ApuestaServicio {
                 new ApuestaDAO();
     }
 
+    public ApuestaServicio(ApuestaDAO apuestaDAO) {
+        this.apuestaDAO = java.util.Objects.requireNonNull(apuestaDAO);
+    }
+
     public CotizacionApuesta cotizarApuesta(
             List<Integer> idSelecciones,
             BigDecimal monto)
@@ -96,13 +100,19 @@ public class ApuestaServicio {
 
         try {
 
-            return apuestaDAO.realizarApuesta(
+            ResultadoApuesta resultado = apuestaDAO.realizarApuesta(
                     idUsuario,
                     seleccionesJson,
                     monto,
                     referenciaOperacion,
                     ipOrigen
             );
+
+            if (resultado.isSolicitudIdempotente() && resultado.getCantidadSelecciones() == 0) {
+                // SQL ya verifico que la repeticion corresponde a estas mismas selecciones.
+                resultado.setCantidadSelecciones(idSelecciones.size());
+            }
+            return resultado;
 
         } catch (SQLException e) {
 

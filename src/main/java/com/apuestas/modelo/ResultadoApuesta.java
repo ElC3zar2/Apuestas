@@ -27,6 +27,18 @@ public class ResultadoApuesta {
     private BigDecimal cuotaTotal;
     private BigDecimal gananciaPotencial;
 
+    private String referenciaOperacion;
+    private boolean solicitudIdempotente;
+
+    public String getReferenciaOperacion() { return referenciaOperacion; }
+    public void setReferenciaOperacion(String referenciaOperacion) {
+        this.referenciaOperacion = referenciaOperacion;
+    }
+    public boolean isSolicitudIdempotente() { return solicitudIdempotente; }
+    public void setSolicitudIdempotente(boolean solicitudIdempotente) {
+        this.solicitudIdempotente = solicitudIdempotente;
+    }
+
     public ResultadoApuesta() {
     }
 

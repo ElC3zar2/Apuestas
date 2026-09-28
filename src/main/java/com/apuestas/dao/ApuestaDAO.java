@@ -210,134 +210,86 @@ public class ApuestaDAO {
     }
 
     public ResultadoApuesta realizarApuesta(
-            int idUsuario,
-            String seleccionesJson,
-            BigDecimal monto,
-            UUID referenciaOperacion,
-            String ipOrigen)
-            throws SQLException {
+            int idUsuario, String seleccionesJson, BigDecimal monto,
+            UUID referenciaOperacion, String ipOrigen) throws SQLException {
+        try (Connection conexion = obtenerConexion();
+             CallableStatement cs = conexion.prepareCall(
+                     "{call dbo.sp_RealizarApuesta(?, ?, ?, ?, ?)}")) {
+            cs.setInt(1, idUsuario);
+            cs.setString(2, seleccionesJson);
+            cs.setBigDecimal(3, monto);
+            // Representacion explicita para UNIQUEIDENTIFIER en el driver SQL Server.
+            cs.setString(4, referenciaOperacion.toString());
+            establecerIp(cs, 5, ipOrigen);
 
-        String sql =
-                "{call dbo.sp_RealizarApuesta(?, ?, ?, ?, ?)}";
-
-        try (Connection conexion =
-                     ConexionBD.obtenerConexion();
-             CallableStatement cs =
-                     conexion.prepareCall(sql)) {
-
-            cs.setInt(
-                    1,
-                    idUsuario
-            );
-
-            cs.setString(
-                    2,
-                    seleccionesJson
-            );
-
-            cs.setBigDecimal(
-                    3,
-                    monto
-            );
-
-            cs.setObject(
-                    4,
-                    referenciaOperacion
-            );
-
-            establecerIp(
-                    cs,
-                    5,
-                    ipOrigen
-            );
-
-            boolean tieneResultados =
-                    cs.execute();
-
-            if (!tieneResultados) {
-                throw new SQLException(
-                        "El procedimiento sp_RealizarApuesta "
-                        + "no devolvió el boleto generado."
-                );
+            boolean hayResultado = cs.execute();
+            while (!hayResultado && cs.getUpdateCount() != -1) {
+                hayResultado = cs.getMoreResults();
             }
+            if (!hayResultado) throw new SQLException("No se recibio el resultado de la apuesta.");
 
-            try (ResultSet rs =
-                         cs.getResultSet()) {
-
-                if (rs.next()) {
-
-                    ResultadoApuesta resultado =
-                            new ResultadoApuesta();
-
-                    resultado.setIdBoleto(
-                            rs.getInt(
-                                    "IdBoleto"
-                            )
-                    );
-
-                    resultado.setCodigoBoleto(
-                            rs.getString(
-                                    "CodigoBoleto"
-                            )
-                    );
-
-                    resultado.setTipoBoleto(
-                            rs.getString(
-                                    "TipoBoleto"
-                            )
-                    );
-
-                    resultado.setCantidadSelecciones(
-                            rs.getInt(
-                                    "CantidadSelecciones"
-                            )
-                    );
-
-                    resultado.setMontoApostado(
-                            rs.getBigDecimal(
-                                    "MontoApostado"
-                            )
-                    );
-
-                    resultado.setComisionServicioPorcentaje(
-                            rs.getBigDecimal(
-                                    "ComisionServicioPorcentaje"
-                            )
-                    );
-
-                    resultado.setComisionServicio(
-                            rs.getBigDecimal(
-                                    "ComisionServicio"
-                            )
-                    );
-
-                    resultado.setTotalCargo(
-                            rs.getBigDecimal(
-                                    "TotalCargo"
-                            )
-                    );
-
-                    resultado.setCuotaTotal(
-                            rs.getBigDecimal(
-                                    "CuotaTotal"
-                            )
-                    );
-
-                    resultado.setGananciaPotencial(
-                            rs.getBigDecimal(
-                                    "GananciaPotencial"
-                            )
-                    );
-
-                    return resultado;
+            ResultadoApuesta resultado = new ResultadoApuesta();
+            try (ResultSet rs = cs.getResultSet()) {
+                if (!rs.next()) throw new SQLException("No se recibio el boleto.");
+                boolean idempotente = rs.getBoolean("SolicitudIdempotente");
+                if (rs.wasNull()) throw new SQLException("Falta el indicador de idempotencia.");
+                resultado.setSolicitudIdempotente(idempotente);
+                String referencia = rs.getString("ReferenciaOperacion");
+                if (referencia == null
+                        || !referenciaOperacion.toString().equalsIgnoreCase(referencia)) {
+                    throw new SQLException("La referencia devuelta no coincide con la solicitud.");
                 }
-            }
-        }
+                resultado.setReferenciaOperacion(referencia);
+                resultado.setIdBoleto(rs.getInt("IdBoleto"));
+                resultado.setCodigoBoleto(rs.getString("CodigoBoleto"));
+                resultado.setTipoBoleto(rs.getString("TipoBoleto"));
+                resultado.setMontoApostado(rs.getBigDecimal("MontoApostado"));
+                resultado.setComisionServicio(rs.getBigDecimal("ComisionServicio"));
+                resultado.setTotalCargo(rs.getBigDecimal("TotalCargo"));
+                resultado.setCuotaTotal(rs.getBigDecimal("CuotaTotal"));
+                resultado.setGananciaPotencial(rs.getBigDecimal("GananciaPotencial"));
 
-        throw new SQLException(
-                "El procedimiento sp_RealizarApuesta "
-                + "no devolvió el boleto generado."
-        );
+                // La rama idempotente actual omite estas dos columnas.
+                if (!idempotente || tieneColumna(rs, "CantidadSelecciones")) {
+                    resultado.setCantidadSelecciones(rs.getInt("CantidadSelecciones"));
+                    if (rs.wasNull() || resultado.getCantidadSelecciones() <= 0) {
+                        throw new SQLException("Cantidad de selecciones invalida.");
+                    }
+                }
+                if (!idempotente || tieneColumna(rs, "ComisionServicioPorcentaje")) {
+                    resultado.setComisionServicioPorcentaje(
+                            rs.getBigDecimal("ComisionServicioPorcentaje"));
+                    if (resultado.getComisionServicioPorcentaje() == null) {
+                        throw new SQLException("Porcentaje de comision nulo.");
+                    }
+                }
+                if (resultado.getIdBoleto() <= 0 || resultado.getCodigoBoleto() == null
+                        || resultado.getTipoBoleto() == null || resultado.getMontoApostado() == null
+                        || resultado.getComisionServicio() == null || resultado.getTotalCargo() == null
+                        || resultado.getCuotaTotal() == null || resultado.getGananciaPotencial() == null) {
+                    throw new SQLException("Resultado de apuesta incompleto.");
+                }
+                if (rs.next()) throw new SQLException("Se recibieron varios boletos.");
+            }
+            boolean adicional = cs.getMoreResults();
+            while (adicional || cs.getUpdateCount() != -1) {
+                if (adicional) throw new SQLException("Resultado adicional inesperado.");
+                adicional = cs.getMoreResults();
+            }
+            return resultado;
+        }
+    }
+
+    protected Connection obtenerConexion() throws SQLException {
+        return ConexionBD.obtenerConexion();
+    }
+
+    private boolean tieneColumna(ResultSet rs, String nombre) throws SQLException {
+        java.sql.ResultSetMetaData metadata = rs.getMetaData();
+        for (int i = 1; i <= metadata.getColumnCount(); i++) {
+            if (nombre.equalsIgnoreCase(metadata.getColumnLabel(i))) return true;
+        }
+        return false;
     }
 
     public Boleto obtenerBoleto(
