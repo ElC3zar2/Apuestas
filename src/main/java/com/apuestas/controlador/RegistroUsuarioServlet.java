@@ -123,7 +123,18 @@ public class RegistroUsuarioServlet extends HttpServlet {
 
                 fechaNacimiento =
                         LocalDate.parse(fechaTexto);
+                    LocalDate fechaLimite =
+            LocalDate.now().minusYears(18);
+
+            if (fechaNacimiento.isAfter(fechaLimite)) {
+
+                throw new IllegalArgumentException(
+                        "Debes ser mayor de edad para crear una cuenta."
+                );
             }
+            }
+            
+            
 
             int idPais = 0;
 

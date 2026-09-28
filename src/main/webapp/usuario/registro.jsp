@@ -75,6 +75,7 @@
                         <label for="fechaNacimiento">Fecha de nacimiento</label>
                         <input type="date" id="fechaNacimiento" name="fechaNacimiento" class="field__input" required>
                     </div>
+                    
 
                     <div class="field field--static">
                         <label for="genero">Género</label>

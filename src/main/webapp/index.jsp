@@ -88,7 +88,7 @@
         <div class="navbar__actions">
             <a href="${pageContext.request.contextPath}/usuario/login.jsp" class="btn btn--login">Iniciar sesión</a>
             <a href="${pageContext.request.contextPath}/registro" class="btn btn--signup">Crear cuenta</a>
-            <a href="${pageContext.request.contextPath}/admin/login.jsp" class="btn btn--admin" aria-label="Acceso administrador" title="Acceso administrador">
+            <a href="${pageContext.request.contextPath}/administrador/login.jsp" class="btn btn--admin" aria-label="Acceso administrador" title="Acceso administrador">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -112,7 +112,7 @@
         <svg class="parallax-icon parallax-icon--chip" data-depth="26" viewBox="0 0 100 100" aria-hidden="true">
             <circle cx="50" cy="50" r="44" fill="none" stroke="#00FF66" stroke-width="3" stroke-dasharray="6 6"/>
             <circle cx="50" cy="50" r="28" fill="none" stroke="#00FF66" stroke-width="2"/>
-        </svg>3
+        </svg>
 
         <p class="hero__eyebrow">Cuotas en vivo · Fútbol, básquet, tenis y más</p>
         <h1>La nueva era de las apuestas deportivas</h1>
