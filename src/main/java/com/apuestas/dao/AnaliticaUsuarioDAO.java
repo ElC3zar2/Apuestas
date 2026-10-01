@@ -92,6 +92,86 @@ public class AnaliticaUsuarioDAO {
         }
     }
 
+
+    public List<ResumenUsuarioPorDeporte> obtenerResumenUsuarioPorDeporte(int idUsuario)
+            throws SQLException {
+        try (Connection conexion = obtenerConexion();
+             CallableStatement cs = conexion.prepareCall(
+                     "{call dbo.sp_ObtenerResumenUsuarioPorDeporte(?)}")) {
+            cs.setInt(1, idUsuario);
+            exigirResultado(cs, cs.execute());
+            List<ResumenUsuarioPorDeporte> deportes = new ArrayList<>();
+            try (ResultSet rs = cs.getResultSet()) {
+                while (rs.next()) {
+                    deportes.add(new ResumenUsuarioPorDeporte(
+                            obligatorio(entero(rs, "IdDeporte"), "IdDeporte"),
+                            obligatorio(rs.getString("Deporte"), "Deporte"),
+                            obligatorio(entero(rs, "CantidadBoletos"), "CantidadBoletos"),
+                            obligatorio(entero(rs, "BoletosPendientes"), "BoletosPendientes"),
+                            obligatorio(entero(rs, "BoletosGanadores"), "BoletosGanadores"),
+                            obligatorio(entero(rs, "BoletosPerdedores"), "BoletosPerdedores"),
+                            obligatorio(entero(rs, "BoletosAnulados"), "BoletosAnulados"),
+                            obligatorio(entero(rs, "CantidadSelecciones"), "CantidadSelecciones"),
+                            obligatorio(entero(rs, "SeleccionesPendientes"), "SeleccionesPendientes"),
+                            obligatorio(entero(rs, "SeleccionesGanadas"), "SeleccionesGanadas"),
+                            obligatorio(entero(rs, "SeleccionesPerdidas"), "SeleccionesPerdidas"),
+                            obligatorio(entero(rs, "SeleccionesAnuladas"), "SeleccionesAnuladas"),
+                            rs.getBigDecimal("CuotaPromedio"),
+                            rs.getBigDecimal("ProbabilidadImplicitaPromedio"),
+                            rs.getBigDecimal("PorcentajeEfectividad")));
+                }
+            }
+            comprobarFinResumen(cs);
+            return deportes;
+        }
+    }
+
+    public ResumenGeneralUsuario obtenerResumenGeneralUsuario(int idUsuario) throws SQLException {
+        try (Connection conexion = obtenerConexion();
+             CallableStatement cs = conexion.prepareCall(
+                     "{call dbo.sp_ObtenerResumenGeneralUsuario(?)}")) {
+            cs.setInt(1, idUsuario);
+            exigirResultado(cs, cs.execute());
+            ResumenGeneralUsuario resumen;
+            try (ResultSet rs = cs.getResultSet()) {
+                if (!rs.next()) throw new SQLException("Falta el resumen general.");
+                // SUM sin filas conserva NULL; no sustituirlo por cero.
+                resumen = new ResumenGeneralUsuario(
+                        obligatorio(entero(rs, "CantidadBoletos"), "CantidadBoletos"),
+                        entero(rs, "BoletosPendientes"),
+                        entero(rs, "BoletosGanadores"),
+                        entero(rs, "BoletosPerdedores"),
+                        entero(rs, "BoletosAnulados"),
+                        obligatorio(rs.getBigDecimal("TotalApostado"), "TotalApostado"),
+                        obligatorio(rs.getBigDecimal("TotalComisionesHistoricas"), "TotalComisionesHistoricas"),
+                        obligatorio(rs.getBigDecimal("TotalCargoHistorico"), "TotalCargoHistorico"),
+                        obligatorio(rs.getBigDecimal("PremioPotencialPendiente"), "PremioPotencialPendiente"),
+                        obligatorio(rs.getBigDecimal("GananciaNetaPotencialPendiente"), "GananciaNetaPotencialPendiente"),
+                        obligatorio(rs.getBigDecimal("TotalPremiosGanadores"), "TotalPremiosGanadores"),
+                        obligatorio(rs.getBigDecimal("TotalDevueltoPorAnulacion"), "TotalDevueltoPorAnulacion"),
+                        obligatorio(rs.getBigDecimal("ResultadoNetoRealizado"), "ResultadoNetoRealizado"),
+                        rs.getBigDecimal("PorcentajeEfectividad"),
+                        rs.getBigDecimal("CuotaPromedio"),
+                        rs.getBigDecimal("ProbabilidadImplicitaPromedio"));
+                if (rs.next()) throw new SQLException("Resumen general duplicado.");
+            }
+            comprobarFinResumen(cs);
+            return resumen;
+        }
+    }
+
+    private void comprobarFinResumen(CallableStatement cs) throws SQLException {
+        boolean resultado = cs.getMoreResults();
+        while (resultado || cs.getUpdateCount() != -1) {
+            if (resultado) {
+                try (ResultSet adicional = cs.getResultSet()) {
+                    throw new SQLException("Resultado adicional inesperado.");
+                }
+            }
+            resultado = cs.getMoreResults();
+        }
+    }
+
     private void exigirResultado(CallableStatement cs, boolean resultado) throws SQLException {
         while (!resultado && cs.getUpdateCount() != -1) resultado = cs.getMoreResults();
         if (!resultado) throw new SQLException("Falta un resultado de analitica.");
