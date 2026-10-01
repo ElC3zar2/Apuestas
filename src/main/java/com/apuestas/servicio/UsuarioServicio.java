@@ -383,6 +383,59 @@ public class UsuarioServicio {
                 usuario.isCorreoVerificado());
     }
 
+
+    public static boolean correoSesionValido(String correo) {
+        if (correo == null) return false;
+        String normalizado = correo.trim();
+        return !normalizado.isEmpty() && normalizado.length() <= 150
+                && normalizado.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+    }
+
+    public static boolean datosCambioContrasenaValidos(
+            String actual, String nueva, String confirmacion) {
+        return actual != null && !actual.trim().isEmpty()
+                && nueva != null && !nueva.trim().isEmpty() && nueva.length() >= 8
+                // BCrypt solo procesa los primeros 72 bytes; no truncar una clave nueva.
+                && nueva.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 72
+                && confirmacion != null && !confirmacion.isEmpty()
+                && nueva.equals(confirmacion);
+    }
+
+    /** Retorna false si la identidad o la contrasena actual no corresponden. */
+    public boolean cambiarContrasenaUsuario(int idUsuario, String correoSesion,
+            String contrasenaActual, String nuevaContrasena, String confirmarContrasena)
+            throws SQLException {
+        if (idUsuario <= 0 || !correoSesionValido(correoSesion)
+                || !datosCambioContrasenaValidos(
+                        contrasenaActual, nuevaContrasena, confirmarContrasena)) {
+            throw new IllegalArgumentException("Datos de cambio de contrasena invalidos.");
+        }
+        String correo = correoSesion.trim().toLowerCase(Locale.ROOT);
+        UsuarioAutenticacion usuario = usuarioDAO.obtenerUsuarioAutenticacion(correo);
+        if (usuario == null || usuario.getIdUsuario() != idUsuario
+                || usuario.getCorreo() == null
+                || !correo.equals(usuario.getCorreo().trim().toLowerCase(Locale.ROOT))
+                || !"USUARIO".equals(usuario.getRol())) {
+            return false;
+        }
+        String hash = usuario.getHashContrasena();
+        // Mismo formato admitido por el login y la version de jBCrypt del proyecto.
+        if (hash == null || !hash.matches(
+                "^\\$2(?:a)?\\$(?:0[4-9]|[12][0-9]|30)\\$[./A-Za-z0-9]{53}$")) {
+            throw new IllegalStateException("Hash de autenticacion invalido.");
+        }
+        final boolean coincide;
+        try {
+            coincide = EncriptadorContrasena.verificar(contrasenaActual, hash);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("No fue posible verificar el hash.");
+        }
+        if (!coincide) return false;
+        String hashNuevo = EncriptadorContrasena.encriptar(nuevaContrasena);
+        usuarioDAO.cambiarContrasenaUsuario(idUsuario, hashNuevo);
+        return true;
+    }
+
     private static boolean estadoAdmitido(String estado) {
         return "PENDIENTE".equals(estado) || "ACTIVO".equals(estado);
     }

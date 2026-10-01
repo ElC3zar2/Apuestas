@@ -162,6 +162,41 @@ public class UsuarioDAO {
         }
     }
 
+
+    /** Recibe exclusivamente un hash BCrypt generado por el servicio. */
+    public void cambiarContrasenaUsuario(int idUsuario, String hashNuevaContrasena)
+            throws SQLException {
+        if (idUsuario <= 0 || hashNuevaContrasena == null
+                || !hashNuevaContrasena.matches(
+                        "^\\$2a\\$12\\$[./A-Za-z0-9]{53}$")) {
+            throw new IllegalArgumentException("Datos de cambio de contrasena invalidos.");
+        }
+        try (Connection conexion = obtenerConexion();
+             CallableStatement procedimiento = conexion.prepareCall(
+                     "{call dbo.sp_CambiarContrasenaUsuario(?, ?)}")) {
+            procedimiento.setInt(1, idUsuario);
+            procedimiento.setString(2, hashNuevaContrasena);
+            try (ResultSet rs = ejecutarConsulta(procedimiento)) {
+                if (!rs.next()) throw new SQLException("Falta el resultado del cambio.");
+                int idRespuesta = enteroObligatorio(rs, "IdUsuario");
+                boolean actualizada = booleanObligatorio(rs, "ContrasenaActualizada");
+                if (idRespuesta != idUsuario || !actualizada) {
+                    throw new SQLException("Resultado del cambio inconsistente.");
+                }
+                if (rs.next()) throw new SQLException("Resultado del cambio duplicado.");
+            }
+            boolean resultado = procedimiento.getMoreResults();
+            while (resultado || procedimiento.getUpdateCount() != -1) {
+                if (resultado) {
+                    try (ResultSet adicional = procedimiento.getResultSet()) {
+                        throw new SQLException("Resultado adicional del cambio inesperado.");
+                    }
+                }
+                resultado = procedimiento.getMoreResults();
+            }
+        }
+    }
+
     protected Connection obtenerConexion() throws SQLException {
         return ConexionBD.obtenerConexion();
     }
