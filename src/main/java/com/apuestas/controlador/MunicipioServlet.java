@@ -41,74 +41,71 @@ public class MunicipioServlet extends HttpServlet {
                 "application/json;charset=UTF-8"
         );
 
-        String departamentoTexto =
-                request.getParameter("idDepartamento");
-
-        try (PrintWriter out = response.getWriter()) {
-
-            if (departamentoTexto == null
-                    || departamentoTexto.trim().isEmpty()) {
-
-                out.print("[]");
-                return;
+        String departamentoTexto = request.getParameter("idDepartamento");
+        if (departamentoTexto == null || departamentoTexto.trim().isEmpty()) {
+            response.getWriter().print("[]");
+            return;
+        }
+        final int idDepartamento;
+        try {
+            idDepartamento = Integer.parseInt(departamentoTexto.trim());
+            if (idDepartamento <= 0) throw new NumberFormatException();
+        } catch (NumberFormatException e) {
+            response.setStatus(400);
+            response.getWriter().print("[]");
+            return;
+        }
+        try {
+            List<Municipio> municipios = ubicacionDAO.listarMunicipiosPorDepartamento(idDepartamento);
+            StringBuilder json = new StringBuilder("[");
+            for (int i = 0; i < municipios.size(); i++) {
+                if (i > 0) json.append(",");
+                Municipio municipio = municipios.get(i);
+                json.append("{\"idMunicipio\":").append(municipio.getIdMunicipio())
+                    .append(",\"nombre\":\"").append(escaparJson(municipio.getNombre())).append("\"}");
             }
-
-            int idDepartamento =
-                    Integer.parseInt(departamentoTexto);
-
-            List<Municipio> municipios =
-                    ubicacionDAO
-                            .listarMunicipiosPorDepartamento(
-                                    idDepartamento
-                            );
-
-            StringBuilder json =
-                    new StringBuilder("[");
-
-            for (int i = 0;
-                 i < municipios.size();
-                 i++) {
-
-                Municipio municipio =
-                        municipios.get(i);
-
-                if (i > 0) {
-                    json.append(",");
-                }
-
-                json.append("{")
-                    .append("\"idMunicipio\":")
-                    .append(municipio.getIdMunicipio())
-                    .append(",")
-                    .append("\"nombre\":\"")
-                    .append(escaparJson(
-                            municipio.getNombre()
-                    ))
-                    .append("\"")
-                    .append("}");
-            }
-
-            json.append("]");
-
-            out.print(json.toString());
-
-        } catch (Exception e) {
-
-            response.setStatus(
-                    HttpServletResponse
-                            .SC_INTERNAL_SERVER_ERROR
-            );
+            response.getWriter().print(json.append("]").toString());
+        } catch (java.sql.SQLException | RuntimeException e) {
+            response.setStatus(500);
+            response.getWriter().print("[]");
         }
     }
+    private String escaparJson(
+            String texto) {
 
-    private String escaparJson(String texto) {
+        if (texto == null) return "";
+        StringBuilder escapado = new StringBuilder();
 
-        if (texto == null) {
-            return "";
+        for (int i = 0; i < texto.length(); i++) {
+            char caracter = texto.charAt(i);
+
+            switch (caracter) {
+                case '\\':
+                    escapado.append("\\\\");
+                    break;
+                case '"':
+                    escapado.append("\\\"");
+                    break;
+                case '\n':
+                    escapado.append("\\n");
+                    break;
+                case '\r':
+                    escapado.append("\\r");
+                    break;
+                case '\t':
+                    escapado.append("\\t");
+                    break;
+                default:
+                    if (caracter < 0x20) {
+                        escapado.append("\\u00");
+                        escapado.append(Character.forDigit(caracter >> 4, 16));
+                        escapado.append(Character.forDigit(caracter & 0xF, 16));
+                    } else {
+                        escapado.append(caracter);
+                    }
+            }
         }
 
-        return texto
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"");
+        return escapado.toString();
     }
 }

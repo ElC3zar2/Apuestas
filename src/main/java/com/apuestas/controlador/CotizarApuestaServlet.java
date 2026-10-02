@@ -84,7 +84,7 @@ public class CotizarApuestaServlet extends HttpServlet {
             escribirError(
                     response,
                     HttpServletResponse.SC_BAD_REQUEST,
-                    e.getMessage()
+                    "No fue posible procesar los datos de la solicitud."
             );
 
         } catch (SQLException e) {
@@ -100,7 +100,7 @@ public class CotizarApuestaServlet extends HttpServlet {
                             .SC_INTERNAL_SERVER_ERROR
                     ? "No fue posible procesar "
                       + "la cotización."
-                    : e.getMessage();
+                    : "No fue posible procesar los datos de la solicitud.";
 
             escribirError(
                     response,
@@ -446,11 +446,38 @@ public class CotizarApuestaServlet extends HttpServlet {
     private String escaparJson(
             String texto) {
 
-        return texto
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+        StringBuilder escapado = new StringBuilder();
+
+        for (int i = 0; i < texto.length(); i++) {
+            char caracter = texto.charAt(i);
+
+            switch (caracter) {
+                case '\\':
+                    escapado.append("\\\\");
+                    break;
+                case '"':
+                    escapado.append("\\\"");
+                    break;
+                case '\n':
+                    escapado.append("\\n");
+                    break;
+                case '\r':
+                    escapado.append("\\r");
+                    break;
+                case '\t':
+                    escapado.append("\\t");
+                    break;
+                default:
+                    if (caracter < 0x20) {
+                        escapado.append("\\u00");
+                        escapado.append(Character.forDigit(caracter >> 4, 16));
+                        escapado.append(Character.forDigit(caracter & 0xF, 16));
+                    } else {
+                        escapado.append(caracter);
+                    }
+            }
+        }
+
+        return escapado.toString();
     }
 }

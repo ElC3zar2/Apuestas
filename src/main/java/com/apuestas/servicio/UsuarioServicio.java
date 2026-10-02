@@ -59,8 +59,7 @@ public class UsuarioServicio {
         /*
          * CORREO
          */
-        if (usuario.getCorreo() == null
-                || usuario.getCorreo().trim().isEmpty()) {
+        if (!correoSesionValido(usuario.getCorreo())) {
 
             throw new IllegalArgumentException(
                     "El correo es obligatorio."
@@ -71,10 +70,12 @@ public class UsuarioServicio {
          * CONTRASEÑA
          */
         if (usuario.getContrasena() == null
-                || usuario.getContrasena().length() < 8) {
+                || usuario.getContrasena().length() < 8
+                || usuario.getContrasena().trim().isEmpty()
+                || usuario.getContrasena().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
 
             throw new IllegalArgumentException(
-                    "La contraseña debe tener al menos 8 caracteres."
+                    "La contraseña debe tener al menos 8 caracteres y como máximo 72 bytes UTF-8."
             );
         }
 
@@ -281,7 +282,7 @@ public class UsuarioServicio {
         usuario.setCorreo(
                 usuario.getCorreo()
                         .trim()
-                        .toLowerCase()
+                        .toLowerCase(Locale.ROOT)
         );
 
         usuario.setGenero(

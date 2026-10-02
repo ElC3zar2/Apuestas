@@ -29,7 +29,7 @@ public class UsuarioDAO {
                 "{call dbo.sp_RegistrarUsuarioCliente("
                 + "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}";
 
-        try (Connection conexion = ConexionBD.obtenerConexion();
+        try (Connection conexion = obtenerConexion();
              CallableStatement procedimiento = conexion.prepareCall(sql)) {
 
             procedimiento.setString(1, usuario.getNombre());
@@ -71,31 +71,19 @@ public class UsuarioDAO {
                     usuario.getDireccion()
             );
 
-            boolean tieneResultado = procedimiento.execute();
-
-            if (tieneResultado) {
-
-                try (ResultSet resultado =
-                             procedimiento.getResultSet()) {
-
-                    if (resultado.next()) {
-
-                        int idUsuario =
-                                resultado.getInt("IdUsuario");
-
-                        usuario.setIdUsuario(idUsuario);
-
-                        return idUsuario;
-                    }
+            int idUsuario;
+            try (ResultSet resultado = ejecutarConsulta(procedimiento)) {
+                if (!resultado.next()) throw new SQLException("Falta el usuario registrado.");
+                idUsuario = enteroObligatorio(resultado, "IdUsuario");
+                if (idUsuario <= 0 || resultado.next()) {
+                    throw new SQLException("Resultado de registro inconsistente.");
                 }
             }
-
-            throw new SQLException(
-                    "El procedimiento no devolvió el usuario registrado."
-            );
+            comprobarFinVerificacion(procedimiento);
+            usuario.setIdUsuario(idUsuario);
+            return idUsuario;
         }
     }
-
     public UsuarioAutenticacion obtenerUsuarioAutenticacion(String correo)
             throws SQLException {
         try (Connection conexion = obtenerConexion();

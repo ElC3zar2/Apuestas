@@ -28,6 +28,7 @@ import java.util.Map;
  * @author farfa
  */
 public class ExploracionEventoDAO {
+    protected Connection obtenerConexion() throws SQLException { return ConexionBD.obtenerConexion(); }
 
     public List<EventoExploracion> listarEventos(
             int idDeporte,
@@ -44,7 +45,7 @@ public class ExploracionEventoDAO {
                 new ArrayList<>();
 
         try (Connection conexion =
-                     ConexionBD.obtenerConexion();
+                     obtenerConexion();
              CallableStatement cs =
                      conexion.prepareCall(sql)) {
 
@@ -95,7 +96,7 @@ public class ExploracionEventoDAO {
                 + "(?, ?)}";
 
         try (Connection conexion =
-                     ConexionBD.obtenerConexion();
+                     obtenerConexion();
              CallableStatement cs =
                      conexion.prepareCall(sql)) {
 
@@ -140,6 +141,8 @@ public class ExploracionEventoDAO {
                         mapearDetalleEvento(
                                 rs
                         );
+                if (detalle.getIdEvento() != idEvento || rs.next())
+                    throw new SQLException("Encabezado de evento inconsistente.");
             }
 
             boolean tieneParticipantes =
@@ -149,6 +152,7 @@ public class ExploracionEventoDAO {
                     participantes =
                     new ArrayList<>();
 
+            if (!tieneParticipantes) throw new SQLException("Faltan participantes.");
             if (tieneParticipantes) {
 
                 try (ResultSet rs =
@@ -176,6 +180,7 @@ public class ExploracionEventoDAO {
                     mercadosPorId =
                     new LinkedHashMap<>();
 
+            if (!tieneMercados) throw new SQLException("Faltan mercados.");
             if (tieneMercados) {
 
                 try (ResultSet rs =
@@ -225,6 +230,15 @@ public class ExploracionEventoDAO {
                     )
             );
 
+            boolean adicional = cs.getMoreResults();
+            while (adicional || cs.getUpdateCount() != -1) {
+                if (adicional) {
+                    try (ResultSet rs = cs.getResultSet()) {
+                        throw new SQLException("Resultado adicional de evento inesperado.");
+                    }
+                }
+                adicional = cs.getMoreResults();
+            }
             return detalle;
         }
     }

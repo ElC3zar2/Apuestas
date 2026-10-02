@@ -65,23 +65,22 @@ public class ImprimirBoletoServlet extends HttpServlet {
             return;
         }
 
-        Integer idUsuario =
-                obtenerIdUsuarioSesion(
-                        session
-                );
-
-        if (idUsuario == null
-                || idUsuario <= 0) {
-
-            enviarError(
-                    response,
-                    HttpServletResponse.SC_UNAUTHORIZED,
-                    "La sesión del usuario no es válida."
-            );
-
+        Integer idUsuario;
+        Object rol;
+        try {
+            idUsuario = obtenerIdUsuarioSesion(session);
+            rol = session.getAttribute("rol");
+        } catch (IllegalStateException e) {
+            idUsuario = null; rol = null;
+        }
+        if (idUsuario == null) {
+            enviarError(response, 401, "La sesion del usuario no es valida.");
             return;
         }
-
+        if (!"USUARIO".equals(rol)) {
+            enviarError(response, 403, "No tiene permiso para imprimir boletos.");
+            return;
+        }
         String idBoletoTexto =
                 request.getParameter(
                         "idBoleto"
@@ -201,6 +200,7 @@ public class ImprimirBoletoServlet extends HttpServlet {
                     );
 
             response.reset();
+        response.setHeader("Cache-Control", "no-store");
 
             response.setContentType(
                     "application/pdf"
@@ -263,7 +263,7 @@ public class ImprimirBoletoServlet extends HttpServlet {
             enviarError(
                     response,
                     HttpServletResponse.SC_BAD_REQUEST,
-                    e.getMessage()
+                    "No fue posible procesar el boleto."
             );
 
         } catch (Exception e) {
@@ -282,42 +282,18 @@ public class ImprimirBoletoServlet extends HttpServlet {
      * Contrato de sesión:
      * session.setAttribute("idUsuario", idUsuario);
      */
-    private Integer obtenerIdUsuarioSesion(
-            HttpSession session) {
-
-        Object valor =
-                session.getAttribute(
-                        "idUsuario"
-                );
-
-        if (valor == null) {
+    private Integer obtenerIdUsuarioSesion(HttpSession session) {
+        Object valor = session.getAttribute("idUsuario");
+        if (!(valor instanceof Number) && !(valor instanceof String)) return null;
+        try {
+            String texto = valor.toString().trim();
+            if (valor instanceof String && !texto.matches("[0-9]+")) return null;
+            int id = new java.math.BigDecimal(texto).intValueExact();
+            return id > 0 ? id : null;
+        } catch (ArithmeticException | NumberFormatException e) {
             return null;
         }
-
-        if (valor instanceof Number) {
-
-            return ((Number) valor)
-                    .intValue();
-        }
-
-        if (valor instanceof String) {
-
-            try {
-
-                return Integer.valueOf(
-                        ((String) valor)
-                                .trim()
-                );
-
-            } catch (NumberFormatException e) {
-
-                return null;
-            }
-        }
-
-        return null;
     }
-
     private void manejarErrorSQL(
             HttpServletResponse response,
             SQLException e)
@@ -391,6 +367,7 @@ public class ImprimirBoletoServlet extends HttpServlet {
         }
 
         response.reset();
+        response.setHeader("Cache-Control", "no-store");
 
         response.setStatus(
                 estado

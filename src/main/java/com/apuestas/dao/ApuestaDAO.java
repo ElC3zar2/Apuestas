@@ -37,7 +37,7 @@ public class ApuestaDAO {
                 "{call dbo.sp_CotizarApuesta(?, ?)}";
 
         try (Connection conexion =
-                     ConexionBD.obtenerConexion();
+                     obtenerConexion();
              CallableStatement cs =
                      conexion.prepareCall(sql)) {
 
@@ -122,6 +122,7 @@ public class ApuestaDAO {
                                 "GananciaPotencial"
                         )
                 );
+                if (rs.next()) throw new SQLException("Cotizacion duplicada.");
             }
 
             boolean tieneDetalle =
@@ -130,6 +131,7 @@ public class ApuestaDAO {
             List<DetalleCotizacionApuesta> detalles =
                     new ArrayList<>();
 
+            if (!tieneDetalle) throw new SQLException("Falta el detalle de cotizacion.");
             if (tieneDetalle) {
 
                 try (ResultSet rs =
@@ -205,6 +207,7 @@ public class ApuestaDAO {
                     detalles
             );
 
+            comprobarFinConsulta(cs);
             return cotizacion;
         }
     }
@@ -302,7 +305,7 @@ public class ApuestaDAO {
                 "{call dbo.sp_ObtenerBoleto(?, ?, ?)}";
 
         try (Connection conexion =
-                     ConexionBD.obtenerConexion();
+                     obtenerConexion();
              CallableStatement cs =
                      conexion.prepareCall(sql)) {
 
@@ -471,12 +474,14 @@ public class ApuestaDAO {
                                 "ReferenciaOperacion"
                         )
                 );
+                if (rs.next()) throw new SQLException("Encabezado de boleto duplicado.");
             }
 
             List<DetalleBoleto> detalles =
                     new ArrayList<>();
 
-            if (cs.getMoreResults()) {
+            if (!cs.getMoreResults()) throw new SQLException("Falta el detalle del boleto.");
+            {
 
                 try (ResultSet rs =
                              cs.getResultSet()) {
@@ -551,7 +556,20 @@ public class ApuestaDAO {
                     detalles
             );
 
+            comprobarFinConsulta(cs);
             return boleto;
+        }
+    }
+
+    private void comprobarFinConsulta(CallableStatement cs) throws SQLException {
+        boolean resultado = cs.getMoreResults();
+        while (resultado || cs.getUpdateCount() != -1) {
+            if (resultado) {
+                try (ResultSet adicional = cs.getResultSet()) {
+                    throw new SQLException("Resultado adicional inesperado.");
+                }
+            }
+            resultado = cs.getMoreResults();
         }
     }
 

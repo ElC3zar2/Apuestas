@@ -39,6 +39,8 @@ public class RegistroUsuarioServlet extends HttpServlet {
             HttpServletResponse response)
             throws ServletException, IOException {
 
+        response.setContentType("text/html;charset=UTF-8");
+        response.setHeader("Cache-Control", "no-store");
         try {
 
             request.setAttribute(
@@ -56,11 +58,11 @@ public class RegistroUsuarioServlet extends HttpServlet {
             ).forward(request, response);
 
         } catch (Exception e) {
+            response.setStatus(e instanceof IllegalArgumentException
+                    || e instanceof java.time.format.DateTimeParseException ? 400 : 500);
 
-            throw new ServletException(
-                    "No fue posible cargar los catálogos de ubicación.",
-                    e
-            );
+            response.setStatus(500);
+            response.getWriter().print("No fue posible cargar el registro.");
         }
     }
 
@@ -72,6 +74,8 @@ public class RegistroUsuarioServlet extends HttpServlet {
 
         request.setCharacterEncoding("UTF-8");
 
+        response.setContentType("text/html;charset=UTF-8");
+        response.setHeader("Cache-Control", "no-store");
         try {
 
             String nombre =
@@ -273,6 +277,8 @@ public class RegistroUsuarioServlet extends HttpServlet {
             ).forward(request, response);
 
         } catch (Exception e) {
+            response.setStatus(e instanceof IllegalArgumentException
+                    || e instanceof java.time.format.DateTimeParseException ? 400 : 500);
 
             try {
 
@@ -288,15 +294,16 @@ public class RegistroUsuarioServlet extends HttpServlet {
 
             } catch (Exception catalogoError) {
 
-                throw new ServletException(
-                        "No fue posible recargar los catálogos.",
-                        catalogoError
-                );
+                response.setStatus(500);
+                response.getWriter().print("No fue posible cargar el registro.");
+                return;
             }
 
             request.setAttribute(
                     "error",
-                    e.getMessage()
+                    (e instanceof IllegalArgumentException || e instanceof java.time.format.DateTimeParseException)
+                            ? "Los datos de registro no son validos."
+                            : "No fue posible completar el registro."
             );
 
             request.getRequestDispatcher(

@@ -70,6 +70,14 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>config.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
 
             <!-- Compilación con Java 11 -->
@@ -89,6 +97,8 @@
                 <version>3.4.0</version>
                 <configuration>
                     <failOnMissingWebXml>false</failOnMissingWebXml>
+                    <!-- Tambien bloquea copias residuales en target de builds anteriores. -->
+                    <packagingExcludes>**/config.properties</packagingExcludes>
                 </configuration>
             </plugin>
             
