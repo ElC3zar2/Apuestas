@@ -202,11 +202,20 @@ public class UsuarioDAO {
     /** El tipo esta fijado: este metodo no crea tokens de recuperacion. */
     public ResultadoTokenVerificacionCorreo crearTokenVerificacionCorreo(
             String correo, String tokenHash) throws SQLException {
+        return crearTokenSeguridad(correo, "VERIFICACION_CORREO", tokenHash);
+    }
+
+    public boolean crearTokenRecuperacionContrasena(String correo, String tokenHash) throws SQLException {
+        return crearTokenSeguridad(correo, "RECUPERACION_CONTRASENA", tokenHash).isTokenCreado();
+    }
+
+    private ResultadoTokenVerificacionCorreo crearTokenSeguridad(
+            String correo, String tipo, String tokenHash) throws SQLException {
         validarHashVerificacion(tokenHash);
         try (Connection conexion = obtenerConexion();
              CallableStatement cs = conexion.prepareCall("{call dbo.sp_CrearTokenSeguridad(?, ?, ?)}")) {
             cs.setString(1, correo);
-            cs.setString(2, "VERIFICACION_CORREO");
+            cs.setString(2, tipo);
             cs.setString(3, tokenHash);
             ResultadoTokenVerificacionCorreo resultado;
             try (ResultSet rs = ejecutarConsulta(cs)) {
@@ -218,7 +227,8 @@ public class UsuarioDAO {
                 if ((idUsuario != null && idUsuario <= 0)
                         || (creado && (idToken == null || idToken <= 0
                                       || idUsuario == null || expiracion == null))
-                        || (!creado && (idToken != null || expiracion != null))) {
+                        || (!creado && (idToken != null || expiracion != null))
+                        || (!creado && "RECUPERACION_CONTRASENA".equals(tipo) && idUsuario != null)) {
                     throw new SQLException("Resultado de creacion del token inconsistente.");
                 }
                 resultado = new ResultadoTokenVerificacionCorreo(creado, idToken, idUsuario, expiracion);
@@ -270,6 +280,26 @@ public class UsuarioDAO {
         }
     }
 
+    /** Solo recibe hashes; SQL valida y consume el token atomicamente. */
+    public void restablecerContrasenaConToken(String tokenHash, String hashContrasena) throws SQLException {
+        validarHashVerificacion(tokenHash);
+        if (hashContrasena == null || !hashContrasena.matches("^\\$2a\\$12\\$[./A-Za-z0-9]{53}$")) {
+            throw new IllegalArgumentException("Contrasena protegida invalida.");
+        }
+        try (Connection conexion = obtenerConexion();
+             CallableStatement cs = conexion.prepareCall("{call dbo.sp_RestablecerContrasenaConToken(?, ?)}")) {
+            cs.setString(1, tokenHash);
+            cs.setString(2, hashContrasena);
+            try (ResultSet rs = ejecutarConsulta(cs)) {
+                if (!rs.next()) throw new SQLException("Falta el resultado del restablecimiento.");
+                int id = enteroObligatorio(rs, "IdUsuario");
+                boolean actualizada = booleanObligatorio(rs, "ContrasenaActualizada");
+                if (id <= 0 || !actualizada) throw new SQLException("Resultado de restablecimiento inconsistente.");
+                if (rs.next()) throw new SQLException("Resultado de restablecimiento duplicado.");
+            }
+            comprobarFinVerificacion(cs);
+        }
+    }
     protected Connection obtenerConexion() throws SQLException {
         return ConexionBD.obtenerConexion();
     }

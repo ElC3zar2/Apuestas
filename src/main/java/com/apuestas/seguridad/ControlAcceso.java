@@ -27,7 +27,9 @@ public class ControlAcceso implements Filter {
         }
         if ("/usuario/login".equals(ruta) || "/usuario/login.jsp".equals(ruta)
                 || "/usuario/logout".equals(ruta) || "/usuario/boletos/imprimir".equals(ruta)
-                || "/usuario/seguridad/verificacion-correo/confirmar".equals(ruta)) {
+                || "/usuario/seguridad/verificacion-correo/confirmar".equals(ruta)
+                || "/usuario/seguridad/recuperacion-contrasena/solicitar".equals(ruta)
+                || "/usuario/seguridad/recuperacion-contrasena/restablecer".equals(ruta)) {
             chain.doFilter(request, response);
             return;
         }
