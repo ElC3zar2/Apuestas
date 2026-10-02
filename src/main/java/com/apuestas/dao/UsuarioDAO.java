@@ -5,6 +5,7 @@
  */
 package com.apuestas.dao;
 import com.apuestas.modelo.Usuario;
+import com.apuestas.modelo.ResultadoTokenVerificacionCorreo;
 import com.apuestas.modelo.UsuarioAutenticacion;
 import com.apuestas.modelo.ResultadoIntentoLogin;
 import java.sql.Timestamp;
@@ -194,6 +195,78 @@ public class UsuarioDAO {
                 }
                 resultado = procedimiento.getMoreResults();
             }
+        }
+    }
+
+
+    /** El tipo esta fijado: este metodo no crea tokens de recuperacion. */
+    public ResultadoTokenVerificacionCorreo crearTokenVerificacionCorreo(
+            String correo, String tokenHash) throws SQLException {
+        validarHashVerificacion(tokenHash);
+        try (Connection conexion = obtenerConexion();
+             CallableStatement cs = conexion.prepareCall("{call dbo.sp_CrearTokenSeguridad(?, ?, ?)}")) {
+            cs.setString(1, correo);
+            cs.setString(2, "VERIFICACION_CORREO");
+            cs.setString(3, tokenHash);
+            ResultadoTokenVerificacionCorreo resultado;
+            try (ResultSet rs = ejecutarConsulta(cs)) {
+                if (!rs.next()) throw new SQLException("Falta el resultado de creacion del token.");
+                boolean creado = booleanObligatorio(rs, "TokenCreado");
+                Integer idToken = enteroNullableVerificacion(rs, "IdToken");
+                Integer idUsuario = enteroNullableVerificacion(rs, "IdUsuario");
+                LocalDateTime expiracion = fechaNullable(rs, "FechaExpiracion");
+                if ((idUsuario != null && idUsuario <= 0)
+                        || (creado && (idToken == null || idToken <= 0
+                                      || idUsuario == null || expiracion == null))
+                        || (!creado && (idToken != null || expiracion != null))) {
+                    throw new SQLException("Resultado de creacion del token inconsistente.");
+                }
+                resultado = new ResultadoTokenVerificacionCorreo(creado, idToken, idUsuario, expiracion);
+                if (rs.next()) throw new SQLException("Resultado de creacion del token duplicado.");
+            }
+            comprobarFinVerificacion(cs);
+            return resultado;
+        }
+    }
+
+    public void verificarCorreoConToken(String tokenHash) throws SQLException {
+        validarHashVerificacion(tokenHash);
+        try (Connection conexion = obtenerConexion();
+             CallableStatement cs = conexion.prepareCall("{call dbo.sp_VerificarCorreoConToken(?)}")) {
+            cs.setString(1, tokenHash);
+            try (ResultSet rs = ejecutarConsulta(cs)) {
+                if (!rs.next()) throw new SQLException("Falta el resultado de verificacion.");
+                int idUsuario = enteroObligatorio(rs, "IdUsuario");
+                boolean verificado = booleanObligatorio(rs, "CorreoVerificado");
+                if (idUsuario <= 0 || !verificado) {
+                    throw new SQLException("Resultado de verificacion inconsistente.");
+                }
+                if (rs.next()) throw new SQLException("Resultado de verificacion duplicado.");
+            }
+            comprobarFinVerificacion(cs);
+        }
+    }
+
+    private void validarHashVerificacion(String tokenHash) {
+        if (tokenHash == null || !tokenHash.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("Hash de verificacion invalido.");
+        }
+    }
+
+    private Integer enteroNullableVerificacion(ResultSet rs, String columna) throws SQLException {
+        int valor = rs.getInt(columna);
+        return rs.wasNull() ? null : valor;
+    }
+
+    private void comprobarFinVerificacion(CallableStatement cs) throws SQLException {
+        boolean resultado = cs.getMoreResults();
+        while (resultado || cs.getUpdateCount() != -1) {
+            if (resultado) {
+                try (ResultSet adicional = cs.getResultSet()) {
+                    throw new SQLException("Resultado adicional de verificacion inesperado.");
+                }
+            }
+            resultado = cs.getMoreResults();
         }
     }
 

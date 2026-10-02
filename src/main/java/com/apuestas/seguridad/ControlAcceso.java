@@ -26,7 +26,8 @@ public class ControlAcceso implements Filter {
             ruta += req.getPathInfo();
         }
         if ("/usuario/login".equals(ruta) || "/usuario/login.jsp".equals(ruta)
-                || "/usuario/logout".equals(ruta) || "/usuario/boletos/imprimir".equals(ruta)) {
+                || "/usuario/logout".equals(ruta) || "/usuario/boletos/imprimir".equals(ruta)
+                || "/usuario/seguridad/verificacion-correo/confirmar".equals(ruta)) {
             chain.doFilter(request, response);
             return;
         }
