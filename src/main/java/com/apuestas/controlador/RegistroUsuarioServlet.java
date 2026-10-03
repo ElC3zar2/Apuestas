@@ -41,6 +41,7 @@ public class RegistroUsuarioServlet extends HttpServlet {
 
         response.setContentType("text/html;charset=UTF-8");
         response.setHeader("Cache-Control", "no-store");
+        request.setAttribute("fechaLimiteNacimiento", usuarioServicio.fechaLimiteNacimiento().toString());
         try {
 
             request.setAttribute(
@@ -76,6 +77,7 @@ public class RegistroUsuarioServlet extends HttpServlet {
 
         response.setContentType("text/html;charset=UTF-8");
         response.setHeader("Cache-Control", "no-store");
+        request.setAttribute("fechaLimiteNacimiento", usuarioServicio.fechaLimiteNacimiento().toString());
         try {
 
             String nombre =
@@ -120,25 +122,7 @@ public class RegistroUsuarioServlet extends HttpServlet {
             String direccion =
                     request.getParameter("direccion");
 
-            LocalDate fechaNacimiento = null;
-
-            if (fechaTexto != null
-                    && !fechaTexto.trim().isEmpty()) {
-
-                fechaNacimiento =
-                        LocalDate.parse(fechaTexto);
-                    LocalDate fechaLimite =
-            LocalDate.now().minusYears(18);
-
-            if (fechaNacimiento.isAfter(fechaLimite)) {
-
-                throw new IllegalArgumentException(
-                        "Debes ser mayor de edad para crear una cuenta."
-                );
-            }
-            }
-            
-            
+            LocalDate fechaNacimiento = usuarioServicio.interpretarFechaNacimiento(fechaTexto);
 
             int idPais = 0;
 
@@ -301,7 +285,8 @@ public class RegistroUsuarioServlet extends HttpServlet {
 
             request.setAttribute(
                     "error",
-                    (e instanceof IllegalArgumentException || e instanceof java.time.format.DateTimeParseException)
+                    e instanceof UsuarioServicio.FechaNacimientoException ? e.getMessage()
+                            : (e instanceof IllegalArgumentException || e instanceof java.time.format.DateTimeParseException)
                             ? "Los datos de registro no son validos."
                             : "No fue posible completar el registro."
             );

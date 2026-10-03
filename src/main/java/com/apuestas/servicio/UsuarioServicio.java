@@ -20,9 +20,10 @@ import java.sql.SQLException;
 public class UsuarioServicio {
 
     private final UsuarioDAO usuarioDAO;
+    private final java.time.Clock reloj;
 
     public UsuarioServicio() {
-        this.usuarioDAO = new UsuarioDAO();
+        this(new UsuarioDAO());
     }
 
     public int registrarCliente(Usuario usuario)
@@ -82,12 +83,7 @@ public class UsuarioServicio {
         /*
          * FECHA DE NACIMIENTO
          */
-        if (usuario.getFechaNacimiento() == null) {
-
-            throw new IllegalArgumentException(
-                    "La fecha de nacimiento es obligatoria."
-            );
-        }
+        validarFechaNacimiento(usuario.getFechaNacimiento());
 
         /*
          * GÉNERO
@@ -314,7 +310,48 @@ public class UsuarioServicio {
     }
 
     public UsuarioServicio(UsuarioDAO usuarioDAO) {
+        this(usuarioDAO, java.time.Clock.systemDefaultZone());
+    }
+
+    /** El reloj del servidor define el mismo dia civil para backend y formulario. */
+    public UsuarioServicio(UsuarioDAO usuarioDAO, java.time.Clock reloj) {
         this.usuarioDAO = java.util.Objects.requireNonNull(usuarioDAO);
+        this.reloj = java.util.Objects.requireNonNull(reloj);
+    }
+
+    public java.time.LocalDate fechaLimiteNacimiento() {
+        return java.time.LocalDate.now(reloj).minusYears(18);
+    }
+
+    public java.time.LocalDate interpretarFechaNacimiento(String texto) {
+        if (texto == null || !texto.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+            throw new FechaNacimientoException(false);
+        }
+        final java.time.LocalDate fecha;
+        try {
+            fecha = java.time.LocalDate.parse(texto);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new FechaNacimientoException(false);
+        }
+        validarFechaNacimiento(fecha);
+        return fecha;
+    }
+
+    private void validarFechaNacimiento(java.time.LocalDate fecha) {
+        if (fecha == null || fecha.getYear() < 1 || fecha.getYear() > 9999) {
+            throw new FechaNacimientoException(false);
+        }
+        if (fecha.isAfter(fechaLimiteNacimiento())) {
+            throw new FechaNacimientoException(true);
+        }
+    }
+
+    /** Solo estos mensajes de validacion son seguros para el formulario. */
+    public static final class FechaNacimientoException extends IllegalArgumentException {
+        private FechaNacimientoException(boolean menor) {
+            super(menor ? "Debes ser mayor de edad para crear una cuenta."
+                    : "Fecha de nacimiento inválida.");
+        }
     }
 
     public ResultadoLogin autenticar(String correo, String contrasena, String ipOrigen)

@@ -247,24 +247,6 @@ function cargarMunicipios() {
             municipio.innerHTML = '<option value="">Error al cargar municipios</option>';
             console.error(error);
         });
-        
-        
-        /*
-        * =====================================================
-        * Validacion para menores de edad
-        * =====================================================
-        */
-        const fechaNacimiento = document.getElementById("fechaNacimiento");
-        const hoy = new Date();
-
-        const fechaMinima = new Date(
-            hoy.getFullYear() - 18,
-            hoy.getMonth(),
-            hoy.getDate()
-        );
-
-        // Impide seleccionar una fecha que indique menos de 18 años
-        fechaNacimiento.max = fechaMinima.toISOString().split("T")[0];
 }
 
 
