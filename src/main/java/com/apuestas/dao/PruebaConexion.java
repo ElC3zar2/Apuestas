@@ -1,39 +1,28 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package com.apuestas.dao;
-/**
- *
- * @author cesar
- */
+
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 
+/** Comprueba apertura y cierre; no ejecuta consultas ni muestra datos de conexion. */
 public class PruebaConexion {
-
     public static void main(String[] args) {
-
-        try (Connection conexion = ConexionBD.obtenerConexion()) {
-
-            DatabaseMetaData meta = conexion.getMetaData();
-
-            System.out.println("=================================");
-            System.out.println("CONEXION EXITOSA");
-            System.out.println("=================================");
-            System.out.println("Servidor: " + meta.getURL());
-            System.out.println("Base de datos: " + conexion.getCatalog());
-            System.out.println("Usuario: " + meta.getUserName());
-            System.out.println("=================================");
-
-        } catch (Exception e) {
-
-            System.out.println("=================================");
-            System.out.println("ERROR DE CONEXION");
-            System.out.println("=================================");
-
-            e.printStackTrace();
+        boolean correcto = false;
+        boolean poolInicializado = false;
+        try {
+            Connection conexion = ConexionBD.obtenerConexion();
+            poolInicializado = true;
+            try (Connection cerrar = conexion) {
+                if (cerrar.isClosed()) throw new IllegalStateException();
+            }
+            correcto = true;
+        } catch (Exception | LinkageError e) {
+            System.err.println("No fue posible completar la prueba de conexion. Revise la configuracion y conectividad.");
+        } finally {
+            if (poolInicializado) {
+                try { ConexionBD.cerrarPool(); }
+                catch (RuntimeException e) { correcto = false; }
+            }
         }
+        if (!correcto) System.exit(1);
+        System.out.println("CONEXION EXITOSA: conexion y pool cerrados.");
     }
 }

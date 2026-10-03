@@ -233,10 +233,11 @@ public class PruebaAuditoriaUsuario {
         caso("registro runtime privado",()->registroHttp(new IllegalStateException("INTERNO_PRIVADO"),500));
         caso("registro validacion privada",()->registroHttp(new IllegalArgumentException("INTERNO_PRIVADO"),400));
         caso("registro correcto",()->registroHttp(null,200));
-        caso("config local excluida del empaquetado",()->{
+        caso("config local disponible y excluida del control de versiones",()->{
             String pom=Files.readString(Paths.get("pom.xml"));
-            exigir(pom.contains("<exclude>config.properties</exclude>")
-                    && pom.contains("<packagingExcludes>**/config.properties</packagingExcludes>"));
+            exigir(!pom.contains("<exclude>config.properties</exclude>")
+                    && !pom.contains("<packagingExcludes>**/config.properties</packagingExcludes>"));
+            exigir(Files.readAllLines(Paths.get(".gitignore")).contains("src/main/resources/config.properties"));
         });        for(String entrada:Arrays.asList("abc","0","-1","2147483648")) {
             caso("municipios parametro invalido",()->municipio(entrada,400,false));
         }

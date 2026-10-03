@@ -2,6 +2,9 @@ package com.apuestas.dao;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import java.io.InputStream;
+import java.io.IOException;
+import java.util.Properties;
 import java.sql.Connection;
 import java.sql.SQLException;
 
@@ -9,9 +12,19 @@ public class ConexionBD {
     private static final HikariDataSource DATA_SOURCE;
 
     static {
-        String url = variableRequerida("APUESTAS_DB_URL");
-        String usuario = variableRequerida("APUESTAS_DB_USUARIO");
-        String password = variableRequerida("APUESTAS_DB_PASSWORD");
+        Properties propiedades = new Properties();
+        try (InputStream entrada = ConexionBD.class.getClassLoader()
+                .getResourceAsStream("config.properties")) {
+            if (entrada == null) {
+                throw new ExceptionInInitializerError("Falta config.properties en el classpath.");
+            }
+            propiedades.load(entrada);
+        } catch (IOException | IllegalArgumentException e) {
+            throw new ExceptionInInitializerError("No fue posible leer config.properties.");
+        }
+        String url = propiedadRequerida(propiedades, "db.url");
+        String usuario = propiedadRequerida(propiedades, "db.usuario");
+        String password = propiedadRequerida(propiedades, "db.password");
         try {
             HikariConfig configuracion = new HikariConfig();
             configuracion.setDriverClassName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
@@ -31,10 +44,10 @@ public class ConexionBD {
         }
     }
 
-    private static String variableRequerida(String nombre) {
-        String valor = System.getenv(nombre);
+    private static String propiedadRequerida(Properties propiedades, String nombre) {
+        String valor = propiedades.getProperty(nombre);
         if (valor == null || valor.trim().isEmpty()) {
-            throw new IllegalStateException("Falta configuracion externa de base de datos: " + nombre);
+            throw new IllegalStateException("Falta propiedad requerida de base de datos: " + nombre);
         }
         return valor;
     }

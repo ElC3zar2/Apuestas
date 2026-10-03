@@ -10,7 +10,7 @@ import javax.tools.ToolProvider;
 
 /** Inicializa la clase real en procesos aislados, sustituyendo solo Hikari por dobles sin red. */
 public class PruebaConfiguracionBD {
-    private static final String[] VARIABLES={"APUESTAS_DB_URL","APUESTAS_DB_USUARIO","APUESTAS_DB_PASSWORD"};
+    private static final String[] CLAVES={"db.url","db.usuario","db.password"};
     private static final String[] VALORES={"jdbc:sqlserver://servidor-ficticio.invalid","usuario-ficticio","clave-ficticia-prueba"};
     private static void exigir(boolean valor){if(!valor)throw new AssertionError("Validacion de configuracion fallida");}
 
@@ -35,9 +35,27 @@ public class PruebaConfiguracionBD {
         exigir(resultado==0);return raiz;
     }
 
-    private static void hijo(String modo,Path dobles) throws Exception {
+    private static void hijo(String modo,Path dobles, String clave, String valor) throws Exception {
         Path clase=Paths.get("target/classes/com/apuestas/dao/ConexionBD.class");
         try(URLClassLoader loader=new URLClassLoader(new URL[]{dobles.toUri().toURL()},ClassLoader.getPlatformClassLoader()){
+            @Override public InputStream getResourceAsStream(String nombre) {
+                if (!nombre.equals("config.properties")) return super.getResourceAsStream(nombre);
+                if (modo.equals("ausente")) return null;
+                if (modo.equals("lectura")) return new InputStream() {
+                    public int read() throws IOException { throw new IOException(VALORES[2]); }
+                };
+                Properties propiedades = new Properties();
+                for(int i=0;i<CLAVES.length;i++) propiedades.setProperty(CLAVES[i],VALORES[i]);
+                if (!clave.equals("-")) {
+                    if (valor.equals("NULL")) propiedades.remove(clave);
+                    else propiedades.setProperty(clave,valor);
+                }
+                try {
+                    ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+                    propiedades.store(bytes,null);
+                    return new ByteArrayInputStream(bytes.toByteArray());
+                } catch(IOException e) { throw new AssertionError(); }
+            }
             @Override protected Class<?> findClass(String nombre)throws ClassNotFoundException {
                 if(nombre.equals("com.apuestas.dao.ConexionBD")){
                     try{byte[] bytes=Files.readAllBytes(clase);return defineClass(nombre,bytes,0,bytes.length);}
@@ -72,7 +90,7 @@ public class PruebaConfiguracionBD {
                 exigir(error!=null);
                 StringWriter texto=new StringWriter();error.printStackTrace(new PrintWriter(texto));
                 for(String secreto:VALORES)exigir(!texto.toString().contains(secreto));
-                if(!modo.equals("proveedor"))exigir(texto.toString().contains(modo));
+                if(modo.startsWith("db."))exigir(texto.toString().contains(modo));
                 else exigir(error.getCause()==null);
             }
         }
@@ -82,11 +100,8 @@ public class PruebaConfiguracionBD {
     private static void proceso(Path dobles,String modo,String variable,String valor)throws Exception{
         String ejecutableJava=Paths.get(System.getProperty("java.home"),"bin","java.exe").toString();
         ProcessBuilder pb=new ProcessBuilder(ejecutableJava,"-cp",System.getProperty("java.class.path"),
-                PruebaConfiguracionBD.class.getName(),"hijo",modo,dobles.toString());
-        for(int i=0;i<VARIABLES.length;i++)pb.environment().put(VARIABLES[i],VALORES[i]);
-        if(variable!=null){
-            if(valor==null)pb.environment().remove(variable);else pb.environment().put(variable,valor);
-        }
+                PruebaConfiguracionBD.class.getName(),"hijo",modo,dobles.toString(),
+                variable==null?"-":variable,valor==null?"NULL":valor);
         pb.redirectErrorStream(true);
         Process proceso=pb.start();
         if(!proceso.waitFor(30,TimeUnit.SECONDS)){proceso.destroyForcibly();throw new AssertionError("Tiempo de prueba excedido");}
@@ -95,20 +110,27 @@ public class PruebaConfiguracionBD {
     }
 
     public static void main(String[] args)throws Exception{
-        if(args.length>0 && args[0].equals("hijo")){hijo(args[1],Paths.get(args[2]));return;}
+        if(args.length>0 && args[0].equals("hijo")){hijo(args[1],Paths.get(args[2]),args[3],args[4]);return;}
         if(args.length>0 && args[0].equals("war")){
             try(ZipFile war=new ZipFile("target/PlataformaApuestas-1.0-SNAPSHOT.war")){
-                Enumeration<? extends ZipEntry> entradas=war.entries();
-                while(entradas.hasMoreElements()){
-                    String nombre=entradas.nextElement().getName();
-                    exigir(!nombre.equals("config.properties") && !nombre.endsWith("/config.properties"));
-                }
+                exigir(war.getEntry("WEB-INF/classes/config.properties")!=null);
                 exigir(war.getEntry("WEB-INF/classes/reportes/boleto_cliente.jrxml")!=null);
             }
-            System.out.println("OK: 1 caso de WAR sin config.properties y con recursos de reportes.");return;
+            System.out.println("OK: 1 caso de WAR con config.properties y con recursos de reportes.");return;
+        }
+        if(args.length>0 && args[0].equals("local")){
+            Properties p=new Properties();
+            try(InputStream in=Files.newInputStream(Paths.get("src/main/resources/config.properties"))){p.load(in);}
+            for(String clave:CLAVES){
+                String valor=p.getProperty(clave);
+                System.out.println(clave+": "+(valor==null?"ausente":valor.trim().isEmpty()?"vacia":"presente"));
+            }
+            return;
         }
         Path dobles=dobles();int casos=0;
-        for(String variable:VARIABLES){
+        proceso(dobles,"ausente",null,null);casos++;
+        proceso(dobles,"lectura",null,null);casos++;
+        for(String variable:CLAVES){
             for(String valor:new String[]{null,"","   "}){proceso(dobles,variable,variable,valor);casos++;}
         }
         proceso(dobles,"correcto",null,null);casos++;
