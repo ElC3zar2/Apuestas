@@ -54,7 +54,8 @@ public class ControlAccesoAdministrativo implements Filter {
         // Las APIs de gestion requieren JSON incluso cuando el filtro corta la solicitud.
         if(com.apuestas.modelo.OperacionAdministracionUsuario.deRuta(ruta)!=null
                 || com.apuestas.modelo.OperacionAdministracionEventos.deRuta(ruta)!=null
-                || com.apuestas.modelo.OperacionAdministracionResultados.deRuta(ruta)!=null){
+                || com.apuestas.modelo.OperacionAdministracionResultados.deRuta(ruta)!=null
+                || com.apuestas.modelo.OperacionLiquidacionAdministrativa.deRuta(ruta)!=null){
             com.apuestas.controlador.AdministracionUsuarioHttp.error(res,estado);
             return;
         }
