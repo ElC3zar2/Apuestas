@@ -36,21 +36,26 @@ public class ControlAccesoAdministrativo implements Filter {
             valida=SesionAdministrativa.valida(s);
         }catch(IllegalStateException expirada){s=null;valida=false;}
         catch(RuntimeException e){
-            error(res,500,"No fue posible procesar la solicitud.");return;
+            error(ruta,res,500,"No fue posible procesar la solicitud.");return;
         }
         if(s==null) {
             if(("GET".equals(req.getMethod()) || "HEAD".equals(req.getMethod()))
                     && (ruta.endsWith(".jsp") || "/administrador/".equals(ruta))) redirigir(req,res);
-            else error(res,401,"Autenticación requerida.");
+            else error(ruta,res,401,"Autenticación requerida.");
             return;
         }
-        if(!valida){error(res,403,"Acceso no permitido.");return;}
+        if(!valida){error(ruta,res,403,"Acceso no permitido.");return;}
         chain.doFilter(req,res);
     }
     private static void redirigir(HttpServletRequest req,HttpServletResponse res) {
         res.setStatus(303);res.setHeader("Location",req.getContextPath()+"/administrador/login");
     }
-    private static void error(HttpServletResponse res,int estado,String mensaje)throws IOException {
+    private static void error(String ruta,HttpServletResponse res,int estado,String mensaje)throws IOException {
+        // Las APIs de gestion requieren JSON incluso cuando el filtro corta la solicitud.
+        if(com.apuestas.modelo.OperacionAdministracionUsuario.deRuta(ruta)!=null){
+            com.apuestas.controlador.AdministracionUsuarioHttp.error(res,estado);
+            return;
+        }
         res.setStatus(estado);res.setContentType("text/plain;charset=UTF-8");res.getWriter().print(mensaje);
     }
 }
