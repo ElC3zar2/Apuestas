@@ -55,7 +55,8 @@ public class ControlAccesoAdministrativo implements Filter {
         if(com.apuestas.modelo.OperacionAdministracionUsuario.deRuta(ruta)!=null
                 || com.apuestas.modelo.OperacionAdministracionEventos.deRuta(ruta)!=null
                 || com.apuestas.modelo.OperacionAdministracionResultados.deRuta(ruta)!=null
-                || com.apuestas.modelo.OperacionLiquidacionAdministrativa.deRuta(ruta)!=null){
+                || com.apuestas.modelo.OperacionLiquidacionAdministrativa.deRuta(ruta)!=null
+                || com.apuestas.modelo.OperacionDashboardAdministrativo.deRuta(ruta)!=null){
             com.apuestas.controlador.AdministracionUsuarioHttp.error(res,estado);
             return;
         }
