@@ -117,6 +117,7 @@ public class PruebaAdministracionUsuario {
                 if(!r.containsKey(col))throw new SQLException(PRIVADO);
                 Object v=r.get(col);nulo[0]=v==null;
                 switch(m.getName()){
+                    case "getObject":return v;
                     case "getInt":return v==null?0:(Integer)v;
                     case "getBoolean":return v==null?false:(Boolean)v;
                     case "getString":return (String)v;

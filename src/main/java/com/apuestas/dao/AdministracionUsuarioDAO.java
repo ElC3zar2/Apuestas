@@ -23,24 +23,32 @@ public class AdministracionUsuarioDAO {
     }
     private static void unica(ResultSet rs)throws SQLException{if(!rs.next())throw contrato();}
     private static void ultima(ResultSet rs)throws SQLException{if(rs.next())throw contrato();}
+    // getObject impide conversiones silenciosas (p. ej. DECIMAL 19.9 a INT 19).
+    private static <T> T valor(ResultSet r,String c,boolean nullable,Class<T> tipo)throws SQLException {
+        Object v=r.getObject(c);
+        if(v==null&&nullable)return null;
+        if(!tipo.isInstance(v))throw contrato();
+        return tipo.cast(v);
+    }
     private static Integer id(ResultSet r,String c,boolean nullable)throws SQLException {
-        int v=r.getInt(c);if(r.wasNull()){if(nullable)return null;throw contrato();}
-        if(v<=0)throw contrato();return v;
+        Integer v=valor(r,c,nullable,Integer.class);
+        if(v!=null&&v<=0)throw contrato();return v;
     }
     private static String texto(ResultSet r,String c,boolean nullable)throws SQLException {
-        String v=r.getString(c);if(!nullable&&(v==null||v.trim().isEmpty()))throw contrato();return v;
+        String v=valor(r,c,nullable,String.class);
+        if(!nullable&&v.trim().isEmpty())throw contrato();return v;
     }
     private static Boolean bit(ResultSet r,String c,boolean nullable)throws SQLException {
-        boolean v=r.getBoolean(c);if(r.wasNull()){if(nullable)return null;throw contrato();}return v;
+        return valor(r,c,nullable,Boolean.class);
     }
     private static LocalDateTime fecha(ResultSet r,String c,boolean nullable)throws SQLException {
-        Timestamp v=r.getTimestamp(c);if(v==null&&!nullable)throw contrato();return v==null?null:v.toLocalDateTime();
+        Timestamp v=valor(r,c,nullable,Timestamp.class);return v==null?null:v.toLocalDateTime();
     }
     private static LocalDate dia(ResultSet r,String c,boolean nullable)throws SQLException {
-        java.sql.Date v=r.getDate(c);if(v==null&&!nullable)throw contrato();return v==null?null:v.toLocalDate();
+        java.sql.Date v=valor(r,c,nullable,java.sql.Date.class);return v==null?null:v.toLocalDate();
     }
     private static BigDecimal decimal(ResultSet r,String c,boolean nullable)throws SQLException {
-        BigDecimal v=r.getBigDecimal(c);if(v==null&&!nullable)throw contrato();return v;
+        return valor(r,c,nullable,BigDecimal.class);
     }
     private static void cadena(CallableStatement cs,int i,String s)throws SQLException {
         if(s==null)cs.setNull(i,Types.VARCHAR);else cs.setString(i,s);
