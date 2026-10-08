@@ -86,7 +86,7 @@
             <span class="dot"></span> BetZone
         </a>
         <div class="navbar__actions">
-            <a href="${pageContext.request.contextPath}/usuario/login.jsp" class="btn btn--login">Iniciar sesión</a>
+            <a href="${pageContext.request.contextPath}/usuario/login" class="btn btn--login">Iniciar sesión</a>
             <a href="${pageContext.request.contextPath}/registro" class="btn btn--signup">Crear cuenta</a>
             <a href="${pageContext.request.contextPath}/administrador/login.jsp" class="btn btn--admin" aria-label="Acceso administrador" title="Acceso administrador">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
