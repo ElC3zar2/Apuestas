@@ -27,7 +27,7 @@
             <a href="${pageContext.request.contextPath}/eventos/listar-eventos.jsp">Eventos</a>
             <a href="${pageContext.request.contextPath}/apuestas/mis-boletos.jsp">Mis apuestas</a>
             <a href="${pageContext.request.contextPath}/billetera/mi-billetera.jsp">Billetera</a>
-            <a href="#mi-cuenta">Mi cuenta</a>
+            <a href="${pageContext.request.contextPath}/usuario/mi-cuenta.jsp">Mi cuenta</a>
         </nav>
         <form action="${pageContext.request.contextPath}/usuario/logout" method="POST"><button class="logout" type="submit">Cerrar sesión <span aria-hidden="true">↗</span></button></form>
     </header>

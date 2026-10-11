@@ -1,0 +1,36 @@
+.security-page { min-height: calc(100vh - 155px); }
+.session-info { margin-bottom: 24px; }
+.session-facts { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 22px; margin-top: 24px; }
+.session-facts dd { margin-top: 9px; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.security-note { margin-bottom: 0; }
+.security-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; align-items: start; }
+.security-grid > *, .session-facts > * { min-width: 0; }
+.security-form { display: grid; gap: 20px; }
+.security-field { min-width: 0; }
+.security-field label { display: block; font-size: 13px; line-height: 1.6; margin-bottom: 9px; color: var(--muted); }
+.security-input { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,.16); }
+.security-field input { display: block; width: 100%; min-width: 0; min-height: 48px; padding: 12px; font: 16px var(--body); color: var(--text); background: rgba(0,0,0,.16); border: 1px solid var(--border); border-radius: 10px; }
+.security-input input { flex: 1; background: transparent; border: 0; }
+.security-field input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.security-field input[aria-invalid="true"] { outline: 1px solid #FFBDCF; }
+.reveal { flex: 0 0 auto; min-width: 78px; min-height: 48px; padding: 10px; border: 0; border-left: 1px solid var(--border); border-radius: 0 10px 10px 0; background: transparent; color: var(--cyan); font-size: 12px; }
+.security-form .button { border: 0; min-height: 48px; white-space: normal; line-height: 1.6; }
+.security-form .button-secondary { background: transparent; border: 1px solid rgba(0,255,255,.25); color: var(--cyan); }
+.security-form button:disabled, .security-form input:disabled { cursor: wait; opacity: .6; }
+.security-message { margin: 0; padding: 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; background: rgba(255,255,255,.025); }
+.security-message.is-error { color: #FFBDCF; border-color: rgba(255,45,158,.25); }
+.security-message.is-success { color: var(--green); border-color: rgba(0,255,102,.25); }
+.security-message.is-pending { color: var(--cyan); }
+.security-login { color: var(--cyan); white-space: normal; line-height: 1.7; }
+.code-form { border-top: 1px solid var(--border); margin-top: 26px; padding-top: 16px; }
+.security-public { min-height: calc(100vh - 60px); display: flex; justify-content: center; align-items: center; padding: 48px 24px; }
+.public-card { width: 100%; max-width: 520px; padding: 36px; }
+.public-card .brand { margin-bottom: 32px; }
+.public-card h1 { font-size: clamp(27px,4vw,34px); }
+.public-card .security-form { margin-top: 24px; }
+.public-links { display: grid; gap: 16px; margin-top: 26px; font-size: 13px; line-height: 1.7; }
+.public-links a { color: var(--cyan); overflow-wrap: anywhere; }
+.public-links a:hover { text-decoration: underline; }
+@media (max-width: 1000px) { .session-facts { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 760px) { .security-grid { grid-template-columns: minmax(0,1fr); } .security-public { padding: 26px 18px; } .public-card { padding: 26px; } }
+@media (max-width: 400px) { .session-facts { grid-template-columns: minmax(0,1fr); } .security-public { padding: 24px 14px; } .public-card { padding: 22px 18px; } }
