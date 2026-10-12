@@ -229,6 +229,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @RolUsuarioProceso VARCHAR(50);
         DECLARE @EstadoUsuarioProceso VARCHAR(40);
@@ -363,6 +370,11 @@ BEGIN
             SET @SaldoDisponiblePosterior = @SaldoDisponibleAnterior - @Monto;
         END;
 
+
+        /* Los ajustes nunca consumen saldo comprometido ni alteran reservas de boletos. */
+        IF EXISTS(SELECT 1 FROM dbo.Usuario U JOIN dbo.Rol R ON R.IdRol=U.IdRol WHERE U.IdUsuario=@IdUsuarioObjetivo AND R.Nombre='CASA')
+           AND @SaldoComprometido<>(SELECT ISNULL(SUM(ReservaCasaPendiente),0) FROM dbo.Boleto WHERE IdBilleteraCasaReserva=@IdBilletera)
+            THROW 76407,'Conciliacion CASA inconsistente; revisar antes de ajustar.',1;
         DECLARE @IdTransaccion BIGINT;
 
         INSERT INTO dbo.TransaccionFinanciera

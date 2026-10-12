@@ -531,6 +531,12 @@ BEGIN
     CREATE TABLE dbo.Deporte
     (
         IdDeporte INT IDENTITY(1,1) NOT NULL,
+        UnidadMarcador VARCHAR(15) NULL,
+        PermiteMarcadorFinal BIT NOT NULL CONSTRAINT DF_Deporte_Marcador DEFAULT 0,
+        PermitePrimeraAnotacion BIT NOT NULL CONSTRAINT DF_Deporte_Primera DEFAULT 0,
+        CONSTRAINT CK_Deporte_Unidad CHECK
+          ((UnidadMarcador IS NULL AND PermiteMarcadorFinal=0 AND PermitePrimeraAnotacion=0)
+           OR (UnidadMarcador IS NOT NULL AND UnidadMarcador IN ('GOL','PUNTO','CARRERA'))),
         Nombre VARCHAR(100) NOT NULL,
         Descripcion VARCHAR(250) NULL,
 
@@ -651,6 +657,15 @@ BEGIN
             CONSTRAINT DF_Evento_FechaCreacion
             DEFAULT SYSDATETIME(),
 
+        EsSimulado BIT NOT NULL CONSTRAINT DF_Evento_Simulado DEFAULT 0,
+        DuracionSimulacionSegundos INT NULL,
+        FechaInicioRealUtc DATETIME2 NULL,
+        FechaFinRealUtc DATETIME2 NULL,
+        CONSTRAINT CK_Evento_Simulacion CHECK
+          ((EsSimulado=0 AND DuracionSimulacionSegundos IS NULL)
+           OR (EsSimulado=1 AND DuracionSimulacionSegundos IS NOT NULL AND DuracionSimulacionSegundos>0)),
+        CONSTRAINT CK_Evento_TiemposReales CHECK
+          (FechaFinRealUtc IS NULL OR (FechaInicioRealUtc IS NOT NULL AND FechaFinRealUtc>=FechaInicioRealUtc)),
         VersionFila ROWVERSION NOT NULL,
 
         CONSTRAINT PK_Evento PRIMARY KEY (IdEvento),
@@ -692,6 +707,8 @@ BEGIN
         OrdenParticipante TINYINT NOT NULL,
 
         EsLocal BIT NULL,
+        MarcadorActual INT NULL,
+        CONSTRAINT CK_EventoParticipante_Marcador CHECK (MarcadorActual IS NULL OR MarcadorActual>=0),
 
         CONSTRAINT PK_EventoParticipante
             PRIMARY KEY (IdEventoParticipante),
@@ -732,6 +749,9 @@ BEGIN
         IdEvento INT NOT NULL,
         IdEstado INT NOT NULL,
 
+        TipoMercado VARCHAR(30) NOT NULL CONSTRAINT DF_Mercado_Tipo DEFAULT 'CONVENCIONAL',
+        CONSTRAINT CK_Mercado_Tipo CHECK (TipoMercado IN ('CONVENCIONAL','MARCADOR_FINAL','PRIMERA_ANOTACION')),
+        CONSTRAINT UQ_Mercado_Id_Evento UNIQUE(IdMercado,IdEvento),
         Nombre VARCHAR(150) NOT NULL,
         Descripcion VARCHAR(250) NULL,
 
@@ -766,6 +786,12 @@ BEGIN
         IdSeleccion INT IDENTITY(1,1) NOT NULL,
         IdMercado INT NOT NULL,
 
+        IdEvento INT NOT NULL,
+        IdParticipante INT NULL,
+        CONSTRAINT FK_Seleccion_MercadoEvento FOREIGN KEY(IdMercado,IdEvento)
+          REFERENCES dbo.Mercado(IdMercado,IdEvento),
+        CONSTRAINT FK_Seleccion_EventoParticipante FOREIGN KEY(IdEvento,IdParticipante)
+          REFERENCES dbo.EventoParticipante(IdEvento,IdParticipante),
         Nombre VARCHAR(150) NOT NULL,
 
         Activo BIT NOT NULL
@@ -799,6 +825,8 @@ BEGIN
         IdSeleccion INT NOT NULL,
 
         Valor DECIMAL(10,4) NOT NULL,
+        ValorResultado DECIMAL(10,4) NULL,
+        CONSTRAINT CK_Cuota_DosPremios CHECK(ValorResultado IS NULL OR (ValorResultado>1 AND ValorResultado<Valor)),
 
         FechaInicio DATETIME2 NOT NULL
             CONSTRAINT DF_Cuota_FechaInicio
@@ -835,6 +863,48 @@ GO
    20. RESULTADO EVENTO
    ============================================================ */
 
+
+/* Incidencias deportivas. Instalacion limpia: sin migracion historica. */
+IF OBJECT_ID('dbo.IncidenciaEvento','U') IS NULL
+BEGIN
+    CREATE TABLE dbo.IncidenciaEvento
+    (
+        IdIncidencia BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_IncidenciaEvento PRIMARY KEY,
+        IdEvento INT NOT NULL,
+        Secuencia INT NOT NULL,
+        ReferenciaOperacion UNIQUEIDENTIFIER NOT NULL,
+        TipoIncidencia VARCHAR(25) NOT NULL,
+        IdParticipante INT NULL,
+        ValorAnotacion INT NULL,
+        SegundoSimulacion INT NOT NULL,
+        FechaRegistroUtc DATETIME2 NOT NULL CONSTRAINT DF_Incidencia_Fecha DEFAULT SYSUTCDATETIME(),
+        Descripcion VARCHAR(500) NULL,
+        IdUsuarioRegistro INT NOT NULL,
+        EsAnulada BIT NOT NULL CONSTRAINT DF_Incidencia_Anulada DEFAULT 0,
+        MotivoAnulacion VARCHAR(500) NULL,
+        IdUsuarioAnulacion INT NULL,
+        FechaAnulacionUtc DATETIME2 NULL,
+        VersionFila ROWVERSION NOT NULL,
+        CONSTRAINT FK_Incidencia_Evento FOREIGN KEY(IdEvento) REFERENCES dbo.Evento(IdEvento),
+        CONSTRAINT FK_Incidencia_Participante FOREIGN KEY(IdEvento,IdParticipante) REFERENCES dbo.EventoParticipante(IdEvento,IdParticipante),
+        CONSTRAINT FK_Incidencia_Usuario FOREIGN KEY(IdUsuarioRegistro) REFERENCES dbo.Usuario(IdUsuario),
+        CONSTRAINT FK_Incidencia_UsuarioAnulacion FOREIGN KEY(IdUsuarioAnulacion) REFERENCES dbo.Usuario(IdUsuario),
+        CONSTRAINT UQ_Incidencia_Secuencia UNIQUE(IdEvento,Secuencia),
+        CONSTRAINT UQ_Incidencia_Referencia UNIQUE(ReferenciaOperacion),
+        CONSTRAINT UQ_Incidencia_EventoId UNIQUE(IdEvento,IdIncidencia),
+        CONSTRAINT CK_Incidencia_Tipo CHECK(TipoIncidencia IN ('ANOTACION','FALTA','TARJETA_AMARILLA','TARJETA_ROJA','OTRA')),
+        CONSTRAINT CK_Incidencia_Orden CHECK(Secuencia>0 AND SegundoSimulacion>=0),
+        CONSTRAINT CK_Incidencia_Anotacion CHECK
+          ((TipoIncidencia='ANOTACION' AND IdParticipante IS NOT NULL AND ValorAnotacion IS NOT NULL AND ValorAnotacion>0)
+           OR (TipoIncidencia<>'ANOTACION' AND ValorAnotacion IS NULL)),
+        CONSTRAINT CK_Incidencia_Anulacion CHECK
+          ((EsAnulada=0 AND MotivoAnulacion IS NULL AND IdUsuarioAnulacion IS NULL AND FechaAnulacionUtc IS NULL)
+           OR (EsAnulada=1 AND MotivoAnulacion IS NOT NULL AND LEN(LTRIM(RTRIM(MotivoAnulacion)))>0
+               AND IdUsuarioAnulacion IS NOT NULL AND FechaAnulacionUtc IS NOT NULL AND FechaAnulacionUtc>=FechaRegistroUtc))
+    );
+END;
+GO
+
 IF OBJECT_ID('dbo.ResultadoEvento', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.ResultadoEvento
@@ -845,6 +915,14 @@ BEGIN
         IdEstado INT NOT NULL,
         IdUsuarioRegistro INT NOT NULL,
 
+        MarcadorFinalA INT NULL,
+        MarcadorFinalB INT NULL,
+        IdIncidenciaPrimeraAnotacion BIGINT NULL,
+        CONSTRAINT CK_ResultadoEvento_Marcador CHECK
+          ((MarcadorFinalA IS NULL AND MarcadorFinalB IS NULL)
+           OR (MarcadorFinalA IS NOT NULL AND MarcadorFinalB IS NOT NULL AND MarcadorFinalA>=0 AND MarcadorFinalB>=0)),
+        CONSTRAINT FK_ResultadoEvento_PrimeraIncidencia FOREIGN KEY(IdEvento,IdIncidenciaPrimeraAnotacion)
+          REFERENCES dbo.IncidenciaEvento(IdEvento,IdIncidencia),
         ResultadoTexto VARCHAR(250) NOT NULL,
         Observacion VARCHAR(500) NULL,
 
@@ -995,6 +1073,14 @@ BEGIN
 
         ReferenciaOperacion UNIQUEIDENTIFIER NOT NULL,
 
+        IdBilleteraCasaReserva INT NULL,
+        ReservaCasaInicial DECIMAL(12,2) NOT NULL CONSTRAINT DF_Boleto_ReservaInicial DEFAULT 0,
+        ReservaCasaPendiente DECIMAL(12,2) NOT NULL CONSTRAINT DF_Boleto_ReservaPendiente DEFAULT 0,
+        CONSTRAINT FK_Boleto_CasaReserva FOREIGN KEY(IdBilleteraCasaReserva) REFERENCES dbo.Billetera(IdBilletera),
+        CONSTRAINT CK_Boleto_Reserva CHECK
+          (ReservaCasaInicial>=0 AND ReservaCasaPendiente>=0
+           AND ReservaCasaPendiente IN (0,ReservaCasaInicial)
+           AND (ReservaCasaInicial=0 OR IdBilleteraCasaReserva IS NOT NULL)),
         MontoApostado DECIMAL(12,2) NOT NULL,
 
         ComisionServicio DECIMAL(12,2) NOT NULL
@@ -1090,6 +1176,29 @@ BEGIN
         IdBoleto INT NOT NULL,
         IdSeleccion INT NOT NULL,
 
+        TipoMercadoAplicado VARCHAR(30) NOT NULL CONSTRAINT DF_DetalleBoleto_Tipo DEFAULT 'CONVENCIONAL',
+        PronosticoA INT NULL,
+        PronosticoB INT NULL,
+        CuotaResultadoAplicada DECIMAL(10,4) NULL,
+        ClasificacionAcierto VARCHAR(25) NULL,
+        CuotaLiquidacion DECIMAL(10,4) NULL,
+        NombreEventoAplicado VARCHAR(200) NULL,
+        NombreParticipanteAAplicado VARCHAR(150) NULL,
+        NombreParticipanteBAplicado VARCHAR(150) NULL,
+        NombreSeleccionAplicada VARCHAR(150) NULL,
+        CONSTRAINT CK_DetalleBoleto_Tipo CHECK(TipoMercadoAplicado IN ('CONVENCIONAL','MARCADOR_FINAL','PRIMERA_ANOTACION')),
+        CONSTRAINT CK_DetalleBoleto_Pronostico CHECK
+          ((TipoMercadoAplicado='MARCADOR_FINAL' AND PronosticoA IS NOT NULL AND PronosticoB IS NOT NULL
+            AND PronosticoA>=0 AND PronosticoB>=0 AND CuotaResultadoAplicada IS NOT NULL
+            AND CuotaResultadoAplicada>1 AND CuotaResultadoAplicada<CuotaAplicada)
+           OR (TipoMercadoAplicado<>'MARCADOR_FINAL' AND PronosticoA IS NULL AND PronosticoB IS NULL AND CuotaResultadoAplicada IS NULL)),
+        CONSTRAINT CK_DetalleBoleto_Clasificacion CHECK
+          (ClasificacionAcierto IS NULL OR ClasificacionAcierto IN ('EXACTO','RESULTADO','PRIMERA_ANOTACION','NO_ACIERTO','ANULADO')),
+        CONSTRAINT CK_DetalleBoleto_Liquidacion CHECK
+          ((Resultado='PENDIENTE' AND CuotaLiquidacion IS NULL AND ClasificacionAcierto IS NULL)
+           OR (Resultado='GANADA' AND (CuotaLiquidacion IS NULL OR CuotaLiquidacion>1))
+           OR (Resultado='PERDIDA' AND (CuotaLiquidacion IS NULL OR CuotaLiquidacion=0))
+           OR (Resultado='ANULADA' AND (CuotaLiquidacion IS NULL OR CuotaLiquidacion=1))),
         CuotaAplicada DECIMAL(10,4) NOT NULL,
 
         Resultado VARCHAR(20) NOT NULL
@@ -1429,6 +1538,6 @@ GO
 
 
 PRINT '=======================================================';
-PRINT ' 30 TABLAS DE PlataformaApuestas VERIFICADAS / CREADAS';
+PRINT ' 31 TABLAS DE PlataformaApuestas VERIFICADAS / CREADAS';
 PRINT '=======================================================';
 GO

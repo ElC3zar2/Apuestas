@@ -188,6 +188,11 @@ BEGIN
         ON DB.IdBoleto = B.IdBoleto
 
     WHERE EB.Codigo = 'PENDIENTE'
+      AND NOT EXISTS(SELECT 1 FROM dbo.DetalleBoleto DD JOIN dbo.Seleccion SS ON SS.IdSeleccion=DD.IdSeleccion
+        LEFT JOIN dbo.ResultadoEvento RE ON RE.IdEvento=SS.IdEvento LEFT JOIN dbo.Estado ER ON ER.IdEstado=RE.IdEstado
+        WHERE DD.IdBoleto=B.IdBoleto AND (ER.Codigo IS NULL OR ER.Codigo NOT IN('OFICIAL','ANULADO')))
+      AND NOT EXISTS(SELECT 1 FROM dbo.DetalleBoleto DD WHERE DD.IdBoleto=B.IdBoleto AND DD.TipoMercadoAplicado<>'CONVENCIONAL'
+        AND (DD.ClasificacionAcierto IS NULL OR DD.CuotaLiquidacion IS NULL))
 
       AND NOT EXISTS
       (
@@ -405,6 +410,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
 
         /* ====================================================
@@ -565,6 +577,14 @@ BEGIN
            DETERMINAR RESULTADO DEL BOLETO
            ==================================================== */
 
+        /* Nunca pagar resoluciones preliminares ni datos escritos fuera del flujo oficial. */
+        IF EXISTS(SELECT 1 FROM dbo.DetalleBoleto DB JOIN dbo.Seleccion S ON S.IdSeleccion=DB.IdSeleccion
+          LEFT JOIN dbo.ResultadoEvento RE ON RE.IdEvento=S.IdEvento LEFT JOIN dbo.Estado ER ON ER.IdEstado=RE.IdEstado
+          WHERE DB.IdBoleto=@IdBoleto AND (ER.Codigo IS NULL OR ER.Codigo NOT IN('OFICIAL','ANULADO')))
+            THROW 76401,'Todos los eventos deben tener resultado OFICIAL o ANULADO.',1;
+        IF EXISTS(SELECT 1 FROM dbo.DetalleBoleto WHERE IdBoleto=@IdBoleto AND TipoMercadoAplicado<>'CONVENCIONAL'
+          AND (CuotaLiquidacion IS NULL OR ClasificacionAcierto IS NULL))
+            THROW 76402,'Modalidad sin clasificacion calculada por oficializacion.',1;
         DECLARE @ResultadoFinal VARCHAR(20);
         DECLARE @MontoLiquidado DECIMAL(12,2);
         DECLARE @GananciaNeta DECIMAL(12,2) = 0;
@@ -599,7 +619,7 @@ BEGIN
                 Cuota
             )
             SELECT
-                CuotaAplicada
+                COALESCE(CuotaLiquidacion,CuotaAplicada)
             FROM dbo.DetalleBoleto
             WHERE IdBoleto = @IdBoleto
               AND Resultado = 'GANADA'
@@ -785,6 +805,38 @@ BEGIN
             THROW 62030, 'El saldo comprometido del usuario es insuficiente para liquidar el boleto.', 1;
 
 
+        DECLARE @ReservaLiberar DECIMAL(12,2),@CasaReservada INT;
+        SELECT @ReservaLiberar=ReservaCasaPendiente,@CasaReservada=IdBilleteraCasaReserva FROM dbo.Boleto WHERE IdBoleto=@IdBoleto;
+        IF @CasaReservada IS NULL OR @CasaReservada<>@IdBilleteraCasa OR @ReservaLiberar IS NULL OR @ReservaLiberar<0
+            THROW 76403,'El boleto no posee reserva valida de la contraparte CASA.',1;
+        IF @CasaComprometidoAnterior<@ReservaLiberar
+            THROW 76404,'Saldo comprometido CASA inconsistente con reservas.',1;
+        IF (@ResultadoFinal='GANADOR' AND @GananciaNeta>@ReservaLiberar)
+          OR (@ResultadoFinal='ANULADO' AND @ComisionServicio>@ReservaLiberar)
+            THROW 76405,'La obligacion excede el respaldo congelado del boleto.',1;
+        IF @ReservaLiberar>0
+        BEGIN
+        DECLARE @TipoLiberacion INT=(SELECT IdTipoTransaccion FROM dbo.TipoTransaccion WHERE Codigo='LIBERACION_RESERVA_CASA' AND Activo=1),
+                @TransLiberacion BIGINT,@FechaLiberacion DATETIME2=SYSDATETIME();
+        IF @TipoLiberacion IS NULL THROW 76406,'Falta LIBERACION_RESERVA_CASA.',1;
+        INSERT dbo.TransaccionFinanciera(IdBilletera,IdTipoTransaccion,IdEstado,IdBoleto,ReferenciaOperacion,Monto,
+          FechaSolicitud,FechaProcesamiento,IdUsuarioProceso,Descripcion)
+        VALUES(@IdBilleteraCasa,@TipoLiberacion,@IdEstadoTransaccionCompletada,@IdBoleto,NEWID(),@ReservaLiberar,
+          @FechaLiberacion,@FechaLiberacion,@IdUsuarioProceso,'Liberacion atomica previa a liquidacion.');
+        SET @TransLiberacion=SCOPE_IDENTITY();
+        UPDATE dbo.Billetera SET SaldoDisponible=SaldoDisponible+@ReservaLiberar,SaldoComprometido=SaldoComprometido-@ReservaLiberar
+          WHERE IdBilletera=@IdBilleteraCasa;
+        INSERT dbo.MovimientoBilletera(IdBilletera,IdTransaccion,SaldoDisponibleAnterior,SaldoDisponiblePosterior,
+          SaldoComprometidoAnterior,SaldoComprometidoPosterior)
+        VALUES(@IdBilleteraCasa,@TransLiberacion,@CasaDisponibleAnterior,@CasaDisponibleAnterior+@ReservaLiberar,
+          @CasaComprometidoAnterior,@CasaComprometidoAnterior-@ReservaLiberar);
+        SET @CasaDisponibleAnterior=@CasaDisponibleAnterior+@ReservaLiberar;
+        SET @CasaComprometidoAnterior=@CasaComprometidoAnterior-@ReservaLiberar;
+        UPDATE dbo.Boleto SET ReservaCasaPendiente=0 WHERE IdBoleto=@IdBoleto;
+        INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
+        VALUES(@IdUsuarioProceso,'LIBERACION_RESERVA_CASA','Boleto',@IdBoleto,@IpOrigen,CONCAT('Reserva liberada=',@ReservaLiberar));
+
+        END;
         /* CASA necesita solvencia para pagar ganancias
         y para devolver la comisión de un boleto anulado. */
 
@@ -1667,6 +1719,9 @@ BEGIN
         ON UP.IdUsuario = LB.IdUsuarioProceso
 
     WHERE LB.IdBoleto = @IdBoleto;
+
+    SELECT TipoMercadoAplicado,PronosticoA,PronosticoB,ClasificacionAcierto,CuotaAplicada,CuotaResultadoAplicada,CuotaLiquidacion
+    FROM dbo.DetalleBoleto WHERE IdBoleto=@IdBoleto;
 END;
 GO
 

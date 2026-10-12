@@ -270,6 +270,14 @@ BEGIN TRY
         );
     END;
 
+    INSERT dbo.ConfiguracionSistema(Clave,Valor,Descripcion)
+    SELECT V.Clave,V.Valor,V.Descripcion FROM (VALUES
+      ('DURACION_SIMULACION_SEGUNDOS','300','Duracion visual; el administrador finaliza manualmente.'),
+      ('MULTIPLICADOR_MARCADOR_EXACTO_DEFAULT','3.00','Retorno total por marcador exacto; se copia a Cuota.'),
+      ('MULTIPLICADOR_MARCADOR_RESULTADO_DEFAULT','1.50','Retorno total por acertar solo ganador o empate.'),
+      ('MULTIPLICADOR_PRIMERA_ANOTACION_DEFAULT','1.80','Retorno total por primera anotacion.')
+    ) V(Clave,Valor,Descripcion)
+    WHERE NOT EXISTS(SELECT 1 FROM dbo.ConfiguracionSistema C WHERE C.Clave=V.Clave);
     COMMIT TRANSACTION;
 
     PRINT 'ConfiguracionSistema cargada correctamente.';

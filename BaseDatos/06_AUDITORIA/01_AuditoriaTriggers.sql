@@ -3,7 +3,7 @@
    SQL SERVER 2022 / AZURE SQL
 
    ARCHIVO:
-   05_VISTAS/02_AuditoriaTriggers.sql
+   06_AUDITORIA/01_AuditoriaTriggers.sql
 
    OBJETIVO:
    Cerrar la capa definitiva de auditoría sin duplicar los
@@ -279,3 +279,25 @@ PRINT '=======================================================';
 PRINT ' AUDITORIA Y TRIGGERS DEFINITIVOS CREADOS / VERIFICADOS';
 PRINT '=======================================================';
 GO  
+/* Una incidencia conserva sus datos originales; solo pasa de vigente a anulada. */
+CREATE OR ALTER TRIGGER dbo.tr_IncidenciaEvento_ProtegerHistorial
+ON dbo.IncidenciaEvento
+AFTER UPDATE, DELETE
+AS
+BEGIN
+ SET NOCOUNT ON;
+ IF EXISTS(SELECT 1 FROM deleted D LEFT JOIN inserted I ON I.IdIncidencia=D.IdIncidencia WHERE I.IdIncidencia IS NULL)
+    THROW 76501,'No se permite eliminar incidencias.',1;
+ IF EXISTS(
+   SELECT IdIncidencia,IdEvento,Secuencia,ReferenciaOperacion,TipoIncidencia,IdParticipante,ValorAnotacion,
+          SegundoSimulacion,FechaRegistroUtc,Descripcion,IdUsuarioRegistro FROM inserted
+   EXCEPT
+   SELECT IdIncidencia,IdEvento,Secuencia,ReferenciaOperacion,TipoIncidencia,IdParticipante,ValorAnotacion,
+          SegundoSimulacion,FechaRegistroUtc,Descripcion,IdUsuarioRegistro FROM deleted)
+    THROW 76502,'Los datos originales de la incidencia son inmutables.',1;
+ IF EXISTS(SELECT 1 FROM inserted I JOIN deleted D ON D.IdIncidencia=I.IdIncidencia
+    JOIN dbo.Evento EV ON EV.IdEvento=I.IdEvento JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado
+    WHERE D.EsAnulada=1 OR I.EsAnulada<>1 OR E.Codigo NOT IN('EN_VIVO','PENDIENTE_RESULTADO'))
+    THROW 76503,'Solo se admite anulacion trazable antes de oficializar.',1;
+END;
+GO

@@ -3,7 +3,7 @@
    SQL SERVER 2022 / AZURE SQL
 
    ARCHIVO:
-   03_PROCEDIMIENTOS/09_AnaliticaApuestas.sql
+   03_PROCEDIMIENTOS/09_AnaliticaUsuario.sql
 
    OBJETIVO:
    Centralizar indicadores, estadísticas y resúmenes derivados
@@ -357,6 +357,21 @@ BEGIN
         B.FechaCreacion DESC,
         B.IdBoleto DESC,
         DB.IdDetalle;
+
+    /* Result set adicional por modalidad: no sumar importes de boletos compuestos por detalle. */
+    SELECT DB.TipoMercadoAplicado,COUNT_BIG(*) AS CantidadDetalles,
+      SUM(CASE WHEN DB.ClasificacionAcierto='EXACTO' THEN 1 ELSE 0 END) AS MarcadoresExactos,
+      SUM(CASE WHEN DB.ClasificacionAcierto='RESULTADO' THEN 1 ELSE 0 END) AS AciertosResultado,
+      SUM(CASE WHEN DB.ClasificacionAcierto='PRIMERA_ANOTACION' THEN 1 ELSE 0 END) AS AciertosPrimeraAnotacion
+    FROM dbo.DetalleBoleto DB JOIN dbo.Boleto B ON B.IdBoleto=DB.IdBoleto
+    JOIN dbo.Seleccion S ON S.IdSeleccion=DB.IdSeleccion JOIN dbo.Evento EV ON EV.IdEvento=S.IdEvento
+    JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga
+    WHERE B.IdUsuario=@IdUsuario AND (@IdDeporte IS NULL OR L.IdDeporte=@IdDeporte)
+    GROUP BY DB.TipoMercadoAplicado;
+
+    SELECT V.* FROM dbo.vw_DetalleBoletos V
+    WHERE V.IdUsuario=@IdUsuario AND (@IdDeporte IS NULL OR V.IdDeporte=@IdDeporte)
+    ORDER BY V.IdBoleto DESC,V.IdDetalle;
 END;
 GO
 
@@ -716,6 +731,17 @@ BEGIN
             WHEN 'Tenis' THEN 4
             ELSE 5
         END;
+
+    /* Result set adicional por modalidad: no sumar importes de boletos compuestos por detalle. */
+    SELECT DB.TipoMercadoAplicado,COUNT_BIG(*) AS CantidadDetalles,
+      SUM(CASE WHEN DB.ClasificacionAcierto='EXACTO' THEN 1 ELSE 0 END) AS MarcadoresExactos,
+      SUM(CASE WHEN DB.ClasificacionAcierto='RESULTADO' THEN 1 ELSE 0 END) AS AciertosResultado,
+      SUM(CASE WHEN DB.ClasificacionAcierto='PRIMERA_ANOTACION' THEN 1 ELSE 0 END) AS AciertosPrimeraAnotacion
+    FROM dbo.DetalleBoleto DB JOIN dbo.Boleto B ON B.IdBoleto=DB.IdBoleto
+    JOIN dbo.Seleccion S ON S.IdSeleccion=DB.IdSeleccion JOIN dbo.Evento EV ON EV.IdEvento=S.IdEvento
+    JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga
+    WHERE B.IdUsuario=@IdUsuario 
+    GROUP BY DB.TipoMercadoAplicado;
 END;
 GO
 
@@ -1105,5 +1131,16 @@ BEGIN
 
     WHERE B.IdUsuario =
           @IdUsuario;
+
+    /* Result set adicional por modalidad: no sumar importes de boletos compuestos por detalle. */
+    SELECT DB.TipoMercadoAplicado,COUNT_BIG(*) AS CantidadDetalles,
+      SUM(CASE WHEN DB.ClasificacionAcierto='EXACTO' THEN 1 ELSE 0 END) AS MarcadoresExactos,
+      SUM(CASE WHEN DB.ClasificacionAcierto='RESULTADO' THEN 1 ELSE 0 END) AS AciertosResultado,
+      SUM(CASE WHEN DB.ClasificacionAcierto='PRIMERA_ANOTACION' THEN 1 ELSE 0 END) AS AciertosPrimeraAnotacion
+    FROM dbo.DetalleBoleto DB JOIN dbo.Boleto B ON B.IdBoleto=DB.IdBoleto
+    JOIN dbo.Seleccion S ON S.IdSeleccion=DB.IdSeleccion JOIN dbo.Evento EV ON EV.IdEvento=S.IdEvento
+    JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga
+    WHERE B.IdUsuario=@IdUsuario 
+    GROUP BY DB.TipoMercadoAplicado;
 END;
 GO

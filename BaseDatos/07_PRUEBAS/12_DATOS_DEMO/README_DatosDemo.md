@@ -5,9 +5,10 @@ Estos archivos preparan información ficticia para mostrar y probar el sistema s
 ## Orden recomendado
 
 1. Ejecutar `01_DatosDemoRevision.sql`.
-2. Ejecutar `02_VerificarDatosDemo.sql` para comprobar los datos.
-3. Usar la aplicación con los usuarios de prueba.
-4. Solo si se desea retirar la información ficticia, ejecutar `03_LimpiarDatosDemo.sql`.
+2. Ejecutar `04_EscenariosModalidades.sql` para crear los ocho escenarios simulados y sus apuestas.
+3. Ejecutar `02_VerificarDatosDemo.sql` para comprobar los datos.
+4. Usar la aplicación con los usuarios de prueba.
+5. Solo si se desea retirar la información ficticia, ejecutar `03_LimpiarDatosDemo.sql`.
 
 ## Credenciales generales
 
@@ -45,3 +46,11 @@ Esos catálogos únicamente se consultan para obtener IDs y configuraciones vál
 El script usa los procedimientos almacenados existentes de PlataformaApuestas en lugar de insertar directamente en las tablas transaccionales. De esa manera respeta las validaciones, estados, billeteras, movimientos financieros y auditoría ya implementados.
 
 No utilizar estas credenciales o estos datos como información de producción.
+
+## Modalidades y limpieza
+
+El archivo 04 agrega PROGRAMADO, PREVIA (vista temporal, no estado nuevo), EN_VIVO, PENDIENTE_RESULTADO, FINALIZADO, sin anotaciones, cancelación y empate. Incluye exactos, solo resultado, pérdidas, primera anotación ganada/perdida/anulada, reservas y liberaciones. Las referencias de operación son deterministas; los eventos existentes no se recrean. Usar las configuraciones predeterminadas para las pruebas 13 y 14.
+
+03_LimpiarDatosDemo realiza cierre lógico mediante cancelación y liquidación. No elimina clientes ni historiales protegidos, por lo que no reinicia los escenarios. Para repetir desde cero, reconstruir una base de pruebas limpia. Estos demos no forman parte de los instaladores. Las pruebas y demos quedan preparados, sin ejecución durante la implementación.
+
+Consultar [modelo SQL](../../README_ModeloSQL.md) para instalación, contratos, concurrencia y decisiones.

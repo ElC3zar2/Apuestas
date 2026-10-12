@@ -174,3 +174,14 @@ SELECT
         INNER JOIN dbo.Usuario AS U ON U.IdUsuario = B.IdUsuario
         WHERE U.Correo LIKE 'cliente.%@apuestas.test'
     ) AS BoletosDemo;
+
+/* Escenarios nuevos: ejecutar 04_EscenariosModalidades.sql antes para obtener estas filas. */
+SELECT EV.IdEvento,EV.Nombre,E.Codigo AS Estado,EV.FechaInicio,EV.FechaInicioRealUtc,EV.FechaFinRealUtc,
+ A.MarcadorActual AS MarcadorA,B.MarcadorActual AS MarcadorB
+FROM dbo.Evento EV JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado
+LEFT JOIN dbo.EventoParticipante A ON A.IdEvento=EV.IdEvento AND A.OrdenParticipante=1
+LEFT JOIN dbo.EventoParticipante B ON B.IdEvento=EV.IdEvento AND B.OrdenParticipante=2
+WHERE EV.Nombre LIKE 'DEMO V2 - %';
+SELECT V.*,LB.MontoLiquidado,BO.ReservaCasaInicial,BO.ReservaCasaPendiente
+FROM dbo.vw_DetalleBoletos V JOIN dbo.Boleto BO ON BO.IdBoleto=V.IdBoleto
+LEFT JOIN dbo.LiquidacionBoleto LB ON LB.IdBoleto=V.IdBoleto WHERE V.NombreEventoAplicado LIKE 'DEMO V2 - %';

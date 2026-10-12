@@ -33,6 +33,9 @@ GO
 CREATE OR ALTER VIEW dbo.vw_EventosDisponibles
 AS
 SELECT
+    EV.EsSimulado,EV.DuracionSimulacionSegundos,EV.FechaInicioRealUtc,EV.FechaFinRealUtc,EV.VersionFila,
+    (SELECT MarcadorActual FROM dbo.EventoParticipante WHERE IdEvento=EV.IdEvento AND OrdenParticipante=1) AS MarcadorA,
+    (SELECT MarcadorActual FROM dbo.EventoParticipante WHERE IdEvento=EV.IdEvento AND OrdenParticipante=2) AS MarcadorB,
     EV.IdEvento,
     EV.Nombre AS Evento,
     EV.FechaInicio,
@@ -101,6 +104,7 @@ GO
 CREATE OR ALTER VIEW dbo.vw_EventoParticipantes
 AS
 SELECT
+    EP.MarcadorActual,
     EV.IdEvento,
     EV.Nombre AS Evento,
 
@@ -145,6 +149,7 @@ GO
 CREATE OR ALTER VIEW dbo.vw_MercadosAbiertos
 AS
 SELECT
+    M.TipoMercado,
     M.IdMercado,
     M.Nombre AS Mercado,
     M.Descripcion,
@@ -213,6 +218,11 @@ GO
 CREATE OR ALTER VIEW dbo.vw_CuotasActuales
 AS
 SELECT
+    M.TipoMercado,C.ValorResultado,
+    CAST(CASE WHEN EE.Codigo='PROGRAMADO' AND EV.FechaInicio>DATEADD(MINUTE,
+      TRY_CONVERT(INT,(SELECT Valor FROM dbo.ConfiguracionSistema WHERE Clave='ANTICIPACION_CIERRE_APUESTA_MIN')),
+      CAST(SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'Central America Standard Time' AS DATETIME2))
+      THEN 1 ELSE 0 END AS BIT) AS PuedeApostar,
     C.IdCuota,
     C.Valor AS Cuota,
     C.FechaInicio AS FechaInicioCuota,
@@ -282,6 +292,7 @@ CREATE OR ALTER VIEW dbo.vw_BoletosUsuario
 AS
 SELECT
     B.IdBoleto,
+    B.IdBilleteraCasaReserva,B.ReservaCasaInicial,B.ReservaCasaPendiente,
     B.CodigoBoleto,
 
     B.IdUsuario,
@@ -353,6 +364,9 @@ LEFT JOIN dbo.DetalleBoleto AS DB
 
 GROUP BY
     B.IdBoleto,
+    B.IdBilleteraCasaReserva,
+    B.ReservaCasaInicial,
+    B.ReservaCasaPendiente,
     B.CodigoBoleto,
     B.IdUsuario,
     U.Correo,
@@ -387,6 +401,17 @@ SELECT
 
     DB.Resultado AS ResultadoDetalle,
     DB.CuotaAplicada,
+    DB.TipoMercadoAplicado,DB.PronosticoA,DB.PronosticoB,DB.CuotaResultadoAplicada,
+    DB.ClasificacionAcierto,DB.CuotaLiquidacion,DB.NombreEventoAplicado,
+    DB.NombreParticipanteAAplicado,DB.NombreParticipanteBAplicado,DB.NombreSeleccionAplicada,
+    CASE DB.ClasificacionAcierto WHEN 'EXACTO' THEN 'Acertaste el marcador'
+      WHEN 'RESULTADO' THEN 'Acertaste el resultado' WHEN 'NO_ACIERTO' THEN 'Pronostico no acertado'
+      WHEN 'PRIMERA_ANOTACION' THEN 'Acertaste la primera anotacion'
+      WHEN 'ANULADO' THEN 'Apuesta anulada'
+      ELSE CASE WHEN DB.TipoMercadoAplicado='CONVENCIONAL' THEN
+        CASE DB.Resultado WHEN 'GANADA' THEN 'Apuesta ganada' WHEN 'PERDIDA' THEN 'Apuesta perdida'
+          WHEN 'ANULADA' THEN 'Apuesta anulada' ELSE 'Pendiente' END
+        ELSE 'Pendiente' END END AS DescripcionAcierto,
 
     S.IdSeleccion,
     S.Nombre AS Seleccion,
@@ -775,4 +800,12 @@ GO
 PRINT '=======================================================';
 PRINT ' VISTAS DEFINITIVAS CREADAS / ACTUALIZADAS';
 PRINT '=======================================================';
+GO
+CREATE OR ALTER VIEW dbo.vw_ResumenModalidades
+AS
+SELECT DB.TipoMercadoAplicado,COUNT_BIG(*) AS CantidadDetalles,
+ SUM(CASE WHEN DB.ClasificacionAcierto='EXACTO' THEN 1 ELSE 0 END) AS MarcadoresExactos,
+ SUM(CASE WHEN DB.ClasificacionAcierto='RESULTADO' THEN 1 ELSE 0 END) AS AciertosResultado,
+ SUM(CASE WHEN DB.ClasificacionAcierto='PRIMERA_ANOTACION' THEN 1 ELSE 0 END) AS AciertosPrimeraAnotacion
+FROM dbo.DetalleBoleto DB GROUP BY DB.TipoMercadoAplicado;
 GO

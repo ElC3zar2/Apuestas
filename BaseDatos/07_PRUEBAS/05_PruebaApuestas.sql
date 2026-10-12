@@ -861,19 +861,20 @@ BEGIN TRY
     WHERE IdBilletera = @IdBilleteraCasa;
 
 
+    DECLARE @ReservaEsperada DECIMAL(12,2)=(SELECT ReservaCasaInicial FROM dbo.Boleto WHERE IdBoleto=@IdBoleto);
     IF @SaldoCasaPosterior <>
-    @SaldoCasaInicial + @ComisionEsperada
+    @SaldoCasaInicial + @ComisionEsperada - @ReservaEsperada
         THROW 70334,
             'CASA no recibió correctamente la comisión de servicio.',
             1;
 
 
     /* ========================================================
-    LA COMISION NO DEBE ALTERAR EL SALDO COMPROMETIDO DE CASA
+    LA RESERVA DEBE INCREMENTAR EL SALDO COMPROMETIDO DE CASA
     ======================================================== */
 
     IF @SaldoComprometidoCasaPosterior <>
-    @SaldoComprometidoCasaInicial
+    @SaldoComprometidoCasaInicial + @ReservaEsperada
         THROW 70335,
             'La comisión modificó incorrectamente el saldo comprometido de CASA.',
             1;

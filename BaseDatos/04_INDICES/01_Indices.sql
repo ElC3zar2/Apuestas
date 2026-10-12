@@ -966,3 +966,33 @@ PRINT '=======================================================';
 PRINT ' INDICES DEFINITIVOS CREADOS / VERIFICADOS';
 PRINT '=======================================================';
 GO
+/* Modalidades y reservas: instalacion limpia. */
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.Mercado') AND name='UX_Mercado_Marcador')
+ CREATE UNIQUE INDEX UX_Mercado_Marcador ON dbo.Mercado(IdEvento,TipoMercado) WHERE TipoMercado='MARCADOR_FINAL';
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.Mercado') AND name='UX_Mercado_PrimeraAnotacion')
+ CREATE UNIQUE INDEX UX_Mercado_PrimeraAnotacion ON dbo.Mercado(IdEvento,TipoMercado) WHERE TipoMercado='PRIMERA_ANOTACION';
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.Seleccion') AND name='UX_Seleccion_Participante')
+ CREATE UNIQUE INDEX UX_Seleccion_Participante ON dbo.Seleccion(IdMercado,IdParticipante) WHERE IdParticipante IS NOT NULL;
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.Seleccion') AND name='IX_Seleccion_EventoParticipante')
+ CREATE INDEX IX_Seleccion_EventoParticipante ON dbo.Seleccion(IdEvento,IdParticipante) INCLUDE(IdMercado,Activo);
+GO
+/* UQ_Incidencia_Secuencia ya cubre evento/secuencia; no duplicar. */
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.IncidenciaEvento') AND name='IX_Incidencia_PrimeraValida')
+ CREATE INDEX IX_Incidencia_PrimeraValida ON dbo.IncidenciaEvento(IdEvento,Secuencia) INCLUDE(IdParticipante,ValorAnotacion)
+ WHERE TipoIncidencia='ANOTACION' AND EsAnulada=0;
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.DetalleBoleto') AND name='IX_Detalle_ModalidadClasificacion')
+ CREATE INDEX IX_Detalle_ModalidadClasificacion ON dbo.DetalleBoleto(TipoMercadoAplicado,ClasificacionAcierto)
+ INCLUDE(IdBoleto,IdSeleccion,CuotaLiquidacion);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.Boleto') AND name='IX_Boleto_ReservaCasa')
+ CREATE INDEX IX_Boleto_ReservaCasa ON dbo.Boleto(IdBilleteraCasaReserva,IdBoleto) INCLUDE(ReservaCasaPendiente,Resultado)
+ WHERE ReservaCasaPendiente>0;
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.Evento') AND name='IX_Evento_SimulacionEstado')
+ CREATE INDEX IX_Evento_SimulacionEstado ON dbo.Evento(IdEstado,FechaInicioRealUtc)
+ INCLUDE(DuracionSimulacionSegundos,FechaFinRealUtc) WHERE EsSimulado=1;
+GO

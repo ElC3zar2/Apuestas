@@ -708,6 +708,7 @@ BEGIN
         RB.UltimaApuestaRelacionada
 
 
+    INTO #EventosAdministracion
     FROM EventosAdministracion AS EA
 
 
@@ -789,7 +790,24 @@ BEGIN
             ELSE 9
         END,
 
-        EA.FechaInicio DESC;
+        EA.FechaInicio DESC,EA.IdEvento DESC;
+
+    /* Mantener contrato principal y reutilizar su universo para los conteos. */
+    SELECT * FROM #EventosAdministracion
+    ORDER BY CASE EstadoVisual WHEN 'EN_PROGRESO' THEN 1 WHEN 'PREVIA' THEN 2
+      WHEN 'PROGRAMADO' THEN 3 WHEN 'PENDIENTE_RESULTADO' THEN 4 WHEN 'FINALIZADO' THEN 5
+      WHEN 'SUSPENDIDO' THEN 6 WHEN 'CANCELADO' THEN 7 WHEN 'BORRADOR' THEN 8 ELSE 9 END,
+      FechaInicio DESC,IdEvento DESC;
+
+    /* Conteos de acierto por detalle; reservas globales se consultan por boleto. */
+    SELECT S.IdEvento,DB.TipoMercadoAplicado,COUNT_BIG(*) AS CantidadDetalles,
+      SUM(CASE WHEN DB.ClasificacionAcierto='EXACTO' THEN 1 ELSE 0 END) AS MarcadoresExactos,
+      SUM(CASE WHEN DB.ClasificacionAcierto='RESULTADO' THEN 1 ELSE 0 END) AS AciertosResultado,
+      SUM(CASE WHEN DB.ClasificacionAcierto='PRIMERA_ANOTACION' THEN 1 ELSE 0 END) AS AciertosPrimeraAnotacion
+    FROM dbo.DetalleBoleto DB JOIN dbo.Seleccion S ON S.IdSeleccion=DB.IdSeleccion
+    JOIN #EventosAdministracion F ON F.IdEvento=S.IdEvento
+    GROUP BY S.IdEvento,DB.TipoMercadoAplicado;
+    EXEC dbo.sp_ObtenerConciliacionCasa @IdUsuarioSolicitante;
 END;
 GO
 
@@ -2253,5 +2271,16 @@ BEGIN
 
         A.IdAuditoria DESC;
 
+
+    /* Conteos de acierto por detalle; reservas globales se consultan por boleto. */
+    SELECT S.IdEvento,DB.TipoMercadoAplicado,COUNT_BIG(*) AS CantidadDetalles,
+      SUM(CASE WHEN DB.ClasificacionAcierto='EXACTO' THEN 1 ELSE 0 END) AS MarcadoresExactos,
+      SUM(CASE WHEN DB.ClasificacionAcierto='RESULTADO' THEN 1 ELSE 0 END) AS AciertosResultado,
+      SUM(CASE WHEN DB.ClasificacionAcierto='PRIMERA_ANOTACION' THEN 1 ELSE 0 END) AS AciertosPrimeraAnotacion
+    FROM dbo.DetalleBoleto DB JOIN dbo.Seleccion S ON S.IdSeleccion=DB.IdSeleccion
+    JOIN dbo.Evento EV ON EV.IdEvento=S.IdEvento JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga
+    
+    GROUP BY S.IdEvento,DB.TipoMercadoAplicado;
+    EXEC dbo.sp_ObtenerConciliacionCasa @IdUsuarioSolicitante;
 END;
 GO

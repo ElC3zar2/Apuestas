@@ -131,6 +131,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         IF EXISTS
         (
@@ -242,6 +249,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @IdDeporte INT;
 
@@ -372,6 +386,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         IF EXISTS
         (
@@ -487,6 +508,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @IdDeporte INT;
         DECLARE @TipoParticipante VARCHAR(30);
@@ -579,7 +607,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_CrearEvento
     @Nombre VARCHAR(200),
     @FechaInicio DATETIME2,
     @FechaFin DATETIME2 = NULL,
-    @IpOrigen VARCHAR(45) = NULL
+    @IpOrigen VARCHAR(45) = NULL,
+    @EsSimulado BIT = 0,
+    @DuracionSimulacionSegundos INT = NULL
 )
 AS
 BEGIN
@@ -624,8 +654,23 @@ BEGIN
     IF @IdEstadoBorrador IS NULL
         THROW 59032, 'No existe el estado EVENTO/BORRADOR.', 1;
 
+    IF @EsSimulado=1 AND @DuracionSimulacionSegundos IS NULL
+        SELECT @DuracionSimulacionSegundos=TRY_CONVERT(INT,Valor) FROM dbo.ConfiguracionSistema WHERE Clave='DURACION_SIMULACION_SEGUNDOS';
+    IF @EsSimulado IS NULL OR (@EsSimulado=1 AND (@DuracionSimulacionSegundos IS NULL OR @DuracionSimulacionSegundos<=0))
+       OR (@EsSimulado=0 AND @DuracionSimulacionSegundos IS NOT NULL)
+        THROW 76001,'Duracion de simulacion invalida.',1;
+    IF @EsSimulado=1 AND NOT EXISTS(SELECT 1 FROM dbo.Liga L JOIN dbo.Deporte D ON D.IdDeporte=L.IdDeporte
+        WHERE L.IdLiga=@IdLiga AND D.UnidadMarcador IS NOT NULL)
+        THROW 76002,'El deporte no admite esta simulacion de marcador.',1;
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         INSERT INTO dbo.Evento
         (
@@ -633,7 +678,7 @@ BEGIN
             IdEstado,
             Nombre,
             FechaInicio,
-            FechaFin
+            FechaFin, EsSimulado, DuracionSimulacionSegundos
         )
         VALUES
         (
@@ -641,7 +686,7 @@ BEGIN
             @IdEstadoBorrador,
             @Nombre,
             @FechaInicio,
-            @FechaFin
+            @FechaFin, @EsSimulado, @DuracionSimulacionSegundos
         );
 
         DECLARE @IdEvento INT =
@@ -729,6 +774,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @EstadoActual VARCHAR(40);
 
@@ -747,6 +799,12 @@ BEGIN
         IF @EstadoActual NOT IN ('BORRADOR', 'PROGRAMADO', 'SUSPENDIDO')
             THROW 59038, 'El evento ya no puede modificar sus datos generales en su estado actual.', 1;
 
+        IF EXISTS(SELECT 1 FROM dbo.Evento WHERE IdEvento=@IdEvento AND FechaInicioRealUtc IS NOT NULL)
+            THROW 76003,'No se reprograma un evento que ya inicio.',1;
+        INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
+        SELECT @IdUsuarioProceso,'EVENTO_REPROGRAMADO','Evento',IdEvento,@IpOrigen,
+               CONCAT('Inicio anterior=',CONVERT(VARCHAR(33),FechaInicio,126),'; nuevo=',CONVERT(VARCHAR(33),@FechaInicio,126))
+        FROM dbo.Evento WHERE IdEvento=@IdEvento AND FechaInicio<>@FechaInicio;
         UPDATE dbo.Evento
         SET
             Nombre = @Nombre,
@@ -830,6 +888,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @EstadoEvento VARCHAR(40);
         DECLARE @IdDeporteEvento INT;
@@ -883,6 +948,8 @@ BEGIN
         )
             THROW 59045, 'El orden indicado ya está ocupado por otro participante del evento.', 1;
 
+        IF EXISTS(SELECT 1 FROM dbo.Mercado WHERE IdEvento=@IdEvento AND TipoMercado<>'CONVENCIONAL')
+            THROW 76004,'Defina participantes antes de crear mercados de modalidades.',1;
         INSERT INTO dbo.EventoParticipante
         (
             IdEvento,
@@ -952,7 +1019,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_CrearMercado
     @IdEvento INT,
     @Nombre VARCHAR(150),
     @Descripcion VARCHAR(250) = NULL,
-    @IpOrigen VARCHAR(45) = NULL
+    @IpOrigen VARCHAR(45) = NULL,
+    @TipoMercado VARCHAR(30) = 'CONVENCIONAL'
 )
 AS
 BEGIN
@@ -984,6 +1052,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @EstadoEvento VARCHAR(40);
 
@@ -999,7 +1074,7 @@ BEGIN
         IF @EstadoEvento IS NULL
             THROW 59048, 'El evento indicado no existe.', 1;
 
-        IF @EstadoEvento NOT IN ('BORRADOR', 'PROGRAMADO', 'EN_VIVO')
+        IF @EstadoEvento NOT IN ('BORRADOR', 'PROGRAMADO')
             THROW 59049, 'No se pueden crear mercados para el evento en su estado actual.', 1;
 
         IF EXISTS
@@ -1011,19 +1086,35 @@ BEGIN
         )
             THROW 59050, 'Ya existe un mercado con ese nombre para el evento.', 1;
 
+        SET @TipoMercado=UPPER(LTRIM(RTRIM(@TipoMercado)));
+        IF @TipoMercado IS NULL OR @TipoMercado NOT IN ('CONVENCIONAL','MARCADOR_FINAL','PRIMERA_ANOTACION')
+            THROW 76005,'TipoMercado invalido.',1;
+        IF @TipoMercado<>'CONVENCIONAL'
+        BEGIN
+            IF NOT EXISTS(SELECT 1 FROM dbo.Evento EV JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga
+              JOIN dbo.Deporte D ON D.IdDeporte=L.IdDeporte WHERE EV.IdEvento=@IdEvento AND EV.EsSimulado=1
+              AND ((@TipoMercado='MARCADOR_FINAL' AND D.PermiteMarcadorFinal=1)
+                OR (@TipoMercado='PRIMERA_ANOTACION' AND D.PermitePrimeraAnotacion=1)))
+                THROW 76006,'Modalidad no compatible; requiere evento simulado y deporte habilitado.',1;
+            IF (SELECT COUNT(*) FROM dbo.EventoParticipante WHERE IdEvento=@IdEvento)<>2
+               OR (SELECT COUNT(*) FROM dbo.EventoParticipante WHERE IdEvento=@IdEvento AND OrdenParticipante IN (1,2))<>2
+                THROW 76007,'Se requieren exactamente participantes A y B (orden 1 y 2).',1;
+            IF EXISTS(SELECT 1 FROM dbo.Mercado WHERE IdEvento=@IdEvento AND TipoMercado=@TipoMercado)
+                THROW 76008,'Ya existe esta modalidad para el evento.',1;
+        END;
         INSERT INTO dbo.Mercado
         (
             IdEvento,
             IdEstado,
             Nombre,
-            Descripcion
+            Descripcion, TipoMercado
         )
         VALUES
         (
             @IdEvento,
             @IdEstadoBorrador,
             @Nombre,
-            @Descripcion
+            @Descripcion, @TipoMercado
         );
 
         DECLARE @IdMercado INT =
@@ -1079,7 +1170,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_CrearSeleccion
     @IdUsuarioProceso INT,
     @IdMercado INT,
     @Nombre VARCHAR(150),
-    @IpOrigen VARCHAR(45) = NULL
+    @IpOrigen VARCHAR(45) = NULL,
+    @IdParticipante INT = NULL
 )
 AS
 BEGIN
@@ -1097,6 +1189,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @EstadoMercado VARCHAR(40);
 
@@ -1124,17 +1223,25 @@ BEGIN
         )
             THROW 59054, 'Ya existe una selección con ese nombre para el mercado.', 1;
 
+        DECLARE @IdEvento INT, @TipoMercado VARCHAR(30);
+        SELECT @IdEvento=IdEvento,@TipoMercado=TipoMercado FROM dbo.Mercado WHERE IdMercado=@IdMercado;
+        IF @TipoMercado='MARCADOR_FINAL' AND EXISTS(SELECT 1 FROM dbo.Seleccion WHERE IdMercado=@IdMercado)
+            THROW 76009,'Marcador final utiliza una unica seleccion generica.',1;
+        IF (@TipoMercado='PRIMERA_ANOTACION' AND (@IdParticipante IS NULL OR NOT EXISTS
+           (SELECT 1 FROM dbo.EventoParticipante WHERE IdEvento=@IdEvento AND IdParticipante=@IdParticipante)))
+           OR (@TipoMercado<>'PRIMERA_ANOTACION' AND @IdParticipante IS NOT NULL)
+            THROW 76010,'Participante incompatible con el mercado.',1;
         INSERT INTO dbo.Seleccion
         (
             IdMercado,
             Nombre,
-            Activo
+            Activo, IdEvento, IdParticipante
         )
         VALUES
         (
             @IdMercado,
             @Nombre,
-            1
+            1, @IdEvento, @IdParticipante
         );
 
         DECLARE @IdSeleccion INT =
@@ -1190,8 +1297,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_RegistrarCuota
 (
     @IdUsuarioProceso INT,
     @IdSeleccion INT,
-    @Valor DECIMAL(10,4),
-    @IpOrigen VARCHAR(45) = NULL
+    @Valor DECIMAL(10,4) = NULL,
+    @IpOrigen VARCHAR(45) = NULL,
+    @ValorResultado DECIMAL(10,4) = NULL
 )
 AS
 BEGIN
@@ -1200,14 +1308,20 @@ BEGIN
 
     SET @IpOrigen = NULLIF(LTRIM(RTRIM(@IpOrigen)), '');
 
-    IF @Valor IS NULL OR @Valor <= 1
-        THROW 59055, 'La cuota debe ser mayor que 1.', 1;
+
 
     EXEC dbo.sp_ValidarPermisoEventos
         @IdUsuarioProceso = @IdUsuarioProceso;
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @IdMercado INT;
         DECLARE @EstadoMercado VARCHAR(40);
@@ -1236,6 +1350,25 @@ BEGIN
         IF @EstadoMercado NOT IN ('BORRADOR', 'ABIERTO', 'SUSPENDIDO')
             THROW 59058, 'No se pueden registrar cuotas para el mercado en su estado actual.', 1;
 
+        DECLARE @TipoMercado VARCHAR(30),@EstadoEvento VARCHAR(40);
+        SELECT @TipoMercado=M.TipoMercado,@EstadoEvento=E.Codigo
+        FROM dbo.Mercado M JOIN dbo.Evento EV ON EV.IdEvento=M.IdEvento JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado
+        WHERE M.IdMercado=@IdMercado;
+        IF @EstadoEvento NOT IN ('BORRADOR','PROGRAMADO')
+            THROW 76011,'No se registran cuotas durante ni despues del evento.',1;
+        IF @Valor IS NULL AND @TipoMercado<>'CONVENCIONAL'
+            SELECT @Valor=TRY_CONVERT(DECIMAL(10,4),Valor) FROM dbo.ConfiguracionSistema
+            WHERE Clave=CASE WHEN @TipoMercado='MARCADOR_FINAL' THEN 'MULTIPLICADOR_MARCADOR_EXACTO_DEFAULT'
+                       ELSE 'MULTIPLICADOR_PRIMERA_ANOTACION_DEFAULT' END;
+        IF @TipoMercado='MARCADOR_FINAL' AND @ValorResultado IS NULL
+            SELECT @ValorResultado=TRY_CONVERT(DECIMAL(10,4),Valor) FROM dbo.ConfiguracionSistema
+            WHERE Clave='MULTIPLICADOR_MARCADOR_RESULTADO_DEFAULT';
+        IF @Valor IS NULL OR @Valor<=1
+            THROW 59055,'La cuota debe ser mayor que 1.',1;
+        IF (@TipoMercado='MARCADOR_FINAL' AND (@ValorResultado IS NULL OR @ValorResultado<=1 OR @ValorResultado>=@Valor))
+            OR (@TipoMercado<>'MARCADOR_FINAL' AND @ValorResultado IS NOT NULL)
+            THROW 76012,'Multiplicadores incompatibles con la modalidad.',1;
+
         /* Serializar cambios de cuota de la misma selección. */
         DECLARE @IdCuotaAnterior INT;
 
@@ -1248,6 +1381,8 @@ BEGIN
 
         DECLARE @Ahora DATETIME2 = SYSDATETIME();
 
+        IF EXISTS(SELECT 1 FROM dbo.Cuota WHERE IdSeleccion=@IdSeleccion AND Activo=1 AND FechaInicio>=@Ahora)
+            SELECT @Ahora=DATEADD(NANOSECOND,100,MAX(FechaInicio)) FROM dbo.Cuota WHERE IdSeleccion=@IdSeleccion AND Activo=1;
         UPDATE dbo.Cuota
         SET
             Activo = 0,
@@ -1258,7 +1393,7 @@ BEGIN
         INSERT INTO dbo.Cuota
         (
             IdSeleccion,
-            Valor,
+            Valor, ValorResultado,
             FechaInicio,
             FechaFin,
             Activo
@@ -1266,7 +1401,7 @@ BEGIN
         VALUES
         (
             @IdSeleccion,
-            @Valor,
+            @Valor, @ValorResultado,
             @Ahora,
             NULL,
             1
@@ -1363,6 +1498,29 @@ BEGIN
     EXEC dbo.sp_ValidarPermisoEventos
         @IdUsuarioProceso = @IdUsuarioProceso;
 
+    IF @NuevoEstado='FINALIZADO'
+        THROW 76013,'FINALIZADO solo se establece al oficializar el resultado.',1;
+    IF EXISTS(SELECT 1 FROM dbo.Evento WHERE IdEvento=@IdEvento AND EsSimulado=1)
+    BEGIN
+        IF @NuevoEstado='EN_VIVO'
+        BEGIN
+            EXEC dbo.sp_IniciarSimulacionEvento @IdUsuarioProceso,@IdEvento,@IpOrigen;
+            RETURN;
+        END;
+        IF @NuevoEstado='PENDIENTE_RESULTADO'
+        BEGIN
+            EXEC dbo.sp_FinalizarSimulacionEvento @IdUsuarioProceso,@IdEvento,@IpOrigen;
+            RETURN;
+        END;
+        IF @NuevoEstado='SUSPENDIDO'
+            THROW 76014,'Pausa y reanudacion de simulaciones fuera de alcance.',1;
+    END;
+    IF @NuevoEstado='CANCELADO'
+    BEGIN
+        EXEC dbo.sp_AnularResultadoEvento @IdUsuarioProceso=@IdUsuarioProceso,@IdResultadoEvento=NULL,
+          @Motivo=@Motivo,@IpOrigen=@IpOrigen,@IdEventoCancelar=@IdEvento;
+        RETURN;
+    END;
     DECLARE @IdNuevoEstado INT;
 
     SELECT @IdNuevoEstado = E.IdEstado
@@ -1378,6 +1536,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @EstadoActual VARCHAR(40);
 
@@ -1570,6 +1735,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
         DECLARE @EstadoActual VARCHAR(40);
         DECLARE @EstadoEvento VARCHAR(40);
@@ -1624,10 +1796,12 @@ BEGIN
         )
             THROW 59070, 'La transición de estado solicitada para el mercado no está permitida.', 1;
 
+        IF @NuevoEstado='LIQUIDADO'
+            THROW 76015,'LIQUIDADO solo se establece desde oficializacion.',1;
         IF @NuevoEstado = 'ABIERTO'
         BEGIN
-            IF @EstadoEvento NOT IN ('PROGRAMADO', 'EN_VIVO')
-                THROW 59071, 'Solo se puede abrir un mercado cuando el evento está PROGRAMADO o EN_VIVO.', 1;
+            IF @EstadoEvento <> 'PROGRAMADO'
+                THROW 59071, 'Solo se puede abrir un mercado cuando el evento esta PROGRAMADO.', 1;
 
             IF
             (
@@ -1635,9 +1809,12 @@ BEGIN
                 FROM dbo.Seleccion
                 WHERE IdMercado = @IdMercado
                   AND Activo = 1
-            ) < 2
+            ) < CASE WHEN (SELECT TipoMercado FROM dbo.Mercado WHERE IdMercado=@IdMercado)='MARCADOR_FINAL' THEN 1 ELSE 2 END
                 THROW 59072, 'El mercado debe tener al menos dos selecciones activas antes de abrirse.', 1;
 
+            IF (SELECT TipoMercado FROM dbo.Mercado WHERE IdMercado=@IdMercado)='PRIMERA_ANOTACION'
+               AND (SELECT COUNT(DISTINCT IdParticipante) FROM dbo.Seleccion WHERE IdMercado=@IdMercado AND Activo=1)<>2
+                THROW 76016,'Primera anotacion requiere dos participantes distintos.',1;
             IF EXISTS
             (
                 SELECT 1
@@ -1666,7 +1843,7 @@ BEGIN
             UPDATE C
             SET
                 Activo = 0,
-                FechaFin = COALESCE(C.FechaFin, SYSDATETIME())
+                FechaFin = COALESCE(C.FechaFin, CASE WHEN SYSDATETIME() > C.FechaInicio THEN SYSDATETIME() ELSE DATEADD(NANOSECOND,100,C.FechaInicio) END)
             FROM dbo.Cuota AS C
             INNER JOIN dbo.Seleccion AS S
                 ON S.IdSeleccion = C.IdSeleccion

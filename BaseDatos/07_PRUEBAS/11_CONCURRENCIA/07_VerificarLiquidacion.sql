@@ -239,6 +239,7 @@ BEGIN TRY
 
     SET @SaldoCasaEsperado =
         @SaldoCasaAntes
+        + (SELECT ReservaCasaInicial FROM dbo.Boleto WHERE IdBoleto=@IdBoleto)
         - @GananciaNetaEsperada;
 
 

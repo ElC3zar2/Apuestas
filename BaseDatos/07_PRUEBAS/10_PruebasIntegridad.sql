@@ -345,12 +345,12 @@ BEGIN TRY
 
     INSERT INTO dbo.Seleccion
     (
-        IdMercado,
+        IdMercado, IdEvento,
         Nombre
     )
     VALUES
     (
-        @IdMercado,
+        @IdMercado, @IdEvento,
         'Seleccion Integridad'
     );
 
@@ -710,12 +710,12 @@ BEGIN TRY
 
     INSERT INTO dbo.Seleccion
     (
-        IdMercado,
+        IdMercado, IdEvento,
         Nombre
     )
     VALUES
     (
-        @IdMercado5,
+        @IdMercado5, @IdEvento5,
         'Seleccion Check'
     );
 

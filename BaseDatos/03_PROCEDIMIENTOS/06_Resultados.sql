@@ -101,6 +101,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
 
         DECLARE @EstadoEvento VARCHAR(40);
@@ -180,6 +187,17 @@ BEGIN
         END;
 
 
+        IF EXISTS(SELECT 1 FROM dbo.Evento WHERE IdEvento=@IdEvento AND EsSimulado=1)
+        BEGIN
+            UPDATE R SET MarcadorFinalA=A.MarcadorActual,MarcadorFinalB=B.MarcadorActual,
+                IdIncidenciaPrimeraAnotacion=(SELECT TOP(1) I.IdIncidencia FROM dbo.IncidenciaEvento I
+                  WHERE I.IdEvento=@IdEvento AND I.TipoIncidencia='ANOTACION' AND I.EsAnulada=0 ORDER BY I.Secuencia),
+                ResultadoTexto=CONCAT(A.MarcadorActual,'-',B.MarcadorActual)
+            FROM dbo.ResultadoEvento R
+            JOIN dbo.EventoParticipante A ON A.IdEvento=R.IdEvento AND A.OrdenParticipante=1
+            JOIN dbo.EventoParticipante B ON B.IdEvento=R.IdEvento AND B.OrdenParticipante=2
+            WHERE R.IdResultado=@IdResultado;
+        END;
         INSERT INTO dbo.Auditoria
         (
             IdUsuario,
@@ -285,8 +303,18 @@ BEGIN
         @IdUsuarioProceso = @IdUsuarioProceso;
 
 
+    IF EXISTS(SELECT 1 FROM dbo.Seleccion S JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado
+              WHERE S.IdSeleccion=@IdSeleccion AND M.TipoMercado<>'CONVENCIONAL')
+        THROW 76301,'Esta modalidad se resuelve automaticamente al oficializar, sin resultado enviado por cliente.',1;
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
 
         DECLARE @IdEventoResultado INT;
@@ -533,6 +561,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
 
         DECLARE @IdEvento INT;
@@ -593,6 +628,16 @@ BEGIN
             THROW 61022, 'El evento debe estar en PENDIENTE_RESULTADO para oficializar su resultado.', 1;
 
 
+        IF EXISTS(SELECT 1 FROM dbo.Evento WHERE IdEvento=@IdEvento AND EsSimulado=1)
+        BEGIN
+            UPDATE R SET MarcadorFinalA=A.MarcadorActual,MarcadorFinalB=B.MarcadorActual,
+              IdIncidenciaPrimeraAnotacion=(SELECT TOP(1) IdIncidencia FROM dbo.IncidenciaEvento
+                WHERE IdEvento=@IdEvento AND TipoIncidencia='ANOTACION' AND EsAnulada=0 ORDER BY Secuencia),
+              ResultadoTexto=CONCAT(A.MarcadorActual,'-',B.MarcadorActual)
+            FROM dbo.ResultadoEvento R JOIN dbo.EventoParticipante A ON A.IdEvento=R.IdEvento AND A.OrdenParticipante=1
+              JOIN dbo.EventoParticipante B ON B.IdEvento=R.IdEvento AND B.OrdenParticipante=2 WHERE R.IdResultado=@IdResultadoEvento;
+        END;
+        EXEC dbo.sp_ResolverApuestasModalidadEvento @IdUsuarioProceso,@IdResultadoEvento;
         /* Ningún mercado puede permanecer recibiendo o preparando
            apuestas al momento de oficializar. */
         IF EXISTS
@@ -633,6 +678,7 @@ BEGIN
             ON TE.IdTipoEstado = E.IdTipoEstado
            AND TE.Codigo = 'MERCADO'
         WHERE M.IdEvento = @IdEvento
+          AND M.TipoMercado<>'MARCADOR_FINAL'
           AND E.Codigo = 'ANULADO';
 
 
@@ -659,6 +705,7 @@ BEGIN
             ON TE.IdTipoEstado = E.IdTipoEstado
            AND TE.Codigo = 'MERCADO'
         WHERE M.IdEvento = @IdEvento
+          AND M.TipoMercado<>'MARCADOR_FINAL'
           AND E.Codigo = 'ANULADO'
           AND NOT EXISTS
           (
@@ -680,6 +727,7 @@ BEGIN
                 ON M.IdMercado = S.IdMercado
             WHERE M.IdEvento = @IdEvento
               AND S.Activo = 1
+              AND M.TipoMercado<>'MARCADOR_FINAL'
               AND NOT EXISTS
               (
                   SELECT 1
@@ -696,7 +744,11 @@ BEGIN
            ==================================================== */
 
         UPDATE DB
-        SET DB.Resultado = RS.Resultado
+        SET DB.Resultado = RS.Resultado,
+            DB.CuotaLiquidacion=CASE RS.Resultado WHEN 'GANADA' THEN DB.CuotaAplicada WHEN 'ANULADA' THEN 1 ELSE 0 END,
+            DB.ClasificacionAcierto=CASE WHEN DB.TipoMercadoAplicado='PRIMERA_ANOTACION' THEN
+              CASE RS.Resultado WHEN 'GANADA' THEN 'PRIMERA_ANOTACION' WHEN 'ANULADA' THEN 'ANULADO' ELSE 'NO_ACIERTO' END
+              ELSE NULL END
         FROM dbo.DetalleBoleto AS DB
         INNER JOIN dbo.ResolucionSeleccion AS RS
             ON RS.IdSeleccion = DB.IdSeleccion
@@ -716,7 +768,7 @@ BEGIN
         UPDATE C
         SET
             C.Activo = 0,
-            C.FechaFin = COALESCE(C.FechaFin, SYSDATETIME())
+            C.FechaFin = COALESCE(C.FechaFin, CASE WHEN SYSDATETIME() > C.FechaInicio THEN SYSDATETIME() ELSE DATEADD(NANOSECOND,100,C.FechaInicio) END)
         FROM dbo.Cuota AS C
         INNER JOIN dbo.Seleccion AS S
             ON S.IdSeleccion = C.IdSeleccion
@@ -940,6 +992,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
 
         DECLARE @IdEvento INT;
@@ -976,7 +1035,7 @@ BEGIN
             INNER JOIN dbo.TipoEstado AS TEB
                 ON TEB.IdTipoEstado = EB.IdTipoEstado
                AND TEB.Codigo = 'BOLETO'
-            WHERE EB.Codigo = 'LIQUIDADO'
+            WHERE (EB.Codigo='LIQUIDADO' OR EXISTS(SELECT 1 FROM dbo.LiquidacionBoleto LB WHERE LB.IdBoleto=B.IdBoleto))
               AND EXISTS
               (
                   SELECT 1
@@ -1020,7 +1079,7 @@ BEGIN
 
         /* Restablecer detalles afectados antes de recalcular. */
         UPDATE DB
-        SET DB.Resultado = 'PENDIENTE'
+        SET DB.Resultado = 'PENDIENTE', DB.CuotaLiquidacion=NULL, DB.ClasificacionAcierto=NULL
         FROM dbo.DetalleBoleto AS DB
         INNER JOIN dbo.Seleccion AS S
             ON S.IdSeleccion = DB.IdSeleccion
@@ -1111,7 +1170,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_AnularResultadoEvento
     @IdUsuarioProceso INT,
     @IdResultadoEvento INT,
     @Motivo VARCHAR(500),
-    @IpOrigen VARCHAR(45) = NULL
+    @IpOrigen VARCHAR(45) = NULL,
+    @IdEventoCancelar INT = NULL
 )
 AS
 BEGIN
@@ -1128,7 +1188,7 @@ BEGIN
     IF @IdUsuarioProceso IS NULL
         THROW 61038, 'IdUsuarioProceso es obligatorio.', 1;
 
-    IF @IdResultadoEvento IS NULL
+    IF @IdResultadoEvento IS NULL AND @IdEventoCancelar IS NULL
         THROW 61039, 'IdResultadoEvento es obligatorio.', 1;
 
     IF @Motivo IS NULL
@@ -1207,8 +1267,34 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
 
 
+
+        IF @IdEventoCancelar IS NOT NULL
+        BEGIN
+            DECLARE @EstadoCancelacion VARCHAR(40);
+            SELECT @EstadoCancelacion=E.Codigo FROM dbo.Evento EV WITH(UPDLOCK,HOLDLOCK)
+              JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado WHERE EV.IdEvento=@IdEventoCancelar;
+            IF @EstadoCancelacion IS NULL THROW 76302,'Evento a cancelar inexistente.',1;
+            IF @IdResultadoEvento IS NOT NULL AND NOT EXISTS(SELECT 1 FROM dbo.ResultadoEvento
+                WHERE IdResultado=@IdResultadoEvento AND IdEvento=@IdEventoCancelar)
+                THROW 76303,'Resultado y evento no coinciden.',1;
+            SELECT @IdResultadoEvento=IdResultado FROM dbo.ResultadoEvento WHERE IdEvento=@IdEventoCancelar;
+            IF @IdResultadoEvento IS NULL
+            BEGIN
+                DECLARE @PendienteResultado INT=(SELECT E.IdEstado FROM dbo.Estado E JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+                   WHERE T.Codigo='RESULTADO_EVENTO' AND E.Codigo='PENDIENTE');
+                INSERT dbo.ResultadoEvento(IdEvento,IdEstado,IdUsuarioRegistro,ResultadoTexto,Observacion)
+                  VALUES(@IdEventoCancelar,@PendienteResultado,@IdUsuarioProceso,'Evento cancelado',@Motivo);
+                SET @IdResultadoEvento=SCOPE_IDENTITY();
+            END;
+        END;
         DECLARE @IdEvento INT;
         DECLARE @EstadoResultadoActual VARCHAR(40);
 
@@ -1253,7 +1339,7 @@ BEGIN
             INNER JOIN dbo.TipoEstado AS TEB
                 ON TEB.IdTipoEstado = EB.IdTipoEstado
                AND TEB.Codigo = 'BOLETO'
-            WHERE EB.Codigo = 'LIQUIDADO'
+            WHERE (EB.Codigo='LIQUIDADO' OR EXISTS(SELECT 1 FROM dbo.LiquidacionBoleto LB WHERE LB.IdBoleto=B.IdBoleto))
               AND EXISTS
               (
                   SELECT 1
@@ -1315,7 +1401,8 @@ BEGIN
 
 
         UPDATE DB
-        SET DB.Resultado = 'ANULADA'
+        SET DB.Resultado = 'ANULADA', DB.CuotaLiquidacion=1,
+            DB.ClasificacionAcierto=CASE WHEN DB.TipoMercadoAplicado='CONVENCIONAL' THEN NULL ELSE 'ANULADO' END
         FROM dbo.DetalleBoleto AS DB
         INNER JOIN dbo.Seleccion AS S
             ON S.IdSeleccion = DB.IdSeleccion
@@ -1328,7 +1415,7 @@ BEGIN
         UPDATE C
         SET
             C.Activo = 0,
-            C.FechaFin = COALESCE(C.FechaFin, SYSDATETIME())
+            C.FechaFin = COALESCE(C.FechaFin, CASE WHEN SYSDATETIME() > C.FechaInicio THEN SYSDATETIME() ELSE DATEADD(NANOSECOND,100,C.FechaInicio) END)
         FROM dbo.Cuota AS C
         INNER JOIN dbo.Seleccion AS S
             ON S.IdSeleccion = C.IdSeleccion
@@ -1344,7 +1431,8 @@ BEGIN
 
 
         UPDATE dbo.Evento
-        SET IdEstado = @IdEstadoEventoCancelado
+        SET IdEstado = @IdEstadoEventoCancelado,
+            FechaFinRealUtc=CASE WHEN FechaInicioRealUtc IS NOT NULL THEN COALESCE(FechaFinRealUtc,SYSUTCDATETIME()) ELSE NULL END
         WHERE IdEvento = @IdEvento;
 
 

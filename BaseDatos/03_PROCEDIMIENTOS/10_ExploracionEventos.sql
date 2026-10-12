@@ -301,6 +301,7 @@ BEGIN
             AS EstadoResultado
 
 
+    INTO #EventosExploracion
     FROM dbo.Evento AS EV
 
 
@@ -607,6 +608,19 @@ BEGIN
         END DESC,
 
         EV.IdEvento DESC;
+
+    /* Ambos conjuntos reutilizan exactamente los eventos filtrados y limitados. */
+    SELECT * FROM #EventosExploracion
+    ORDER BY CASE EstadoVisual WHEN 'EN_PROGRESO' THEN 1 WHEN 'PREVIA' THEN 2
+      WHEN 'PROGRAMADO' THEN 3 WHEN 'FINALIZADO' THEN 4 ELSE 5 END,
+      CASE WHEN EstadoVisual='FINALIZADO' THEN NULL ELSE FechaInicio END ASC,
+      CASE WHEN EstadoVisual='FINALIZADO' THEN FechaInicio END DESC,IdEvento DESC;
+
+    SELECT EV.IdEvento,EV.EsSimulado,EV.DuracionSimulacionSegundos,EV.FechaInicioRealUtc,EV.FechaFinRealUtc,
+      EV.VersionFila,
+      (SELECT EP.MarcadorActual FROM dbo.EventoParticipante EP WHERE EP.IdEvento=EV.IdEvento AND EP.OrdenParticipante=1) AS MarcadorA,
+      (SELECT EP.MarcadorActual FROM dbo.EventoParticipante EP WHERE EP.IdEvento=EV.IdEvento AND EP.OrdenParticipante=2) AS MarcadorB
+    FROM #EventosExploracion F JOIN dbo.Evento EV ON EV.IdEvento=F.IdEvento;
 END;
 GO
 
@@ -1250,5 +1264,10 @@ BEGIN
     ORDER BY
         M.IdMercado,
         S.IdSeleccion;
+
+    SELECT M.IdMercado,M.TipoMercado,S.IdSeleccion,S.IdParticipante,C.Valor,C.ValorResultado
+    FROM dbo.Mercado M JOIN dbo.Seleccion S ON S.IdMercado=M.IdMercado
+    LEFT JOIN dbo.Cuota C ON C.IdSeleccion=S.IdSeleccion AND C.Activo=1 WHERE M.IdEvento=@IdEvento;
+    EXEC dbo.sp_ObtenerEstadoSimulacionEvento @IdEvento;
 END;
 GO

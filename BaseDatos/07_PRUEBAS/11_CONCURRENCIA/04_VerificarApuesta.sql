@@ -3,7 +3,7 @@
 
    RESULTADO OBLIGATORIO:
    - 1 boleto creado.
-   - Q100 disponible.
+   - Disponible = Q500 - Q400 - comision. CASA mantiene reserva hasta liquidar.
    - Q400 comprometido.
    - 1 transacción APUESTA.
 

@@ -372,6 +372,11 @@ BEGIN TRY
     END;
 
 
+    UPDATE dbo.Deporte SET
+      UnidadMarcador=CASE Nombre WHEN 'Futbol' THEN 'GOL' WHEN 'Baloncesto' THEN 'PUNTO' WHEN 'Beisbol' THEN 'CARRERA' END,
+      PermiteMarcadorFinal=CASE WHEN Nombre='Tenis' THEN 0 ELSE 1 END,
+      PermitePrimeraAnotacion=CASE WHEN Nombre='Tenis' THEN 0 ELSE 1 END
+    WHERE Nombre IN ('Futbol','Baloncesto','Beisbol','Tenis');
     COMMIT TRANSACTION;
 
     PRINT 'Datos iniciales de PlataformaApuestas cargados correctamente.';

@@ -1188,7 +1188,8 @@ BEGIN TRY
 
         DECLARE @SaldoCasaEsperadoPostApuestas DECIMAL(12,2) =
             @SaldoCasaInicial
-            + (@ComisionEsperada * 3);
+            + (@ComisionEsperada * 3)
+            - (SELECT SUM(ReservaCasaInicial) FROM dbo.Boleto WHERE IdBoleto IN(@IdBoletoA,@IdBoletoB,@IdBoletoC));
 
 
         IF @SaldoCasaPostApuestas <>

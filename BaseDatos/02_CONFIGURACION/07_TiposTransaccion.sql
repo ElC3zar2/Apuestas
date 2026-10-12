@@ -87,6 +87,9 @@ BEGIN TRY
             'Ajuste excepcional de saldo virtual realizado por un usuario autorizado.'
         );
 
+    INSERT @Tipos(Codigo,Nombre,Descripcion) VALUES
+      ('RESERVA_CASA','Reserva CASA','Disponible a comprometido para respaldar un boleto.'),
+      ('LIBERACION_RESERVA_CASA','Liberacion reserva CASA','Comprometido a disponible al liquidar un boleto.');
     INSERT INTO dbo.TipoTransaccion
     (
         Codigo,

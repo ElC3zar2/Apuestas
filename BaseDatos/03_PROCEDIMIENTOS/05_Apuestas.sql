@@ -63,7 +63,9 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_CotizarApuesta
 (
     @SeleccionesJson NVARCHAR(MAX),
-    @Monto DECIMAL(12,2)
+    @Monto DECIMAL(12,2),
+    @PronosticoA INT = NULL,
+    @PronosticoB INT = NULL
 )
 AS
 BEGIN
@@ -213,6 +215,19 @@ BEGIN
     )
         THROW 60008, 'No se puede repetir una selección dentro del mismo boleto.', 1;
 
+
+
+    /* Modalidad y pronostico: calculados/validados por la BD. */
+    DECLARE @TipoModalidad VARCHAR(30);
+    SELECT @TipoModalidad=MAX(M.TipoMercado)
+    FROM @Entrada I JOIN dbo.Seleccion S ON S.IdSeleccion=I.IdSeleccion JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado;
+    IF EXISTS(SELECT 1 FROM @Entrada I JOIN dbo.Seleccion S ON S.IdSeleccion=I.IdSeleccion
+      JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado WHERE M.TipoMercado<>'CONVENCIONAL')
+      AND (SELECT COUNT(*) FROM @Entrada)<>1
+        THROW 76101,'Las nuevas modalidades requieren un boleto SIMPLE independiente.',1;
+    IF (@TipoModalidad='MARCADOR_FINAL' AND (@PronosticoA IS NULL OR @PronosticoB IS NULL OR @PronosticoA<0 OR @PronosticoB<0))
+       OR (ISNULL(@TipoModalidad,'CONVENCIONAL')<>'MARCADOR_FINAL' AND (@PronosticoA IS NOT NULL OR @PronosticoB IS NOT NULL))
+        THROW 76102,'Pronostico numerico incompatible con la modalidad.',1;
 
     DECLARE @Detalle TABLE
     (
@@ -408,6 +423,13 @@ BEGIN
         CONVERT(DECIMAL(12,2), ROUND(@GananciaCalculo, 2));
 
 
+    DECLARE @CuotaResultado DECIMAL(10,4);
+    IF @TipoModalidad='MARCADOR_FINAL'
+    BEGIN
+        SELECT @CuotaResultado=C.ValorResultado FROM @Detalle D JOIN dbo.Cuota C ON C.IdCuota=D.IdCuota;
+        IF @CuotaResultado IS NULL OR @CuotaResultado<=1 OR @CuotaResultado>=@CuotaTotal
+            THROW 76103,'La oferta no contiene dos multiplicadores validos.',1;
+    END;
     /* Primer result set: resumen de cotización. */
     SELECT
         @TipoBoleto AS TipoBoleto,
@@ -435,6 +457,11 @@ BEGIN
         Cuota
     FROM @Detalle
     ORDER BY Orden;
+    /* Result set adicional: conserva las columnas de los dos contratos anteriores. */
+    SELECT @TipoModalidad AS TipoMercado,@PronosticoA AS PronosticoA,@PronosticoB AS PronosticoB,
+      @CuotaResultado AS CuotaResultado,
+      CONVERT(DECIMAL(12,2),ROUND(@Monto*@CuotaResultado,2)) AS PremioResultadoPotencial,
+      @GananciaPotencial AS PremioExactoOMaximo;
 END;
 GO
 
@@ -470,7 +497,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_RealizarApuesta
     @SeleccionesJson NVARCHAR(MAX),
     @Monto DECIMAL(12,2),
     @ReferenciaOperacion UNIQUEIDENTIFIER,
-    @IpOrigen VARCHAR(45) = NULL
+    @IpOrigen VARCHAR(45) = NULL,
+    @PronosticoA INT = NULL,
+    @PronosticoB INT = NULL
 )
 AS
 BEGIN
@@ -647,6 +676,19 @@ BEGIN
        OBTENER CATALOGOS NECESARIOS
        ======================================================== */
 
+
+    /* Modalidad y pronostico: calculados/validados por la BD. */
+    DECLARE @TipoModalidad VARCHAR(30);
+    SELECT @TipoModalidad=MAX(M.TipoMercado)
+    FROM @Entrada I JOIN dbo.Seleccion S ON S.IdSeleccion=I.IdSeleccion JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado;
+    IF EXISTS(SELECT 1 FROM @Entrada I JOIN dbo.Seleccion S ON S.IdSeleccion=I.IdSeleccion
+      JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado WHERE M.TipoMercado<>'CONVENCIONAL')
+      AND (SELECT COUNT(*) FROM @Entrada)<>1
+        THROW 76101,'Las nuevas modalidades requieren un boleto SIMPLE independiente.',1;
+    IF (@TipoModalidad='MARCADOR_FINAL' AND (@PronosticoA IS NULL OR @PronosticoB IS NULL OR @PronosticoA<0 OR @PronosticoB<0))
+       OR (ISNULL(@TipoModalidad,'CONVENCIONAL')<>'MARCADOR_FINAL' AND (@PronosticoA IS NOT NULL OR @PronosticoB IS NOT NULL))
+        THROW 76102,'Pronostico numerico incompatible con la modalidad.',1;
+
     DECLARE @IdEstadoBoletoPendiente INT;
     DECLARE @IdEstadoTransaccionCompletada INT;
     DECLARE @IdTipoTransaccionApuesta INT;
@@ -698,6 +740,13 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        /* Cerrojo transaccional comun: serializa mutaciones deportivas/financieras
+           de esta plataforma academica y fija el orden frente a inicio/apuesta/liquidacion. */
+        DECLARE @CerrojoModelo INT;
+        EXEC @CerrojoModelo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+             @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+
 
 
         /* ====================================================
@@ -756,6 +805,9 @@ BEGIN
                 THROW 60031, 'ReferenciaOperacion ya pertenece a una apuesta con selecciones diferentes.', 1;
 
 
+            IF EXISTS(SELECT 1 FROM dbo.DetalleBoleto WHERE IdBoleto=@IdBoletoExistente
+              AND (ISNULL(PronosticoA,-1)<>ISNULL(@PronosticoA,-1) OR ISNULL(PronosticoB,-1)<>ISNULL(@PronosticoB,-1)))
+                THROW 76104,'ReferenciaOperacion pertenece a otro pronostico.',1;
             DECLARE @IdTransaccionExistente BIGINT;
 
             SELECT @IdTransaccionExistente = IdTransaccion
@@ -1054,6 +1106,11 @@ BEGIN
         DECLARE @GananciaPotencial DECIMAL(12,2) =
             CONVERT(DECIMAL(12,2), ROUND(@GananciaCalculo, 2));
 
+        DECLARE @ReservaCasa DECIMAL(12,2)=CASE WHEN @GananciaPotencial-@Monto>@ComisionServicio
+              THEN @GananciaPotencial-@Monto ELSE @ComisionServicio END;
+        DECLARE @IdTipoReserva INT=(SELECT IdTipoTransaccion FROM dbo.TipoTransaccion WHERE Codigo='RESERVA_CASA' AND Activo=1);
+        IF @IdTipoReserva IS NULL THROW 76105,'Falta RESERVA_CASA.',1;
+
         /* ====================================================
         LOCALIZAR CASA
         ==================================================== */
@@ -1130,6 +1187,8 @@ BEGIN
                 1;
 
 
+        IF @CasaDisponibleAnterior<@ReservaCasa
+            THROW 76106,'CASA no tiene saldo disponible para respaldar el premio maximo.',1;
         /* ====================================================
            BLOQUEAR BILLETERA Y VALIDAR SALDO
            ==================================================== */
@@ -1188,7 +1247,7 @@ BEGIN
             CuotaTotal,
             GananciaPotencial,
             TipoBoleto,
-            Resultado
+            Resultado, IdBilleteraCasaReserva, ReservaCasaInicial, ReservaCasaPendiente
         )
         VALUES
         (
@@ -1201,7 +1260,7 @@ BEGIN
             @CuotaTotal,
             @GananciaPotencial,
             @TipoBoleto,
-            'PENDIENTE'
+            'PENDIENTE', @IdBilleteraCasa, @ReservaCasa, @ReservaCasa
         );
 
         SET @IdBoleto =
@@ -1212,20 +1271,18 @@ BEGIN
            CREAR DETALLES CON LA CUOTA APLICADA
            ==================================================== */
 
-        INSERT INTO dbo.DetalleBoleto
-        (
-            IdBoleto,
-            IdSeleccion,
-            CuotaAplicada,
-            Resultado
-        )
-        SELECT
-            @IdBoleto,
-            D.IdSeleccion,
-            D.Cuota,
-            'PENDIENTE'
-        FROM @Detalle AS D;
-
+        INSERT dbo.DetalleBoleto
+          (IdBoleto,IdSeleccion,CuotaAplicada,Resultado,TipoMercadoAplicado,PronosticoA,PronosticoB,
+           CuotaResultadoAplicada,NombreEventoAplicado,NombreParticipanteAAplicado,NombreParticipanteBAplicado,NombreSeleccionAplicada)
+        SELECT @IdBoleto,D.IdSeleccion,D.Cuota,'PENDIENTE',M.TipoMercado,@PronosticoA,@PronosticoB,
+           C.ValorResultado,EV.Nombre,PA.Nombre,PB.Nombre,S.Nombre
+        FROM @Detalle D JOIN dbo.Seleccion S ON S.IdSeleccion=D.IdSeleccion
+        JOIN dbo.Mercado M ON M.IdMercado=D.IdMercado JOIN dbo.Evento EV ON EV.IdEvento=D.IdEvento
+        JOIN dbo.Cuota C ON C.IdCuota=D.IdCuota
+        LEFT JOIN dbo.EventoParticipante EA ON EA.IdEvento=D.IdEvento AND EA.OrdenParticipante=1
+        LEFT JOIN dbo.Participante PA ON PA.IdParticipante=EA.IdParticipante
+        LEFT JOIN dbo.EventoParticipante EB ON EB.IdEvento=D.IdEvento AND EB.OrdenParticipante=2
+        LEFT JOIN dbo.Participante PB ON PB.IdParticipante=EB.IdParticipante;
 
         /* ====================================================
            TRANSACCION FINANCIERA DE APUESTA
@@ -1478,6 +1535,31 @@ BEGIN
            AUDITORIA
            ==================================================== */
 
+        /* Reserva despues de acreditar comision, validada contra disponible previo. */
+        IF @ReservaCasa>0
+        BEGIN
+            DECLARE @ReservaDisponible DECIMAL(12,2),@ReservaComprometido DECIMAL(12,2),@ReservaTrans BIGINT,
+                    @ReservaFecha DATETIME2=SYSDATETIME();
+            SELECT @ReservaDisponible=SaldoDisponible,@ReservaComprometido=SaldoComprometido
+            FROM dbo.Billetera WHERE IdBilletera=@IdBilleteraCasa;
+            INSERT dbo.TransaccionFinanciera(IdBilletera,IdTipoTransaccion,IdEstado,IdBoleto,ReferenciaOperacion,
+              Monto,FechaSolicitud,FechaProcesamiento,IdUsuarioProceso,Descripcion)
+            VALUES(@IdBilleteraCasa,@IdTipoReserva,@IdEstadoTransaccionCompletada,@IdBoleto,NEWID(),
+              @ReservaCasa,@ReservaFecha,@ReservaFecha,@IdUsuario,'Reserva de respaldo maximo CASA.');
+            SET @ReservaTrans=SCOPE_IDENTITY();
+            UPDATE dbo.Billetera SET SaldoDisponible=SaldoDisponible-@ReservaCasa,SaldoComprometido=SaldoComprometido+@ReservaCasa
+            WHERE IdBilletera=@IdBilleteraCasa;
+            INSERT dbo.MovimientoBilletera(IdBilletera,IdTransaccion,SaldoDisponibleAnterior,SaldoDisponiblePosterior,
+              SaldoComprometidoAnterior,SaldoComprometidoPosterior)
+            VALUES(@IdBilleteraCasa,@ReservaTrans,@ReservaDisponible,@ReservaDisponible-@ReservaCasa,
+              @ReservaComprometido,@ReservaComprometido+@ReservaCasa);
+            INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,ReferenciaOperacion,IpOrigen,Descripcion)
+            VALUES(@IdUsuario,'RESERVA_CASA','Boleto',@IdBoleto,@ReferenciaOperacion,@IpOrigen,CONCAT('Reserva=',@ReservaCasa));
+        END;
+        /* La salida debe reflejar el saldo persistido tras comision y reserva. */
+        SELECT @CasaDisponiblePosterior=SaldoDisponible
+        FROM dbo.Billetera WHERE IdBilletera=@IdBilleteraCasa;
+
         INSERT INTO dbo.Auditoria
         (
             IdUsuario,
@@ -1677,7 +1759,7 @@ BEGIN
         B.FechaCreacion,
         B.FechaLiquidacion,
 
-        B.ReferenciaOperacion
+        B.ReferenciaOperacion, B.IdBilleteraCasaReserva,B.ReservaCasaInicial,B.ReservaCasaPendiente
 
     FROM dbo.Boleto AS B
     INNER JOIN dbo.Usuario AS U
@@ -1705,7 +1787,10 @@ BEGIN
         S.Nombre AS Seleccion,
 
         DB.CuotaAplicada,
-        DB.Resultado
+        DB.Resultado, DB.TipoMercadoAplicado,DB.PronosticoA,DB.PronosticoB,
+        DB.CuotaResultadoAplicada,DB.CuotaLiquidacion,DB.ClasificacionAcierto,
+        DB.NombreEventoAplicado,DB.NombreParticipanteAAplicado,DB.NombreParticipanteBAplicado,DB.NombreSeleccionAplicada,
+        (SELECT LB.MontoLiquidado FROM dbo.LiquidacionBoleto LB WHERE LB.IdBoleto=DB.IdBoleto) AS MontoLiquidado
 
     FROM dbo.DetalleBoleto AS DB
     INNER JOIN dbo.Seleccion AS S
