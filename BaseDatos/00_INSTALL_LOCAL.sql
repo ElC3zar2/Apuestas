@@ -65,6 +65,8 @@ GO
 GO
 :r "$(RutaBaseDatos)\03_PROCEDIMIENTOS\12_SimulacionModalidades.sql
 GO
+:r "$(RutaBaseDatos)\02_CONFIGURACION\09_DATOS_INICIALES_OFICIALES.sql
+GO
 :r "$(RutaBaseDatos)\04_INDICES\01_Indices.sql
 GO
 :r "$(RutaBaseDatos)\05_VISTAS\01_Vistas.sql
