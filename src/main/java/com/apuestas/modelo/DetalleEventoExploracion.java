@@ -265,4 +265,12 @@ public class DetalleEventoExploracion {
 
         this.mercados = mercados;
     }
+    private SimulacionEventoExploracion simulacion;
+    public SimulacionEventoExploracion getSimulacion() { return simulacion; }
+    public void setSimulacion(SimulacionEventoExploracion valor) { this.simulacion = valor; }
+    private List<IncidenciaEventoExploracion> incidencias = java.util.Collections.emptyList();
+    public List<IncidenciaEventoExploracion> getIncidencias() { return incidencias; }
+    public void setIncidencias(List<IncidenciaEventoExploracion> valor) {
+        incidencias = java.util.Collections.unmodifiableList(new ArrayList<>(valor));
+    }
 }

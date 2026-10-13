@@ -39,6 +39,19 @@ public class EventosExploracionServlet
     }
 
     @Override
+    protected void service(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        if (!"GET".equals(request.getMethod()) && !"HEAD".equals(request.getMethod())) {
+            response.setContentType("application/json;charset=UTF-8");
+            response.setHeader("Cache-Control", "no-store");
+            response.setHeader("Allow", "GET, HEAD");
+            escribirError(response, 405, "Metodo no permitido.");
+            return;
+        }
+        super.service(request, response);
+    }
+
+    @Override
     protected void doGet(
             HttpServletRequest request,
             HttpServletResponse response)
@@ -48,6 +61,7 @@ public class EventosExploracionServlet
                 "application/json;charset=UTF-8"
         );
 
+        response.setHeader("Cache-Control", "no-store");
         try {
 
             int idDeporte =
@@ -134,6 +148,8 @@ public class EventosExploracionServlet
                     estado,
                     mensaje
             );
+        } catch (RuntimeException e) {
+            escribirError(response, 500, "No fue posible obtener los eventos.");
         }
     }
 
@@ -275,9 +291,11 @@ public class EventosExploracionServlet
 
     private void agregarEvento(
             StringBuilder json,
-            EventoExploracion evento) {
+            EventoExploracion evento) throws IOException {
 
         json.append("{");
+        json.append("\"simulacion\":").append(ExploracionEventoJson.valor(evento.getSimulacion())).append(",");
+
 
         json.append("\"idEvento\":")
                 .append(evento.getIdEvento())

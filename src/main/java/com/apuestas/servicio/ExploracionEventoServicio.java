@@ -27,6 +27,10 @@ public class ExploracionEventoServicio {
                 new ExploracionEventoDAO();
     }
 
+    public ExploracionEventoServicio(ExploracionEventoDAO dao) {
+        exploracionEventoDAO = java.util.Objects.requireNonNull(dao);
+    }
+
     public List<EventoExploracion> listarEventos(
             int idDeporte,
             String vista,

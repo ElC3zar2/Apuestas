@@ -271,4 +271,7 @@ public class EventoExploracion {
 
         this.estadoResultado = estadoResultado;
     }
+    private SimulacionEventoExploracion simulacion;
+    public SimulacionEventoExploracion getSimulacion() { return simulacion; }
+    public void setSimulacion(SimulacionEventoExploracion valor) { this.simulacion = valor; }
 }

@@ -114,4 +114,7 @@ public class ParticipanteExploracion {
 
         this.codigoPais = codigoPais;
     }
+    private Integer marcadorActual;
+    public Integer getMarcadorActual() { return marcadorActual; }
+    public void setMarcadorActual(Integer valor) { this.marcadorActual = valor; }
 }

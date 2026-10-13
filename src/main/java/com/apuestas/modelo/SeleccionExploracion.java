@@ -168,4 +168,13 @@ public class SeleccionExploracion {
         this.puedeSeleccionar =
                 puedeSeleccionar;
     }
+    private Integer idParticipante;
+    public Integer getIdParticipante() { return idParticipante; }
+    public void setIdParticipante(Integer valor) { this.idParticipante = valor; }
+    private java.math.BigDecimal valor;
+    public java.math.BigDecimal getValor() { return valor; }
+    public void setValor(java.math.BigDecimal valor) { this.valor = valor; }
+    private java.math.BigDecimal valorResultado;
+    public java.math.BigDecimal getValorResultado() { return valorResultado; }
+    public void setValorResultado(java.math.BigDecimal valor) { this.valorResultado = valor; }
 }

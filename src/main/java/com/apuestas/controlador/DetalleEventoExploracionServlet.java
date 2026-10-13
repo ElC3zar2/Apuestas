@@ -42,6 +42,19 @@ public class DetalleEventoExploracionServlet
     }
 
     @Override
+    protected void service(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        if (!"GET".equals(request.getMethod()) && !"HEAD".equals(request.getMethod())) {
+            response.setContentType("application/json;charset=UTF-8");
+            response.setHeader("Cache-Control", "no-store");
+            response.setHeader("Allow", "GET, HEAD");
+            escribirError(response, 405, "Metodo no permitido.");
+            return;
+        }
+        super.service(request, response);
+    }
+
+    @Override
     protected void doGet(
             HttpServletRequest request,
             HttpServletResponse response)
@@ -51,6 +64,7 @@ public class DetalleEventoExploracionServlet
                 "application/json;charset=UTF-8"
         );
 
+        response.setHeader("Cache-Control", "no-store");
         try {
 
             int idEvento =
@@ -119,6 +133,8 @@ public class DetalleEventoExploracionServlet
                     estadoHttp,
                     mensaje
             );
+        } catch (RuntimeException e) {
+            escribirError(response, 500, "No fue posible obtener los eventos.");
         }
     }
 
@@ -245,9 +261,12 @@ public class DetalleEventoExploracionServlet
 
     private void agregarDetalleEvento(
             StringBuilder json,
-            DetalleEventoExploracion detalle) {
+            DetalleEventoExploracion detalle) throws IOException {
 
         json.append("{");
+        json.append("\"simulacion\":").append(ExploracionEventoJson.valor(detalle.getSimulacion())).append(",");
+        json.append("\"incidencias\":").append(ExploracionEventoJson.valor(detalle.getIncidencias())).append(",");
+
 
         json.append("\"idEvento\":")
                 .append(
@@ -426,9 +445,11 @@ public class DetalleEventoExploracionServlet
 
     private void agregarParticipante(
             StringBuilder json,
-            ParticipanteExploracion participante) {
+            ParticipanteExploracion participante) throws IOException {
 
         json.append("{");
+        json.append("\"marcadorActual\":").append(ExploracionEventoJson.valor(participante.getMarcadorActual())).append(",");
+
 
         json.append("\"idEventoParticipante\":")
                 .append(
@@ -503,9 +524,11 @@ public class DetalleEventoExploracionServlet
 
     private void agregarMercado(
             StringBuilder json,
-            MercadoExploracion mercado) {
+            MercadoExploracion mercado) throws IOException {
 
         json.append("{");
+        json.append("\"tipoMercado\":").append(ExploracionEventoJson.valor(mercado.getTipoMercado())).append(",");
+
 
         json.append("\"idMercado\":")
                 .append(
@@ -562,9 +585,13 @@ public class DetalleEventoExploracionServlet
 
     private void agregarSeleccion(
             StringBuilder json,
-            SeleccionExploracion seleccion) {
+            SeleccionExploracion seleccion) throws IOException {
 
         json.append("{");
+        json.append("\"idParticipante\":").append(ExploracionEventoJson.valor(seleccion.getIdParticipante())).append(",");
+        json.append("\"valor\":").append(ExploracionEventoJson.valor(seleccion.getValor())).append(",");
+        json.append("\"valorResultado\":").append(ExploracionEventoJson.valor(seleccion.getValorResultado())).append(",");
+
 
         json.append("\"idSeleccion\":")
                 .append(

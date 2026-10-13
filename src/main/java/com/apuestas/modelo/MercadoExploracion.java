@@ -82,4 +82,7 @@ public class MercadoExploracion {
         this.selecciones =
                 selecciones;
     }
+    private String tipoMercado;
+    public String getTipoMercado() { return tipoMercado; }
+    public void setTipoMercado(String valor) { this.tipoMercado = valor; }
 }
