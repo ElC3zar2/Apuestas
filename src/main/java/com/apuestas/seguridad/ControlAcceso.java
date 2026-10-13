@@ -2,6 +2,8 @@ package com.apuestas.seguridad;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.util.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import javax.servlet.*;
 import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
@@ -10,6 +12,18 @@ import javax.servlet.http.HttpSession;
 
 @WebFilter(urlPatterns = "/usuario/*", dispatcherTypes = DispatcherType.REQUEST)
 public class ControlAcceso implements Filter {
+    private static final ObjectMapper JSON = new ObjectMapper();
+    // Registro exacto de APIs JSON protegidas bajo este mapping. Nuevas APIs se agregan aqui.
+    // Login, logout, recuperacion publica y descarga PDF conservan sus contratos propios.
+    private static final Set<String> APIS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "/usuario/boletos/historial",
+            "/usuario/billetera/resumen",
+            "/usuario/billetera/movimientos",
+            "/usuario/analitica/resumen",
+            "/usuario/analitica/deportes",
+            "/usuario/seguridad/cambiar-contrasena",
+            "/usuario/seguridad/verificacion-correo/solicitar")));
+
     @Override
     public void init(FilterConfig config) { }
 
@@ -47,17 +61,28 @@ public class ControlAcceso implements Filter {
             rol = null;
         }
         if (idUsuario == null) {
+            if (APIS.contains(ruta)) { errorApi(res,401); return; }
             res.setStatus(HttpServletResponse.SC_SEE_OTHER);
             res.setHeader("Location", req.getContextPath() + "/usuario/login");
             return;
         }
         if (!"USUARIO".equals(rol)) {
+            if (APIS.contains(ruta)) { errorApi(res,403); return; }
             res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             res.setContentType("text/plain;charset=UTF-8");
             res.getWriter().print("No tiene permiso para acceder a esta página.");
             return;
         }
         chain.doFilter(request, response);
+    }
+
+    private static void errorApi(HttpServletResponse res,int estado) throws IOException {
+        res.setStatus(estado);
+        res.setContentType("application/json;charset=UTF-8");
+        Map<String,Object> cuerpo=new LinkedHashMap<>();
+        cuerpo.put("ok",false);
+        cuerpo.put("mensaje",estado==401?"Debe iniciar sesion con un usuario valido.":"No tiene permiso para realizar esta operacion.");
+        res.getWriter().print(JSON.writeValueAsString(cuerpo));
     }
 
     private Integer idValido(Object valor) {
