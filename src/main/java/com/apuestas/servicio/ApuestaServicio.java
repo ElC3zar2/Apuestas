@@ -32,94 +32,49 @@ public class ApuestaServicio {
         this.apuestaDAO = java.util.Objects.requireNonNull(apuestaDAO);
     }
 
-    public CotizacionApuesta cotizarApuesta(
-            List<Integer> idSelecciones,
-            BigDecimal monto)
-            throws SQLException {
-
-        validarSelecciones(
-                idSelecciones
-        );
-
-        validarMonto(
-                monto
-        );
-
-        String seleccionesJson =
-                construirSeleccionesJson(
-                        idSelecciones
-                );
-
-        try {
-
-            return apuestaDAO.cotizarApuesta(
-                    seleccionesJson,
-                    monto
-            );
-
-        } catch (SQLException e) {
-
-            throw traducirErrorApuesta(
-                    e
-            );
-        }
+    public CotizacionApuesta cotizarApuesta(List<Integer> selecciones,BigDecimal monto) throws SQLException {
+        return cotizarApuesta(selecciones,monto,null,null);
     }
 
-    public ResultadoApuesta realizarApuesta(
-            int idUsuario,
-            List<Integer> idSelecciones,
-            BigDecimal monto,
-            UUID referenciaOperacion,
-            String ipOrigen)
-            throws SQLException {
+    public CotizacionApuesta cotizarApuesta(List<Integer> selecciones,BigDecimal monto,
+            Integer pronosticoA,Integer pronosticoB) throws SQLException {
+        validarSelecciones(selecciones); validarMonto(monto); validarPronosticos(selecciones,pronosticoA,pronosticoB);
+        CotizacionApuesta r=apuestaDAO.cotizarApuesta(construirSeleccionesJson(selecciones),monto,pronosticoA,pronosticoB);
+        if(r==null || r.getDetalles()==null || r.getDetalles().size()!=selecciones.size())
+            throw new SQLException("Respuesta de cotizacion inconsistente.");
+        java.util.Set<Integer> recibidas=new java.util.HashSet<>();
+        for(com.apuestas.modelo.DetalleCotizacionApuesta d:r.getDetalles()) recibidas.add(d.getIdSeleccion());
+        if(!recibidas.equals(new java.util.HashSet<>(selecciones))) throw new SQLException("Selecciones inconsistentes.");
+        return r;
+    }
 
-        validarUsuario(
-                idUsuario
-        );
+    public ResultadoApuesta realizarApuesta(int idUsuario,List<Integer> selecciones,BigDecimal monto,
+            UUID referencia,String ip) throws SQLException {
+        return realizarApuesta(idUsuario,selecciones,monto,referencia,ip,null,null);
+    }
 
-        validarSelecciones(
-                idSelecciones
-        );
-
-        validarMonto(
-                monto
-        );
-
-        if (referenciaOperacion == null) {
-
-            throw new IllegalArgumentException(
-                    "La referencia de operación "
-                    + "es obligatoria."
-            );
+    public ResultadoApuesta realizarApuesta(int idUsuario,List<Integer> selecciones,BigDecimal monto,
+            UUID referencia,String ip,Integer pronosticoA,Integer pronosticoB) throws SQLException {
+        validarUsuario(idUsuario); validarSelecciones(selecciones); validarMonto(monto);
+        validarPronosticos(selecciones,pronosticoA,pronosticoB);
+        if(referencia==null) throw new IllegalArgumentException("Referencia obligatoria.");
+        ResultadoApuesta r=apuestaDAO.realizarApuesta(idUsuario,construirSeleccionesJson(selecciones),monto,
+                referencia,ip,pronosticoA,pronosticoB);
+        if(r==null) throw new SQLException("Resultado de apuesta ausente.");
+        if(r.isSolicitudIdempotente() && r.getCantidadSelecciones()==0) {
+            // SQL comprobo la identidad exacta de las selecciones y el pronostico.
+            r.setCantidadSelecciones(selecciones.size());
         }
+        if(r.getCantidadSelecciones()!=selecciones.size()
+                || !r.getTipoBoleto().equals(selecciones.size()==1?"SIMPLE":"COMPUESTO"))
+            throw new SQLException("Resultado de apuesta inconsistente.");
+        return r;
+    }
 
-        String seleccionesJson =
-                construirSeleccionesJson(
-                        idSelecciones
-                );
-
-        try {
-
-            ResultadoApuesta resultado = apuestaDAO.realizarApuesta(
-                    idUsuario,
-                    seleccionesJson,
-                    monto,
-                    referenciaOperacion,
-                    ipOrigen
-            );
-
-            if (resultado.isSolicitudIdempotente() && resultado.getCantidadSelecciones() == 0) {
-                // SQL ya verifico que la repeticion corresponde a estas mismas selecciones.
-                resultado.setCantidadSelecciones(idSelecciones.size());
-            }
-            return resultado;
-
-        } catch (SQLException e) {
-
-            throw traducirErrorApuesta(
-                    e
-            );
-        }
+    private void validarPronosticos(List<Integer> selecciones,Integer a,Integer b) {
+        if((a==null)!=(b==null) || (a!=null && (a<0 || b<0 || selecciones.size()!=1)))
+            throw new IllegalArgumentException("Pronosticos invalidos.");
+        // La modalidad pertenece a la seleccion en SQL, nunca a una etiqueta enviada por el cliente.
     }
 
     public Boleto obtenerBoletoPorId(
@@ -231,18 +186,10 @@ public class ApuestaServicio {
         }
     }
 
-    private void validarMonto(
-            BigDecimal monto) {
-
-        if (monto == null
-                || monto.compareTo(
-                        BigDecimal.ZERO
-                ) <= 0) {
-
-            throw new IllegalArgumentException(
-                    "El monto debe ser mayor que cero."
-            );
-        }
+    private void validarMonto(BigDecimal monto) {
+        if(monto==null || monto.signum()<=0 || monto.compareTo(new BigDecimal("9999999999.99"))>0
+                || monto.stripTrailingZeros().scale()>2)
+            throw new IllegalArgumentException("Monto fuera del contrato DECIMAL(12,2).");
     }
 
     private String construirSeleccionesJson(
@@ -269,51 +216,4 @@ public class ApuestaServicio {
         return json.toString();
     }
 
-    private SQLException traducirErrorApuesta(
-            SQLException e) {
-
-        int codigo =
-                e.getErrorCode();
-
-        String mensaje;
-
-        switch (codigo) {
-
-            case 60054:
-
-                mensaje =
-                        "El periodo para apostar "
-                        + "ya cerró.";
-
-                break;
-
-            case 60056:
-
-                mensaje =
-                        "El evento cerró mientras "
-                        + "se confirmaba la apuesta.";
-
-                break;
-
-            case 60005:
-            case 60022:
-
-                mensaje =
-                        "El monto es menor al mínimo "
-                        + "permitido para apostar.";
-
-                break;
-
-            default:
-
-                return e;
-        }
-
-        return new SQLException(
-                mensaje,
-                e.getSQLState(),
-                codigo,
-                e
-        );
-    }
 }

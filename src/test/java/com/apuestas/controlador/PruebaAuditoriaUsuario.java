@@ -42,7 +42,7 @@ public class PruebaAuditoriaUsuario {
         HttpServletRequest req=proxy(HttpServletRequest.class,(p,m,a)->{
             switch(m.getName()) {
                 case "getParameter": return parametros.get(a[0]);
-                case "getParameterValues": return new String[]{"1"};
+                case "getParameterValues": return a[0].equals("pronosticoA") || a[0].equals("pronosticoB") ? null : new String[]{"1"};
                 case "setCharacterEncoding": return null;
                 case "getSession":
                     exigir(a!=null && Boolean.FALSE.equals(a[0]));
@@ -117,7 +117,7 @@ public class PruebaAuditoriaUsuario {
         HttpServlet s=(HttpServlet)clase.getDeclaredConstructor().newInstance();s.init();
         if(s instanceof CotizarApuestaServlet) {
             inyectar(s,"apuestaServicio",new ApuestaServicio(){
-                @Override public CotizacionApuesta cotizarApuesta(List<Integer> ids,BigDecimal m)throws SQLException{throw new SQLException("INTERNO_PRIVADO","X",codigo);}
+                @Override public CotizacionApuesta cotizarApuesta(List<Integer> ids,BigDecimal m,Integer a,Integer b)throws SQLException{throw new SQLException("INTERNO_PRIVADO","X",codigo);}
             });
             ((CotizarApuestaServlet)s).doPost(h.req,h.res);
         } else {
@@ -191,7 +191,7 @@ public class PruebaAuditoriaUsuario {
         }else{
             CotizarApuestaServlet s=new CotizarApuestaServlet();s.init();
             inyectar(s,"apuestaServicio",new ApuestaServicio(){
-                @Override public CotizacionApuesta cotizarApuesta(List<Integer> ids,BigDecimal monto){exigir(ids.equals(Arrays.asList(1)));return new CotizacionApuesta();}
+                @Override public CotizacionApuesta cotizarApuesta(List<Integer> ids,BigDecimal monto,Integer a,Integer b){exigir(ids.equals(Arrays.asList(1)));return new CotizacionApuesta();}
             });s.doPost(h.req,h.res);
         }
         exigir(h.estado==200 && "application/json;charset=UTF-8".equals(h.tipo));

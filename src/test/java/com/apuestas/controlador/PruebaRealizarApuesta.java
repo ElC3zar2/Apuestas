@@ -69,7 +69,7 @@ public class PruebaRealizarApuesta {
                             case "close": cierres++; return null;
                             case "wasNull": return nulo;
                             case "getMetaData": return meta;
-                            case "getString": case "getInt": case "getBoolean": case "getBigDecimal":
+                            case "getObject": case "getString": case "getInt": case "getBoolean": case "getBigDecimal":
                                 String nombre = (String) a[0];
                                 if (!fila.containsKey(nombre)) throw new SQLException("Columna ausente");
                                 Object valor = fila.get(nombre);
@@ -165,6 +165,7 @@ public class PruebaRealizarApuesta {
                             if ("referenciaOperacion".equals(a[0])) return entrada.referencia;
                             throw new AssertionError("No leer parametro controlado por cliente: " + a[0]);
                         case "getParameterValues":
+                            if ("pronosticoA".equals(a[0]) || "pronosticoB".equals(a[0])) return null;
                             exigir("idSeleccion".equals(a[0]), "Solo selecciones repetidas");
                             return entrada.selecciones;
                         case "getRemoteAddr": return "127.0.0.9";
@@ -262,7 +263,7 @@ public class PruebaRealizarApuesta {
             exigir(d.parametros.get(3).equals(new BigDecimal("100.25")), "Monto exacto");
             exigir(d.parametros.get(4).equals(REF), "UUID estable y explicito");
             exigir(d.parametros.get(5).equals("127.0.0.9"), "IP real de request.getRemoteAddr");
-            exigir(d.sql.equals("{call dbo.sp_RealizarApuesta(?, ?, ?, ?, ?)}")
+            exigir(d.sql.equals("{call dbo.sp_RealizarApuesta(?, ?, ?, ?, ?, ?, ?)}")
                     && d.llamadas == 1 && d.cierres == 3, "Contrato SQL y recursos");
         }
         Jdbc d = new Jdbc(true);
@@ -322,9 +323,15 @@ public class PruebaRealizarApuesta {
         exigir(ejecutar(new Entrada(),d).estado == 500, "Error tardio SQL");
 
         ApuestaServicio cotizar = new ApuestaServicio(new ApuestaDAO() {
-            @Override public CotizacionApuesta cotizarApuesta(String ids, BigDecimal monto) {
+            @Override public CotizacionApuesta cotizarApuesta(String ids, BigDecimal monto, Integer a, Integer b) {
                 exigir("[11,12]".equals(ids), "Regresion JSON cotizacion");
-                return new CotizacionApuesta();
+                CotizacionApuesta r = new CotizacionApuesta();
+                java.util.List<com.apuestas.modelo.DetalleCotizacionApuesta> detalles = new ArrayList<>();
+                for(int id : new int[]{11,12}) {
+                    com.apuestas.modelo.DetalleCotizacionApuesta d = new com.apuestas.modelo.DetalleCotizacionApuesta();
+                    d.setIdSeleccion(id); detalles.add(d);
+                }
+                r.setDetalles(detalles); return r;
             }
         });
         exigir(cotizar.cotizarApuesta(Arrays.asList(11,12), new BigDecimal("100.25")) != null,

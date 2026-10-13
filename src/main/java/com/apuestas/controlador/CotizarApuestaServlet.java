@@ -39,6 +39,17 @@ public class CotizarApuestaServlet extends HttpServlet {
     }
 
     @Override
+    protected void service(HttpServletRequest request,HttpServletResponse response)
+            throws ServletException,IOException {
+        if(!"POST".equals(request.getMethod())) {
+            response.setContentType("application/json;charset=UTF-8");
+            response.setHeader("Cache-Control","no-store"); response.setHeader("Allow","POST");
+            escribirError(response,405,"Metodo no permitido."); return;
+        }
+        super.service(request,response);
+    }
+
+    @Override
     protected void doPost(
             HttpServletRequest request,
             HttpServletResponse response)
@@ -52,6 +63,7 @@ public class CotizarApuestaServlet extends HttpServlet {
                 "application/json;charset=UTF-8"
         );
 
+        response.setHeader("Cache-Control", "no-store");
         try {
 
             List<Integer> idSelecciones =
@@ -67,7 +79,9 @@ public class CotizarApuestaServlet extends HttpServlet {
             CotizacionApuesta cotizacion =
                     apuestaServicio.cotizarApuesta(
                             idSelecciones,
-                            monto
+                            monto,
+                            ApuestaHttp.pronostico(request,"pronosticoA"),
+                            ApuestaHttp.pronostico(request,"pronosticoB")
                     );
 
             response.setStatus(
@@ -107,6 +121,8 @@ public class CotizarApuestaServlet extends HttpServlet {
                     estadoHttp,
                     mensaje
             );
+        } catch (RuntimeException e) {
+            escribirError(response, 500, "No fue posible procesar la cotizacion.");
         }
     }
 
@@ -192,29 +208,7 @@ public class CotizarApuestaServlet extends HttpServlet {
         }
     }
 
-    private int obtenerEstadoHttp(
-            SQLException e) {
-
-        switch (e.getErrorCode()) {
-
-            case 60005:
-            case 60022:
-
-                return HttpServletResponse
-                        .SC_BAD_REQUEST;
-
-            case 60054:
-            case 60056:
-
-                return HttpServletResponse
-                        .SC_CONFLICT;
-
-            default:
-
-                return HttpServletResponse
-                        .SC_INTERNAL_SERVER_ERROR;
-        }
-    }
+    private int obtenerEstadoHttp(SQLException e) { return ApuestaHttp.estadoCotizacion(e.getErrorCode()); }
 
     private void escribirCotizacion(
             HttpServletResponse response,
@@ -227,6 +221,13 @@ public class CotizarApuestaServlet extends HttpServlet {
         json.append("{");
 
         json.append("\"ok\":true,");
+        json.append("\"tipoMercado\":").append(textoJson(cotizacion.getTipoMercado())).append(",");
+        json.append("\"pronosticoA\":").append(cotizacion.getPronosticoA()).append(",");
+        json.append("\"pronosticoB\":").append(cotizacion.getPronosticoB()).append(",");
+        json.append("\"cuotaResultado\":").append(decimalJson(cotizacion.getCuotaResultado())).append(",");
+        json.append("\"premioResultadoPotencial\":").append(decimalJson(cotizacion.getPremioResultadoPotencial())).append(",");
+        json.append("\"premioExactoOMaximo\":").append(decimalJson(cotizacion.getPremioExactoOMaximo())).append(",");
+
 
         json.append("\"tipoBoleto\":")
                 .append(

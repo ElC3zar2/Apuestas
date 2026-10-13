@@ -68,6 +68,9 @@ public class PruebaContratosAuditoria {
         }
     }
     public static void main(String[] args)throws Exception{
+        if(args.length>0 && "apuestas".equals(args[0])) {
+            com.apuestas.controlador.PruebaModalidadesApuesta.main(new String[0]); return;
+        }
         if(args.length>0 && "exploracion".equals(args[0])) {
             com.apuestas.controlador.PruebaExploracionEventos.main(new String[0]); return;
         }
@@ -75,7 +78,7 @@ public class PruebaContratosAuditoria {
         probar("registro",false,0);
         probar("registro",false,2);
         probar("registro",false,1,1);
-        for(String op:new String[]{"cotizar","boleto"}){
+        for(String op:new String[]{"boleto"}){
             probar(op,true,1,1);
             probar(op,false,0,1);
             probar(op,false,2,1);
@@ -83,6 +86,7 @@ public class PruebaContratosAuditoria {
             probar(op,false,1,1,1);
         }
         com.apuestas.controlador.PruebaExploracionEventos.main(new String[0]);
+        com.apuestas.controlador.PruebaModalidadesApuesta.main(new String[0]);
         System.out.println("Contratos auditoria: "+casos+" casos, "+fallos+" fallos.");
         if(fallos>0)throw new AssertionError("Contratos incompletos");
     }

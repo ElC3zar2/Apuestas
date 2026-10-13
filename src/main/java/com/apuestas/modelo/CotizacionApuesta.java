@@ -109,4 +109,22 @@ public class CotizacionApuesta {
             List<DetalleCotizacionApuesta> detalles) {
         this.detalles = detalles;
     }
+    private String tipoMercado;
+    public String getTipoMercado() { return tipoMercado; }
+    public void setTipoMercado(String valor) { tipoMercado = valor; }
+    private Integer pronosticoA;
+    public Integer getPronosticoA() { return pronosticoA; }
+    public void setPronosticoA(Integer valor) { pronosticoA = valor; }
+    private Integer pronosticoB;
+    public Integer getPronosticoB() { return pronosticoB; }
+    public void setPronosticoB(Integer valor) { pronosticoB = valor; }
+    private BigDecimal cuotaResultado;
+    public BigDecimal getCuotaResultado() { return cuotaResultado; }
+    public void setCuotaResultado(BigDecimal valor) { cuotaResultado = valor; }
+    private BigDecimal premioResultadoPotencial;
+    public BigDecimal getPremioResultadoPotencial() { return premioResultadoPotencial; }
+    public void setPremioResultadoPotencial(BigDecimal valor) { premioResultadoPotencial = valor; }
+    private BigDecimal premioExactoOMaximo;
+    public BigDecimal getPremioExactoOMaximo() { return premioExactoOMaximo; }
+    public void setPremioExactoOMaximo(BigDecimal valor) { premioExactoOMaximo = valor; }
 }

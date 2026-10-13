@@ -28,202 +28,122 @@ import java.util.UUID;
  */
 public class ApuestaDAO {
 
-    public CotizacionApuesta cotizarApuesta(
-            String seleccionesJson,
-            BigDecimal monto)
-            throws SQLException {
+    public CotizacionApuesta cotizarApuesta(String seleccionesJson, BigDecimal monto) throws SQLException {
+        return cotizarApuesta(seleccionesJson, monto, null, null);
+    }
 
-        String sql =
-                "{call dbo.sp_CotizarApuesta(?, ?)}";
-
-        try (Connection conexion =
-                     obtenerConexion();
-             CallableStatement cs =
-                     conexion.prepareCall(sql)) {
-
-            cs.setString(
-                    1,
-                    seleccionesJson
-            );
-
-            cs.setBigDecimal(
-                    2,
-                    monto
-            );
-
-            boolean tieneResultados =
-                    cs.execute();
-
-            if (!tieneResultados) {
-                throw new SQLException(
-                        "El procedimiento sp_CotizarApuesta "
-                        + "no devolvió la cotización."
-                );
+    public CotizacionApuesta cotizarApuesta(String seleccionesJson, BigDecimal monto,
+            Integer pronosticoA, Integer pronosticoB) throws SQLException {
+        try(Connection c=obtenerConexion(); CallableStatement cs=c.prepareCall(
+                "{call dbo.sp_CotizarApuesta(?, ?, ?, ?)}")) {
+            cs.setString(1,seleccionesJson); cs.setBigDecimal(2,monto);
+            pronostico(cs,3,pronosticoA); pronostico(cs,4,pronosticoB);
+            CotizacionApuesta r=new CotizacionApuesta();
+            try(ResultSet rs=resultadoCotizacion(cs,true,
+                    "TipoBoleto,CantidadSelecciones,MontoApostado,ComisionServicioPorcentaje,ComisionServicio,TotalCargo,CuotaTotal,GananciaPotencial")) {
+                if(!rs.next()) throw contratoApuesta();
+                r.setTipoBoleto(dato(rs,"TipoBoleto",String.class,false));
+                r.setCantidadSelecciones(dato(rs,"CantidadSelecciones",Integer.class,false));
+                r.setMontoApostado(dato(rs,"MontoApostado",BigDecimal.class,false));
+                r.setComisionServicioPorcentaje(dato(rs,"ComisionServicioPorcentaje",BigDecimal.class,false));
+                r.setComisionServicio(dato(rs,"ComisionServicio",BigDecimal.class,false));
+                r.setTotalCargo(dato(rs,"TotalCargo",BigDecimal.class,false));
+                r.setCuotaTotal(dato(rs,"CuotaTotal",BigDecimal.class,false));
+                r.setGananciaPotencial(dato(rs,"GananciaPotencial",BigDecimal.class,false));
+                if(rs.next() || r.getCantidadSelecciones()<1 || r.getMontoApostado().compareTo(monto)!=0
+                        || !r.getTipoBoleto().equals(r.getCantidadSelecciones()==1?"SIMPLE":"COMPUESTO")) throw contratoApuesta();
             }
-
-            CotizacionApuesta cotizacion =
-                    new CotizacionApuesta();
-
-            try (ResultSet rs =
-                         cs.getResultSet()) {
-
-                if (!rs.next()) {
-                    throw new SQLException(
-                            "El procedimiento sp_CotizarApuesta "
-                            + "no devolvió el resumen "
-                            + "de la cotización."
-                    );
-                }
-
-                cotizacion.setTipoBoleto(
-                        rs.getString(
-                                "TipoBoleto"
-                        )
-                );
-
-                cotizacion.setCantidadSelecciones(
-                        rs.getInt(
-                                "CantidadSelecciones"
-                        )
-                );
-
-                cotizacion.setMontoApostado(
-                        rs.getBigDecimal(
-                                "MontoApostado"
-                        )
-                );
-
-                cotizacion.setComisionServicioPorcentaje(
-                        rs.getBigDecimal(
-                                "ComisionServicioPorcentaje"
-                        )
-                );
-
-                cotizacion.setComisionServicio(
-                        rs.getBigDecimal(
-                                "ComisionServicio"
-                        )
-                );
-
-                cotizacion.setTotalCargo(
-                        rs.getBigDecimal(
-                                "TotalCargo"
-                        )
-                );
-
-                cotizacion.setCuotaTotal(
-                        rs.getBigDecimal(
-                                "CuotaTotal"
-                        )
-                );
-
-                cotizacion.setGananciaPotencial(
-                        rs.getBigDecimal(
-                                "GananciaPotencial"
-                        )
-                );
-                if (rs.next()) throw new SQLException("Cotizacion duplicada.");
-            }
-
-            boolean tieneDetalle =
-                    cs.getMoreResults();
-
-            List<DetalleCotizacionApuesta> detalles =
-                    new ArrayList<>();
-
-            if (!tieneDetalle) throw new SQLException("Falta el detalle de cotizacion.");
-            if (tieneDetalle) {
-
-                try (ResultSet rs =
-                             cs.getResultSet()) {
-
-                    while (rs.next()) {
-
-                        DetalleCotizacionApuesta detalle =
-                                new DetalleCotizacionApuesta();
-
-                        detalle.setOrden(
-                                rs.getInt(
-                                        "Orden"
-                                )
-                        );
-
-                        detalle.setIdEvento(
-                                rs.getInt(
-                                        "IdEvento"
-                                )
-                        );
-
-                        detalle.setNombreEvento(
-                                rs.getString(
-                                        "NombreEvento"
-                                )
-                        );
-
-                        detalle.setIdMercado(
-                                rs.getInt(
-                                        "IdMercado"
-                                )
-                        );
-
-                        detalle.setNombreMercado(
-                                rs.getString(
-                                        "NombreMercado"
-                                )
-                        );
-
-                        detalle.setIdSeleccion(
-                                rs.getInt(
-                                        "IdSeleccion"
-                                )
-                        );
-
-                        detalle.setNombreSeleccion(
-                                rs.getString(
-                                        "NombreSeleccion"
-                                )
-                        );
-
-                        detalle.setIdCuota(
-                                rs.getInt(
-                                        "IdCuota"
-                                )
-                        );
-
-                        detalle.setCuota(
-                                rs.getBigDecimal(
-                                        "Cuota"
-                                )
-                        );
-
-                        detalles.add(
-                                detalle
-                        );
-                    }
+            List<DetalleCotizacionApuesta> detalles=new ArrayList<>();
+            java.util.Set<Integer> ids=new java.util.HashSet<>(), ordenes=new java.util.HashSet<>();
+            try(ResultSet rs=resultadoCotizacion(cs,false,
+                    "Orden,IdEvento,NombreEvento,IdMercado,NombreMercado,IdSeleccion,NombreSeleccion,IdCuota,Cuota")) {
+                while(rs.next()) {
+                    DetalleCotizacionApuesta d=new DetalleCotizacionApuesta();
+                    d.setOrden(dato(rs,"Orden",Integer.class,false));
+                    d.setIdEvento(dato(rs,"IdEvento",Integer.class,false));
+                    d.setNombreEvento(dato(rs,"NombreEvento",String.class,false));
+                    d.setIdMercado(dato(rs,"IdMercado",Integer.class,false));
+                    d.setNombreMercado(dato(rs,"NombreMercado",String.class,false));
+                    d.setIdSeleccion(dato(rs,"IdSeleccion",Integer.class,false));
+                    d.setNombreSeleccion(dato(rs,"NombreSeleccion",String.class,false));
+                    d.setIdCuota(dato(rs,"IdCuota",Integer.class,false));
+                    d.setCuota(dato(rs,"Cuota",BigDecimal.class,false));
+                    if(d.getIdEvento()<=0 || d.getIdMercado()<=0 || d.getIdSeleccion()<=0 || d.getIdCuota()<=0
+                            || d.getOrden()<1 || d.getOrden()>r.getCantidadSelecciones()
+                            || !ids.add(d.getIdSeleccion()) || !ordenes.add(d.getOrden())) throw contratoApuesta();
+                    detalles.add(d);
                 }
             }
-
-            cotizacion.setDetalles(
-                    detalles
-            );
-
-            comprobarFinConsulta(cs);
-            return cotizacion;
+            if(detalles.size()!=r.getCantidadSelecciones()) throw contratoApuesta();
+            r.setDetalles(java.util.Collections.unmodifiableList(detalles));
+            try(ResultSet rs=resultadoCotizacion(cs,false,
+                    "TipoMercado,PronosticoA,PronosticoB,CuotaResultado,PremioResultadoPotencial,PremioExactoOMaximo")) {
+                if(!rs.next()) throw contratoApuesta();
+                r.setTipoMercado(dato(rs,"TipoMercado",String.class,false));
+                r.setPronosticoA(dato(rs,"PronosticoA",Integer.class,true));
+                r.setPronosticoB(dato(rs,"PronosticoB",Integer.class,true));
+                r.setCuotaResultado(dato(rs,"CuotaResultado",BigDecimal.class,true));
+                r.setPremioResultadoPotencial(dato(rs,"PremioResultadoPotencial",BigDecimal.class,true));
+                r.setPremioExactoOMaximo(dato(rs,"PremioExactoOMaximo",BigDecimal.class,false));
+                if(rs.next() || !java.util.Arrays.asList("CONVENCIONAL","MARCADOR_FINAL","PRIMERA_ANOTACION").contains(r.getTipoMercado())
+                        || !java.util.Objects.equals(pronosticoA,r.getPronosticoA())
+                        || !java.util.Objects.equals(pronosticoB,r.getPronosticoB())
+                        || r.getPremioExactoOMaximo().compareTo(r.getGananciaPotencial())!=0) throw contratoApuesta();
+                boolean marcador="MARCADOR_FINAL".equals(r.getTipoMercado());
+                if(!"CONVENCIONAL".equals(r.getTipoMercado()) && r.getCantidadSelecciones()!=1) throw contratoApuesta();
+                if(marcador) {
+                    if(pronosticoA==null || pronosticoB==null || pronosticoA<0 || pronosticoB<0
+                            || r.getCuotaResultado()==null || r.getPremioResultadoPotencial()==null
+                            || r.getCuotaResultado().compareTo(BigDecimal.ONE)<=0
+                            || r.getCuotaResultado().compareTo(r.getCuotaTotal())>=0) throw contratoApuesta();
+                } else if(pronosticoA!=null || pronosticoB!=null || r.getCuotaResultado()!=null
+                        || r.getPremioResultadoPotencial()!=null) throw contratoApuesta();
+            }
+            comprobarFinConsulta(cs); return r;
         }
+    }
+
+    private static SQLException contratoApuesta() { return new SQLException("Respuesta de apuesta inconsistente."); }
+    private static <T> T dato(ResultSet rs,String columna,Class<T> tipo,boolean nullable) throws SQLException {
+        Object valor=rs.getObject(columna);
+        if(valor==null && nullable) return null;
+        if(!tipo.isInstance(valor)) throw contratoApuesta(); return tipo.cast(valor);
+    }
+    private static void pronostico(CallableStatement cs,int posicion,Integer valor) throws SQLException {
+        if(valor==null) cs.setNull(posicion,Types.INTEGER); else cs.setInt(posicion,valor);
+    }
+    private static ResultSet resultadoCotizacion(CallableStatement cs,boolean primero,String columnas) throws SQLException {
+        boolean hay=primero?cs.execute():cs.getMoreResults();
+        while(!hay && cs.getUpdateCount()!=-1) hay=cs.getMoreResults();
+        if(!hay) throw contratoApuesta();
+        ResultSet rs=cs.getResultSet(); if(rs==null) throw contratoApuesta();
+        try {
+            java.sql.ResultSetMetaData md=rs.getMetaData();
+            java.util.Set<String> nombres=new java.util.HashSet<>();
+            for(int n=1;n<=md.getColumnCount();n++) nombres.add(md.getColumnLabel(n));
+            for(String columna:columnas.split(",")) if(!nombres.contains(columna)) throw contratoApuesta();
+            return rs;
+        } catch(SQLException | RuntimeException e) { rs.close(); throw contratoApuesta(); }
     }
 
     public ResultadoApuesta realizarApuesta(
             int idUsuario, String seleccionesJson, BigDecimal monto,
             UUID referenciaOperacion, String ipOrigen) throws SQLException {
+        return realizarApuesta(idUsuario,seleccionesJson,monto,referenciaOperacion,ipOrigen,null,null);
+    }
+
+    public ResultadoApuesta realizarApuesta(int idUsuario,String seleccionesJson,BigDecimal monto,
+            UUID referenciaOperacion,String ipOrigen,Integer pronosticoA,Integer pronosticoB) throws SQLException {
         try (Connection conexion = obtenerConexion();
              CallableStatement cs = conexion.prepareCall(
-                     "{call dbo.sp_RealizarApuesta(?, ?, ?, ?, ?)}")) {
+                     "{call dbo.sp_RealizarApuesta(?, ?, ?, ?, ?, ?, ?)}")) {
             cs.setInt(1, idUsuario);
             cs.setString(2, seleccionesJson);
             cs.setBigDecimal(3, monto);
             // Representacion explicita para UNIQUEIDENTIFIER en el driver SQL Server.
             cs.setString(4, referenciaOperacion.toString());
             establecerIp(cs, 5, ipOrigen);
+            pronostico(cs,6,pronosticoA); pronostico(cs,7,pronosticoB);
 
             boolean hayResultado = cs.execute();
             while (!hayResultado && cs.getUpdateCount() != -1) {
@@ -234,8 +154,7 @@ public class ApuestaDAO {
             ResultadoApuesta resultado = new ResultadoApuesta();
             try (ResultSet rs = cs.getResultSet()) {
                 if (!rs.next()) throw new SQLException("No se recibio el boleto.");
-                boolean idempotente = rs.getBoolean("SolicitudIdempotente");
-                if (rs.wasNull()) throw new SQLException("Falta el indicador de idempotencia.");
+                boolean idempotente = dato(rs,"SolicitudIdempotente",Boolean.class,false);
                 resultado.setSolicitudIdempotente(idempotente);
                 String referencia = rs.getString("ReferenciaOperacion");
                 if (referencia == null
@@ -243,25 +162,25 @@ public class ApuestaDAO {
                     throw new SQLException("La referencia devuelta no coincide con la solicitud.");
                 }
                 resultado.setReferenciaOperacion(referencia);
-                resultado.setIdBoleto(rs.getInt("IdBoleto"));
-                resultado.setCodigoBoleto(rs.getString("CodigoBoleto"));
-                resultado.setTipoBoleto(rs.getString("TipoBoleto"));
-                resultado.setMontoApostado(rs.getBigDecimal("MontoApostado"));
-                resultado.setComisionServicio(rs.getBigDecimal("ComisionServicio"));
-                resultado.setTotalCargo(rs.getBigDecimal("TotalCargo"));
-                resultado.setCuotaTotal(rs.getBigDecimal("CuotaTotal"));
-                resultado.setGananciaPotencial(rs.getBigDecimal("GananciaPotencial"));
+                resultado.setIdBoleto(dato(rs,"IdBoleto",Integer.class,false));
+                resultado.setCodigoBoleto(dato(rs,"CodigoBoleto",String.class,false));
+                resultado.setTipoBoleto(dato(rs,"TipoBoleto",String.class,false));
+                resultado.setMontoApostado(dato(rs,"MontoApostado",BigDecimal.class,false));
+                resultado.setComisionServicio(dato(rs,"ComisionServicio",BigDecimal.class,false));
+                resultado.setTotalCargo(dato(rs,"TotalCargo",BigDecimal.class,false));
+                resultado.setCuotaTotal(dato(rs,"CuotaTotal",BigDecimal.class,false));
+                resultado.setGananciaPotencial(dato(rs,"GananciaPotencial",BigDecimal.class,false));
 
                 // La rama idempotente actual omite estas dos columnas.
                 if (!idempotente || tieneColumna(rs, "CantidadSelecciones")) {
-                    resultado.setCantidadSelecciones(rs.getInt("CantidadSelecciones"));
-                    if (rs.wasNull() || resultado.getCantidadSelecciones() <= 0) {
+                    resultado.setCantidadSelecciones(dato(rs,"CantidadSelecciones",Integer.class,false));
+                    if (resultado.getCantidadSelecciones() <= 0) {
                         throw new SQLException("Cantidad de selecciones invalida.");
                     }
                 }
                 if (!idempotente || tieneColumna(rs, "ComisionServicioPorcentaje")) {
                     resultado.setComisionServicioPorcentaje(
-                            rs.getBigDecimal("ComisionServicioPorcentaje"));
+                            dato(rs,"ComisionServicioPorcentaje",BigDecimal.class,false));
                     if (resultado.getComisionServicioPorcentaje() == null) {
                         throw new SQLException("Porcentaje de comision nulo.");
                     }
@@ -279,6 +198,9 @@ public class ApuestaDAO {
                 if (adicional) throw new SQLException("Resultado adicional inesperado.");
                 adicional = cs.getMoreResults();
             }
+            if(resultado.getMontoApostado().compareTo(monto)!=0
+                    || !java.util.Arrays.asList("SIMPLE","COMPUESTO").contains(resultado.getTipoBoleto())
+                    || (pronosticoA!=null && !"SIMPLE".equals(resultado.getTipoBoleto()))) throw contratoApuesta();
             return resultado;
         }
     }

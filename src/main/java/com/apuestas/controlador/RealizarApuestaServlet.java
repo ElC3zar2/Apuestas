@@ -32,6 +32,17 @@ public class RealizarApuestaServlet extends HttpServlet {
     }
 
     @Override
+    protected void service(HttpServletRequest request,HttpServletResponse response)
+            throws ServletException,IOException {
+        if(!"POST".equals(request.getMethod())) {
+            response.setContentType("application/json;charset=UTF-8");
+            response.setHeader("Cache-Control","no-store"); response.setHeader("Allow","POST");
+            error(response,405,"Metodo no permitido."); return;
+        }
+        super.service(request,response);
+    }
+
+    @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         request.setCharacterEncoding("UTF-8");
@@ -73,7 +84,8 @@ public class RealizarApuestaServlet extends HttpServlet {
             }
             UUID referencia = UUID.fromString(referenciaTexto);
             ResultadoApuesta resultado = apuestaServicio.realizarApuesta(
-                    idUsuario, selecciones, monto, referencia, request.getRemoteAddr());
+                    idUsuario, selecciones, monto, referencia, request.getRemoteAddr(),
+                    ApuestaHttp.pronostico(request,"pronosticoA"), ApuestaHttp.pronostico(request,"pronosticoB"));
 
             Map<String, Object> cuerpo = new LinkedHashMap<>();
             cuerpo.put("ok", true);
@@ -143,28 +155,13 @@ public class RealizarApuestaServlet extends HttpServlet {
     }
 
     /** Solo codigos emitidos por sp_RealizarApuesta; no usar mensajes SQL como contenido HTTP. */
-    private int estadoSql(int codigo) {
-        switch (codigo) {
-            case 60016: case 60017: case 60018: case 60019: case 60020:
-            case 60022: case 60023: case 60024: case 60025:
-            case 60042: case 60043: case 60044: case 60061: case 60062:
-                return 400;
-            case 60033:
-                return 401;
-            case 60034: case 60035: case 60036: case 60037: case 60038: case 60039:
-                return 403;
-            case 60029: case 60030: case 60031: case 60032:
-            case 60040: case 60046: case 60056:
-                return 409;
-            // Configuracion, billetera ausente, cuotas inconsistentes y codigos desconocidos.
-            default:
-                return 500;
-        }
-    }
+    private int estadoSql(int codigo) { return ApuestaHttp.estadoRealizacion(codigo); }
 
     private String mensajeSql(int codigo) {
         switch (codigo) {
-            case 60029: case 60030: case 60031: case 60032:
+            case 76900: return "La operacion no esta disponible temporalmente. Reintente con la misma referencia.";
+            case 76106: return "No fue posible aceptar la apuesta con la disponibilidad actual.";
+            case 60029: case 60030: case 60031: case 60032: case 76104:
                 return "La referencia de operación ya fue utilizada para otra solicitud.";
             case 60040: case 60056:
                 return "Una o más selecciones ya no están disponibles o el periodo de apuestas cerró.";
