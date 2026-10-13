@@ -11,7 +11,7 @@ import java.math.BigDecimal;
  *
  * @author farfa
  */
-public class DetalleBoleto {
+public class DetalleBoleto extends DatosModalidadBoleto {
 
     private int idDetalle;
 
@@ -27,6 +27,10 @@ public class DetalleBoleto {
     private BigDecimal cuotaAplicada;
 
     private String resultado;
+
+    private BigDecimal montoLiquidado;
+    public BigDecimal getMontoLiquidado() { return montoLiquidado; }
+    public void setMontoLiquidado(BigDecimal valor) { montoLiquidado=valor; }
 
     public DetalleBoleto() {
     }

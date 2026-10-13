@@ -67,7 +67,7 @@ public class PruebaHistorialBoletosUsuario {
         return fila;
     }
 
-    private static class Jdbc extends AnaliticaUsuarioDAO {
+    static class Jdbc extends AnaliticaUsuarioDAO {
         final List<Map<String, Object>> resumenes = new ArrayList<>();
         final List<Map<String, Object>> detalles = new ArrayList<>();
         final List<Object> resultados = new ArrayList<>();
@@ -78,6 +78,8 @@ public class PruebaHistorialBoletosUsuario {
         int conexiones, codigo, indice, falloResultado = -1;
         boolean runtime, faltaPrimero, faltaSegundo, extra, conteos, errorFinal, preparado;
         String sql;
+        String modalidad="CONVENCIONAL",clasificacion;
+        int omitirRS=-1; boolean tipoMetricaInvalido, detalleHistoricoAjeno;
         Jdbc() { resumenes.add(resumen(70)); detalles.add(detalle(70, 8)); }
 
         @Override protected Connection obtenerConexion() throws SQLException {
@@ -115,6 +117,13 @@ public class PruebaHistorialBoletosUsuario {
                         if (conteos) resultados.add(3);
                         if (!faltaPrimero && !faltaSegundo) resultados.add(detalles);
                         if (conteos) resultados.add(0);
+                        List<Map<String,Object>> metricas=new ArrayList<>();
+                        if(!detalles.isEmpty()) { Map<String,Object> metrica=DatosPruebaConsultasUsuario.metrica();metrica.put("TipoMercadoAplicado",modalidad);if(tipoMetricaInvalido)metrica.put("CantidadDetalles",1);metricas.add(metrica); }
+                        List<Map<String,Object>> historicos=DatosPruebaConsultasUsuario.historicos(detalles,resumenes,7);
+                        for(Map<String,Object> h:historicos)h.putAll(DatosPruebaConsultasUsuario.modalidad(modalidad,clasificacion));
+                        if(detalleHistoricoAjeno && !historicos.isEmpty())historicos.get(0).put("IdDetalle",999);
+                        resultados.add(metricas);resultados.add(historicos);
+                        if(omitirRS>=0)resultados.remove(omitirRS);
                         if (extra) resultados.add(Collections.emptyList());
                         return esResultado();
                     case "getUpdateCount":
@@ -143,7 +152,13 @@ public class PruebaHistorialBoletosUsuario {
                         return ++pos[0] < filas.size();
                     case "close": cerrar(nombre); return null;
                     case "wasNull": return nulo[0];
-                    case "getInt": case "getString": case "getBigDecimal": case "getTimestamp":
+                    case "getMetaData":
+                        if(!filas.isEmpty())return DatosPruebaConsultasUsuario.metadata(filas.get(0).keySet());
+                        if(filas==resumenes)return DatosPruebaConsultasUsuario.metadata(resumen(70).keySet());
+                        if(filas==detalles)return DatosPruebaConsultasUsuario.metadata(detalle(70,8).keySet());
+                        // Empty official result sets still have metadata.
+                        return DatosPruebaConsultasUsuario.metadata(numero==2 || (conteos && numero==5)?DatosPruebaConsultasUsuario.metrica().keySet():DatosPruebaConsultasUsuario.historicos(Arrays.asList(detalle(70,8)),Arrays.asList(resumen(70)),7).get(0).keySet());
+                    case "getObject": case "getInt": case "getString": case "getBigDecimal": case "getTimestamp":
                         String columna = (String)a[0];
                         Map<String,Object> fila = filas.get(pos[0]);
                         if (!fila.containsKey(columna)) throw new SQLException("PRIVADO columna");
@@ -156,19 +171,19 @@ public class PruebaHistorialBoletosUsuario {
             });
         }
     }
-    private static class Entrada {
+    static class Entrada {
         boolean sesion = true, expirada;
         Object id = 7, rol = "USUARIO";
         String deporte;
     }
-    private static class Salida {
+    static class Salida {
         int estado = 200;
         String tipo;
         final Map<String,String> headers = new HashMap<>();
         final StringWriter cuerpo = new StringWriter();
         JsonNode json;
     }
-    private static Salida ejecutar(Entrada e, Jdbc jdbc, int esperado) throws Exception {
+    static Salida ejecutar(Entrada e, Jdbc jdbc, int esperado) throws Exception {
         HistorialBoletosUsuarioServlet servlet = new HistorialBoletosUsuarioServlet();
         servlet.init();
         Field campo = HistorialBoletosUsuarioServlet.class.getDeclaredField("analiticaServicio");
@@ -242,7 +257,7 @@ public class PruebaHistorialBoletosUsuario {
                         ((Timestamp)original).toLocalDateTime())), "Fecha ISO " + clave);
             } else exigir(valor.asText().equals(original), "Texto " + clave);
         }
-        exigir(json.size() == fila.size() - omitidas + (detalle ? 0 : 1), "Campos exactos");
+        exigir(json.size() == fila.size() - omitidas + (detalle ? 11 : 1), "Campos exactos");
     }
 
     public static void main(String[] args) throws Exception {

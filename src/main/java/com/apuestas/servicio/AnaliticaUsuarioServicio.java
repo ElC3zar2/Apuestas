@@ -1,7 +1,7 @@
 package com.apuestas.servicio;
 
 import com.apuestas.dao.AnaliticaUsuarioDAO;
-import com.apuestas.modelo.AnaliticaBoletoUsuario;
+import com.apuestas.modelo.*;
 import com.apuestas.modelo.ResumenGeneralUsuario;
 import com.apuestas.modelo.ResumenUsuarioPorDeporte;
 import java.sql.SQLException;
@@ -34,5 +34,17 @@ public class AnaliticaUsuarioServicio {
     public ResumenGeneralUsuario obtenerResumenGeneralUsuario(int idUsuario) throws SQLException {
         if (idUsuario <= 0) throw new IllegalArgumentException("Usuario invalido.");
         return analiticaDAO.obtenerResumenGeneralUsuario(idUsuario);
+    }
+    public ConsultaAnaliticaUsuario<List<AnaliticaBoletoUsuario>> consultarHistorial(int idUsuario,Integer idDeporte) throws SQLException {
+        if(idUsuario<=0 || (idDeporte!=null && idDeporte<=0))throw new IllegalArgumentException("Parametros invalidos.");
+        return analiticaDAO.consultarHistorial(idUsuario,idDeporte);
+    }
+    public ConsultaAnaliticaUsuario<List<ResumenUsuarioPorDeporte>> consultarResumenPorDeporte(int idUsuario) throws SQLException {
+        if(idUsuario<=0)throw new IllegalArgumentException("Usuario invalido.");
+        return analiticaDAO.consultarResumenPorDeporte(idUsuario);
+    }
+    public ConsultaAnaliticaUsuario<ResumenGeneralUsuario> consultarResumenGeneral(int idUsuario) throws SQLException {
+        if(idUsuario<=0)throw new IllegalArgumentException("Usuario invalido.");
+        return analiticaDAO.consultarResumenGeneral(idUsuario);
     }
 }

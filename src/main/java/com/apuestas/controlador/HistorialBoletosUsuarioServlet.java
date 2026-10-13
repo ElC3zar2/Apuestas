@@ -23,6 +23,16 @@ public class HistorialBoletosUsuarioServlet extends HttpServlet {
     public void init() { analiticaServicio = new AnaliticaUsuarioServicio(); }
 
     @Override
+    protected void service(HttpServletRequest request,HttpServletResponse response) throws javax.servlet.ServletException,IOException {
+        if(!"GET".equals(request.getMethod())) {
+            response.setContentType("application/json;charset=UTF-8");
+            response.setHeader("Cache-Control","no-store");response.setHeader("Allow","GET");
+            error(response,405); return;
+        }
+        super.service(request,response);
+    }
+
+    @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         response.setContentType("application/json;charset=UTF-8");
         response.setHeader("Cache-Control", "no-store");
@@ -52,9 +62,10 @@ public class HistorialBoletosUsuarioServlet extends HttpServlet {
                     return;
                 }
             }
+            ConsultaAnaliticaUsuario<List<AnaliticaBoletoUsuario>> consulta=analiticaServicio.consultarHistorial(idUsuario,idDeporte);
             List<Map<String, Object>> boletos = new ArrayList<>();
             for (AnaliticaBoletoUsuario boleto :
-                    analiticaServicio.obtenerAnaliticaBoletosUsuario(idUsuario, idDeporte)) {
+                    consulta.getDatos()) {
                 boletos.add(resumen(boleto));
             }
             Map<String, Object> cuerpo = new LinkedHashMap<>();
@@ -62,6 +73,7 @@ public class HistorialBoletosUsuarioServlet extends HttpServlet {
             cuerpo.put("idDeporte", idDeporte);
             cuerpo.put("cantidadBoletos", boletos.size());
             cuerpo.put("boletos", boletos);
+            cuerpo.put("modalidades", consulta.getModalidades());
             escribir(response, 200, cuerpo);
         } catch (SQLException e) {
             LOG.warning("Error SQL al consultar historial. Codigo: " + e.getErrorCode());
@@ -126,6 +138,17 @@ public class HistorialBoletosUsuarioServlet extends HttpServlet {
         datos.put("cuotaAplicada", detalle.getCuotaAplicada());
         datos.put("probabilidadImplicitaSeleccionPorcentaje", detalle.getProbabilidadImplicitaSeleccionPorcentaje());
         datos.put("resultadoSeleccion", detalle.getResultadoSeleccion());
+        datos.put("tipoMercadoAplicado", detalle.getTipoMercadoAplicado());
+        datos.put("pronosticoA", detalle.getPronosticoA());
+        datos.put("pronosticoB", detalle.getPronosticoB());
+        datos.put("cuotaResultadoAplicada", detalle.getCuotaResultadoAplicada());
+        datos.put("cuotaLiquidacion", detalle.getCuotaLiquidacion());
+        datos.put("clasificacionAcierto", detalle.getClasificacionAcierto());
+        datos.put("nombreEventoAplicado", detalle.getNombreEventoAplicado());
+        datos.put("nombreParticipanteAAplicado", detalle.getNombreParticipanteAAplicado());
+        datos.put("nombreParticipanteBAplicado", detalle.getNombreParticipanteBAplicado());
+        datos.put("nombreSeleccionAplicada", detalle.getNombreSeleccionAplicada());
+        datos.put("descripcionAcierto", detalle.getDescripcionAcierto());
         return datos;
     }
 
@@ -141,7 +164,7 @@ public class HistorialBoletosUsuarioServlet extends HttpServlet {
     }
 
     private void error(HttpServletResponse response, int estado) throws IOException {
-        String mensaje = estado == 400 ? "Los parametros de la consulta no son validos."
+        String mensaje = estado == 405 ? "Metodo no permitido." : estado == 400 ? "Los parametros de la consulta no son validos."
                 : estado == 401 ? "Debe iniciar sesion con un usuario valido."
                 : estado == 403 ? "No tiene permiso para consultar el historial."
                 : "No fue posible consultar el historial.";

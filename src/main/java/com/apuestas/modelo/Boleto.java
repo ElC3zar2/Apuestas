@@ -39,6 +39,16 @@ public class Boleto {
 
     private String referenciaOperacion;
 
+    private Integer idBilleteraCasaReserva;
+    private BigDecimal reservaCasaInicial;
+    private BigDecimal reservaCasaPendiente;
+    public Integer getIdBilleteraCasaReserva() { return idBilleteraCasaReserva; }
+    public void setIdBilleteraCasaReserva(Integer valor) { idBilleteraCasaReserva=valor; }
+    public BigDecimal getReservaCasaInicial() { return reservaCasaInicial; }
+    public void setReservaCasaInicial(BigDecimal valor) { reservaCasaInicial=valor; }
+    public BigDecimal getReservaCasaPendiente() { return reservaCasaPendiente; }
+    public void setReservaCasaPendiente(BigDecimal valor) { reservaCasaPendiente=valor; }
+
     private List<DetalleBoleto> detalles;
 
     public Boleto() {

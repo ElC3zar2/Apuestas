@@ -121,7 +121,7 @@ public class PruebaBilleteraUsuario {
 
     private static class Entrada {
         boolean sesion = true, expirada;
-        Object idUsuario = 7;
+        Object idUsuario = 7, rol = "USUARIO";
         String desde, hasta, cantidad;
     }
     private static class Salida {
@@ -142,9 +142,9 @@ public class PruebaBilleteraUsuario {
         HttpSession sesion=(HttpSession)Proxy.newProxyInstance(
                 PruebaBilleteraUsuario.class.getClassLoader(),new Class<?>[]{HttpSession.class},(p,m,a)->{
                     exigir("getAttribute".equals(m.getName()),"No escribir ni invalidar sesion");
-                    exigir("idUsuario".equals(a[0]),"Solo identidad de sesion");
+                    exigir("idUsuario".equals(a[0]) || "rol".equals(a[0]),"Solo identidad y rol de sesion");
                     if(e.expirada) throw new IllegalStateException("Expirada");
-                    return e.idUsuario;
+                    return "idUsuario".equals(a[0])?e.idUsuario:e.rol;
                 });
         HttpServletRequest req=(HttpServletRequest)Proxy.newProxyInstance(
                 PruebaBilleteraUsuario.class.getClassLoader(),new Class<?>[]{HttpServletRequest.class},(p,m,a)->{

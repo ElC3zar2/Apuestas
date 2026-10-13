@@ -18,6 +18,11 @@ import java.util.Scanner;
 public class PruebaReporteBoleto {
 
     public static void main(String[] args) {
+        if(args.length==1 && "--controlado".equals(args[0])) {
+            try { PruebaReporteBoletoControlado.main(new String[0]); }
+            catch(Exception e) { throw new AssertionError("Reporte controlado fallo",e); }
+            return;
+        }
 
         try (Scanner scanner = new Scanner(System.in)) {
 

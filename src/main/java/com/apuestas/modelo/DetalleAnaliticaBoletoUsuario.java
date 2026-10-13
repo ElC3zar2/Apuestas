@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /** Datos del contrato oficial de analitica; no recalcula indicadores. */
-public final class DetalleAnaliticaBoletoUsuario {
+public final class DetalleAnaliticaBoletoUsuario extends DatosModalidadBoleto {
     private final int idBoleto;
     private final String codigoBoleto;
     private final int idDetalle;
@@ -60,6 +60,10 @@ public final class DetalleAnaliticaBoletoUsuario {
         this.probabilidadImplicitaSeleccionPorcentaje = probabilidadImplicitaSeleccionPorcentaje;
         this.resultadoSeleccion = resultadoSeleccion;
     }
+
+    private String descripcionAcierto;
+    public String getDescripcionAcierto() { return descripcionAcierto; }
+    public void setDescripcionAcierto(String valor) { descripcionAcierto=valor; }
 
     public int getIdBoleto() { return idBoleto; }
     public String getCodigoBoleto() { return codigoBoleto; }

@@ -18,6 +18,16 @@ public class ResumenGeneralUsuarioServlet extends HttpServlet {
     public void init() { analiticaServicio = new AnaliticaUsuarioServicio(); }
 
     @Override
+    protected void service(HttpServletRequest request,HttpServletResponse response) throws javax.servlet.ServletException,IOException {
+        if(!"GET".equals(request.getMethod())) {
+            response.setContentType("application/json;charset=UTF-8");
+            response.setHeader("Cache-Control","no-store");response.setHeader("Allow","GET");
+            ResumenAnaliticaHttp.error(response,405); return;
+        }
+        super.service(request,response);
+    }
+
+    @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         ResumenAnaliticaHttp.preparar(response);
         try {
@@ -25,7 +35,9 @@ public class ResumenGeneralUsuarioServlet extends HttpServlet {
             if (idUsuario == null) return;
             Map<String,Object> cuerpo = new LinkedHashMap<>();
             cuerpo.put("ok", true);
-            cuerpo.put("resumen", analiticaServicio.obtenerResumenGeneralUsuario(idUsuario));
+            ConsultaAnaliticaUsuario<ResumenGeneralUsuario> consulta=analiticaServicio.consultarResumenGeneral(idUsuario);
+            cuerpo.put("resumen", consulta.getDatos());
+            cuerpo.put("modalidades", consulta.getModalidades());
             ResumenAnaliticaHttp.escribir(response, 200, cuerpo);
         } catch (SQLException e) {
             LOG.warning("Error SQL al consultar analitica. Codigo: " + e.getErrorCode());

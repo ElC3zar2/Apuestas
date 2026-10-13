@@ -217,269 +217,59 @@ public class ApuestaDAO {
         return false;
     }
 
-    public Boleto obtenerBoleto(
-            int idUsuarioSolicitante,
-            Integer idBoleto,
-            String codigoBoleto)
-            throws SQLException {
-
-        String sql =
-                "{call dbo.sp_ObtenerBoleto(?, ?, ?)}";
-
-        try (Connection conexion =
-                     obtenerConexion();
-             CallableStatement cs =
-                     conexion.prepareCall(sql)) {
-
-            cs.setInt(
-                    1,
-                    idUsuarioSolicitante
-            );
-
-            if (idBoleto != null) {
-
-                cs.setInt(
-                        2,
-                        idBoleto
-                );
-
-            } else {
-
-                cs.setNull(
-                        2,
-                        Types.INTEGER
-                );
+    public Boleto obtenerBoleto(int idUsuarioSolicitante,Integer idBoleto,String codigoBoleto) throws SQLException {
+        try(Connection conexion=obtenerConexion();CallableStatement cs=conexion.prepareCall("{call dbo.sp_ObtenerBoleto(?, ?, ?)}")) {
+            cs.setInt(1,idUsuarioSolicitante);
+            if(idBoleto==null)cs.setNull(2,Types.INTEGER);else cs.setInt(2,idBoleto);
+            if(codigoBoleto==null || codigoBoleto.trim().isEmpty())cs.setNull(3,Types.VARCHAR);else cs.setString(3,codigoBoleto.trim());
+            Boleto b=new Boleto();
+            try(ResultSet rs=LecturaUsuarioSQL.resultado(cs,true,
+                    "IdBoleto,CodigoBoleto,IdUsuario,Correo,TipoBoleto,MontoApostado,ComisionServicio,TotalCargo,CuotaTotal,GananciaPotencial,Resultado,EstadoBoleto,FechaCreacion,FechaLiquidacion,ReferenciaOperacion,IdBilleteraCasaReserva,ReservaCasaInicial,ReservaCasaPendiente")) {
+                if(!rs.next())throw LecturaUsuarioSQL.error();
+                b.setIdBoleto(LecturaUsuarioSQL.dato(rs,"IdBoleto",Integer.class,false));
+                b.setCodigoBoleto(LecturaUsuarioSQL.dato(rs,"CodigoBoleto",String.class,false));
+                b.setIdUsuario(LecturaUsuarioSQL.dato(rs,"IdUsuario",Integer.class,false));
+                b.setCorreo(LecturaUsuarioSQL.dato(rs,"Correo",String.class,false));
+                b.setTipoBoleto(LecturaUsuarioSQL.dato(rs,"TipoBoleto",String.class,false));
+                b.setMontoApostado(LecturaUsuarioSQL.dato(rs,"MontoApostado",BigDecimal.class,false));
+                b.setComisionServicio(LecturaUsuarioSQL.dato(rs,"ComisionServicio",BigDecimal.class,false));
+                b.setTotalCargo(LecturaUsuarioSQL.dato(rs,"TotalCargo",BigDecimal.class,false));
+                b.setCuotaTotal(LecturaUsuarioSQL.dato(rs,"CuotaTotal",BigDecimal.class,false));
+                b.setGananciaPotencial(LecturaUsuarioSQL.dato(rs,"GananciaPotencial",BigDecimal.class,false));
+                b.setResultado(LecturaUsuarioSQL.dato(rs,"Resultado",String.class,false));
+                b.setEstadoBoleto(LecturaUsuarioSQL.dato(rs,"EstadoBoleto",String.class,false));
+                b.setIdBilleteraCasaReserva(LecturaUsuarioSQL.dato(rs,"IdBilleteraCasaReserva",Integer.class,true));
+                b.setReservaCasaInicial(LecturaUsuarioSQL.dato(rs,"ReservaCasaInicial",BigDecimal.class,false));
+                b.setReservaCasaPendiente(LecturaUsuarioSQL.dato(rs,"ReservaCasaPendiente",BigDecimal.class,false));
+                b.setFechaCreacion(LecturaUsuarioSQL.dato(rs,"FechaCreacion",Timestamp.class,false).toLocalDateTime());
+                Timestamp liquidacion=LecturaUsuarioSQL.dato(rs,"FechaLiquidacion",Timestamp.class,true);
+                b.setFechaLiquidacion(liquidacion==null?null:liquidacion.toLocalDateTime());
+                b.setReferenciaOperacion(rs.getString("ReferenciaOperacion"));
+                if(b.getReferenciaOperacion()==null || rs.next() || b.getIdBoleto()<=0 || b.getIdUsuario()<=0
+                        || (idBoleto!=null && b.getIdBoleto()!=idBoleto)
+                        || (codigoBoleto!=null && !codigoBoleto.trim().isEmpty() && !codigoBoleto.trim().equals(b.getCodigoBoleto())))throw LecturaUsuarioSQL.error();
             }
-
-            if (codigoBoleto != null
-                    && !codigoBoleto.trim().isEmpty()) {
-
-                cs.setString(
-                        3,
-                        codigoBoleto.trim()
-                );
-
-            } else {
-
-                cs.setNull(
-                        3,
-                        Types.VARCHAR
-                );
-            }
-
-            boolean tieneResultados =
-                    cs.execute();
-
-            if (!tieneResultados) {
-
-                throw new SQLException(
-                        "El procedimiento sp_ObtenerBoleto "
-                        + "no devolvió el encabezado."
-                );
-            }
-
-            Boleto boleto =
-                    new Boleto();
-
-            try (ResultSet rs =
-                         cs.getResultSet()) {
-
-                if (!rs.next()) {
-
-                    throw new SQLException(
-                            "El procedimiento sp_ObtenerBoleto "
-                            + "no devolvió información "
-                            + "del boleto."
-                    );
-                }
-
-                boleto.setIdBoleto(
-                        rs.getInt(
-                                "IdBoleto"
-                        )
-                );
-
-                boleto.setCodigoBoleto(
-                        rs.getString(
-                                "CodigoBoleto"
-                        )
-                );
-
-                boleto.setIdUsuario(
-                        rs.getInt(
-                                "IdUsuario"
-                        )
-                );
-
-                boleto.setCorreo(
-                        rs.getString(
-                                "Correo"
-                        )
-                );
-
-                boleto.setTipoBoleto(
-                        rs.getString(
-                                "TipoBoleto"
-                        )
-                );
-
-                boleto.setMontoApostado(
-                        rs.getBigDecimal(
-                                "MontoApostado"
-                        )
-                );
-
-                boleto.setComisionServicio(
-                        rs.getBigDecimal(
-                                "ComisionServicio"
-                        )
-                );
-
-                boleto.setTotalCargo(
-                        rs.getBigDecimal(
-                                "TotalCargo"
-                        )
-                );
-
-                boleto.setCuotaTotal(
-                        rs.getBigDecimal(
-                                "CuotaTotal"
-                        )
-                );
-
-                boleto.setGananciaPotencial(
-                        rs.getBigDecimal(
-                                "GananciaPotencial"
-                        )
-                );
-
-                boleto.setResultado(
-                        rs.getString(
-                                "Resultado"
-                        )
-                );
-
-                boleto.setEstadoBoleto(
-                        rs.getString(
-                                "EstadoBoleto"
-                        )
-                );
-
-                Timestamp fechaCreacion =
-                        rs.getTimestamp(
-                                "FechaCreacion"
-                        );
-
-                if (fechaCreacion != null) {
-
-                    boleto.setFechaCreacion(
-                            fechaCreacion
-                                    .toLocalDateTime()
-                    );
-                }
-
-                Timestamp fechaLiquidacion =
-                        rs.getTimestamp(
-                                "FechaLiquidacion"
-                        );
-
-                if (fechaLiquidacion != null) {
-
-                    boleto.setFechaLiquidacion(
-                            fechaLiquidacion
-                                    .toLocalDateTime()
-                    );
-                }
-
-                boleto.setReferenciaOperacion(
-                        rs.getString(
-                                "ReferenciaOperacion"
-                        )
-                );
-                if (rs.next()) throw new SQLException("Encabezado de boleto duplicado.");
-            }
-
-            List<DetalleBoleto> detalles =
-                    new ArrayList<>();
-
-            if (!cs.getMoreResults()) throw new SQLException("Falta el detalle del boleto.");
-            {
-
-                try (ResultSet rs =
-                             cs.getResultSet()) {
-
-                    while (rs.next()) {
-
-                        DetalleBoleto detalle =
-                                new DetalleBoleto();
-
-                        detalle.setIdDetalle(
-                                rs.getInt(
-                                        "IdDetalle"
-                                )
-                        );
-
-                        detalle.setIdEvento(
-                                rs.getInt(
-                                        "IdEvento"
-                                )
-                        );
-
-                        detalle.setEvento(
-                                rs.getString(
-                                        "Evento"
-                                )
-                        );
-
-                        detalle.setIdMercado(
-                                rs.getInt(
-                                        "IdMercado"
-                                )
-                        );
-
-                        detalle.setMercado(
-                                rs.getString(
-                                        "Mercado"
-                                )
-                        );
-
-                        detalle.setIdSeleccion(
-                                rs.getInt(
-                                        "IdSeleccion"
-                                )
-                        );
-
-                        detalle.setSeleccion(
-                                rs.getString(
-                                        "Seleccion"
-                                )
-                        );
-
-                        detalle.setCuotaAplicada(
-                                rs.getBigDecimal(
-                                        "CuotaAplicada"
-                                )
-                        );
-
-                        detalle.setResultado(
-                                rs.getString(
-                                        "Resultado"
-                                )
-                        );
-
-                        detalles.add(
-                                detalle
-                        );
-                    }
+            List<DetalleBoleto> detalles=new ArrayList<>();java.util.Set<Integer> ids=new java.util.HashSet<>();
+            try(ResultSet rs=LecturaUsuarioSQL.resultado(cs,false,
+                    "IdDetalle,IdEvento,Evento,IdMercado,Mercado,IdSeleccion,Seleccion,CuotaAplicada,Resultado,MontoLiquidado,"+LecturaUsuarioSQL.MODALIDAD)) {
+                while(rs.next()) {
+                    DetalleBoleto d=new DetalleBoleto();
+                    d.setIdDetalle(LecturaUsuarioSQL.dato(rs,"IdDetalle",Integer.class,false));
+                    d.setIdEvento(LecturaUsuarioSQL.dato(rs,"IdEvento",Integer.class,false));
+                    d.setEvento(LecturaUsuarioSQL.dato(rs,"Evento",String.class,false));
+                    d.setIdMercado(LecturaUsuarioSQL.dato(rs,"IdMercado",Integer.class,false));
+                    d.setMercado(LecturaUsuarioSQL.dato(rs,"Mercado",String.class,false));
+                    d.setIdSeleccion(LecturaUsuarioSQL.dato(rs,"IdSeleccion",Integer.class,false));
+                    d.setSeleccion(LecturaUsuarioSQL.dato(rs,"Seleccion",String.class,false));
+                    d.setCuotaAplicada(LecturaUsuarioSQL.dato(rs,"CuotaAplicada",BigDecimal.class,false));
+                    d.setResultado(LecturaUsuarioSQL.dato(rs,"Resultado",String.class,false));
+                    LecturaUsuarioSQL.modalidad(rs,d);
+                    d.setMontoLiquidado(LecturaUsuarioSQL.dato(rs,"MontoLiquidado",BigDecimal.class,true));
+                    if(d.getIdDetalle()<=0 || d.getIdEvento()<=0 || d.getIdMercado()<=0 || d.getIdSeleccion()<=0 || !ids.add(d.getIdDetalle()))throw LecturaUsuarioSQL.error();
+                    detalles.add(d);
                 }
             }
-
-            boleto.setDetalles(
-                    detalles
-            );
-
-            comprobarFinConsulta(cs);
-            return boleto;
+            b.setDetalles(detalles);comprobarFinConsulta(cs);return b;
         }
     }
 

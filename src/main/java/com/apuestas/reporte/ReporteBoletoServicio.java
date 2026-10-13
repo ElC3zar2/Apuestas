@@ -120,7 +120,7 @@ public class ReporteBoletoServicio {
 
         JRBeanCollectionDataSource dataSource =
                 new JRBeanCollectionDataSource(
-                        detalles
+                        detallesReporte(detalles)
                 );
 
         return GeneradorReportePDF.generar(
@@ -128,6 +128,22 @@ public class ReporteBoletoServicio {
                 parametros,
                 dataSource
         );
+    }
+
+    static List<DetalleBoleto> detallesReporte(List<DetalleBoleto> detalles) {
+        List<DetalleBoleto> salida=new java.util.ArrayList<>();
+        for(DetalleBoleto original:detalles) {
+            DetalleBoleto d=new DetalleBoleto();
+            d.setEvento(original.getNombreEventoAplicado()==null?original.getEvento():original.getNombreEventoAplicado());
+            d.setMercado(original.getTipoMercadoAplicado()==null?original.getMercado():"CONVENCIONAL".equals(original.getTipoMercadoAplicado())?original.getMercado()+"\nCONVENCIONAL":original.getTipoMercadoAplicado());
+            String seleccion=original.getNombreSeleccionAplicada()==null?original.getSeleccion():original.getNombreSeleccionAplicada();
+            if("MARCADOR_FINAL".equals(original.getTipoMercadoAplicado()) && original.getPronosticoA()!=null && original.getPronosticoB()!=null)
+                seleccion=seleccion + " (" + original.getPronosticoA() + " - " + original.getPronosticoB() + ")";
+            d.setSeleccion(seleccion);
+            d.setCuotaAplicada(original.getCuotaAplicada());
+            d.setResultado(original.getClasificacionAcierto()==null?original.getResultado():original.getClasificacionAcierto());
+            salida.add(d);
+        }return salida;
     }
 
     private String texto(String valor) {

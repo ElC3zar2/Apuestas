@@ -53,7 +53,7 @@ final class ResumenAnaliticaHttp {
     }
 
     static void error(HttpServletResponse response, int estado) throws IOException {
-        String mensaje = estado == 400 ? "Los parametros de la consulta no son validos."
+        String mensaje = estado == 405 ? "Metodo no permitido." : estado == 400 ? "Los parametros de la consulta no son validos."
                 : estado == 401 ? "Debe iniciar sesion con un usuario valido."
                 : estado == 403 ? "No tiene permiso para consultar la analitica."
                 : "No fue posible consultar la analitica.";

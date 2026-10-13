@@ -24,18 +24,22 @@ final class BilleteraHttp {
         response.setHeader("Cache-Control", "no-store");
     }
 
-    static Integer usuario(HttpServletRequest request) {
-        HttpSession sesion = request.getSession(false);
+    static Integer usuarioAutorizado(HttpServletRequest request,HttpServletResponse response) throws IOException {
+        HttpSession sesion=request.getSession(false);
+        Integer id=null;Object rol=null;
         try {
-            Object valor = sesion == null ? null : sesion.getAttribute("idUsuario");
-            if (!(valor instanceof Number) && !(valor instanceof String)) return null;
-            String texto = valor.toString().trim();
-            if (valor instanceof String && !texto.matches("[0-9]+")) return null;
-            int id = new BigDecimal(texto).intValueExact();
-            return id > 0 ? id : null;
-        } catch (IllegalStateException | ArithmeticException | NumberFormatException e) {
-            return null;
-        }
+            Object valor=sesion==null?null:sesion.getAttribute("idUsuario");
+            if(valor instanceof Number || valor instanceof String) {
+                String texto=valor.toString().trim();
+                if(!(valor instanceof String) || texto.matches("[0-9]+")) {
+                    int numero=new BigDecimal(texto).intValueExact();if(numero>0)id=numero;
+                }
+            }
+            rol=sesion==null?null:sesion.getAttribute("rol");
+        }catch(IllegalStateException | ArithmeticException | NumberFormatException e){id=null;}
+        if(id==null){error(response,401);return null;}
+        if(!"USUARIO".equals(rol)){error(response,403);return null;}
+        return id;
     }
 
     static LocalDateTime fechaEntrada(String texto) {
@@ -66,8 +70,10 @@ final class BilleteraHttp {
     static void error(HttpServletResponse response, int estado) throws IOException {
         String mensaje;
         switch (estado) {
+            case 405: mensaje = "Metodo no permitido."; break;
             case 400: mensaje = "Los parámetros de la consulta no son válidos."; break;
             case 401: mensaje = "Debe iniciar sesión con un usuario válido."; break;
+            case 403: mensaje = "No tiene permiso para consultar la billetera."; break;
             case 404: mensaje = "No se encontró la billetera del usuario."; break;
             default: mensaje = "No fue posible consultar la billetera."; break;
         }

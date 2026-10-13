@@ -10,7 +10,7 @@ public class AnaliticaUsuarioDAO {
         return ConexionBD.obtenerConexion();
     }
 
-    public List<AnaliticaBoletoUsuario> obtenerAnaliticaBoletosUsuario(
+    public ConsultaAnaliticaUsuario<List<AnaliticaBoletoUsuario>> consultarHistorial(
             int idUsuario, Integer idDeporte) throws SQLException {
         try (Connection conexion = obtenerConexion();
              CallableStatement cs = conexion.prepareCall(
@@ -22,23 +22,24 @@ public class AnaliticaUsuarioDAO {
             Map<Integer, AnaliticaBoletoUsuario> boletos = new LinkedHashMap<>();
             exigirResultado(cs, cs.execute());
             try (ResultSet rs = cs.getResultSet()) {
+                LecturaUsuarioSQL.columnas(rs,"IdBoleto,CodigoBoleto,TipoBoleto,Resultado,EstadoBoleto,FechaCreacion,FechaLiquidacion,MontoApostado,ComisionServicio,TotalCargo,CuotaTotal,PremioPotencial,GananciaNetaPotencial,PorcentajeGananciaPotencial,ProbabilidadImplicitaPorcentaje,CantidadSelecciones");
                 while (rs.next()) {
                     AnaliticaBoletoUsuario boleto = new AnaliticaBoletoUsuario(
                             obligatorio(entero(rs, "IdBoleto"), "IdBoleto"),
-                            obligatorio(rs.getString("CodigoBoleto"), "CodigoBoleto"),
-                            obligatorio(rs.getString("TipoBoleto"), "TipoBoleto"),
-                            obligatorio(rs.getString("Resultado"), "Resultado"),
-                            obligatorio(rs.getString("EstadoBoleto"), "EstadoBoleto"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"CodigoBoleto",String.class,true), "CodigoBoleto"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"TipoBoleto",String.class,true), "TipoBoleto"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"Resultado",String.class,true), "Resultado"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"EstadoBoleto",String.class,true), "EstadoBoleto"),
                             obligatorio(fecha(rs, "FechaCreacion"), "FechaCreacion"),
                             fecha(rs, "FechaLiquidacion"),
-                            obligatorio(rs.getBigDecimal("MontoApostado"), "MontoApostado"),
-                            obligatorio(rs.getBigDecimal("ComisionServicio"), "ComisionServicio"),
-                            obligatorio(rs.getBigDecimal("TotalCargo"), "TotalCargo"),
-                            obligatorio(rs.getBigDecimal("CuotaTotal"), "CuotaTotal"),
-                            obligatorio(rs.getBigDecimal("PremioPotencial"), "PremioPotencial"),
-                            obligatorio(rs.getBigDecimal("GananciaNetaPotencial"), "GananciaNetaPotencial"),
-                            rs.getBigDecimal("PorcentajeGananciaPotencial"),
-                            rs.getBigDecimal("ProbabilidadImplicitaPorcentaje"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"MontoApostado",java.math.BigDecimal.class,true), "MontoApostado"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"ComisionServicio",java.math.BigDecimal.class,true), "ComisionServicio"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"TotalCargo",java.math.BigDecimal.class,true), "TotalCargo"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"CuotaTotal",java.math.BigDecimal.class,true), "CuotaTotal"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"PremioPotencial",java.math.BigDecimal.class,true), "PremioPotencial"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"GananciaNetaPotencial",java.math.BigDecimal.class,true), "GananciaNetaPotencial"),
+                            LecturaUsuarioSQL.dato(rs,"PorcentajeGananciaPotencial",java.math.BigDecimal.class,true),
+                            LecturaUsuarioSQL.dato(rs,"ProbabilidadImplicitaPorcentaje",java.math.BigDecimal.class,true),
                             obligatorio(entero(rs, "CantidadSelecciones"), "CantidadSelecciones"));
                     if (boleto.getIdBoleto() <= 0 || boleto.getCantidadSelecciones() < 0
                             || boletos.putIfAbsent(boleto.getIdBoleto(), boleto) != null) {
@@ -50,25 +51,26 @@ public class AnaliticaUsuarioDAO {
             exigirResultado(cs, cs.getMoreResults());
             Set<Integer> idsDetalle = new HashSet<>();
             try (ResultSet rs = cs.getResultSet()) {
+                LecturaUsuarioSQL.columnas(rs,"IdBoleto,CodigoBoleto,IdDetalle,IdDeporte,Deporte,IdLiga,Liga,IdEvento,Evento,FechaInicio,IdMercado,Mercado,IdSeleccion,Seleccion,CuotaAplicada,ProbabilidadImplicitaSeleccionPorcentaje,ResultadoSeleccion");
                 while (rs.next()) {
                     DetalleAnaliticaBoletoUsuario detalle = new DetalleAnaliticaBoletoUsuario(
                             obligatorio(entero(rs, "IdBoleto"), "IdBoleto"),
-                            obligatorio(rs.getString("CodigoBoleto"), "CodigoBoleto"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"CodigoBoleto",String.class,true), "CodigoBoleto"),
                             obligatorio(entero(rs, "IdDetalle"), "IdDetalle"),
                             obligatorio(entero(rs, "IdDeporte"), "IdDeporte"),
-                            obligatorio(rs.getString("Deporte"), "Deporte"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"Deporte",String.class,true), "Deporte"),
                             obligatorio(entero(rs, "IdLiga"), "IdLiga"),
-                            obligatorio(rs.getString("Liga"), "Liga"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"Liga",String.class,true), "Liga"),
                             obligatorio(entero(rs, "IdEvento"), "IdEvento"),
-                            obligatorio(rs.getString("Evento"), "Evento"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"Evento",String.class,true), "Evento"),
                             obligatorio(fecha(rs, "FechaInicio"), "FechaInicio"),
                             obligatorio(entero(rs, "IdMercado"), "IdMercado"),
-                            obligatorio(rs.getString("Mercado"), "Mercado"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"Mercado",String.class,true), "Mercado"),
                             obligatorio(entero(rs, "IdSeleccion"), "IdSeleccion"),
-                            obligatorio(rs.getString("Seleccion"), "Seleccion"),
-                            obligatorio(rs.getBigDecimal("CuotaAplicada"), "CuotaAplicada"),
-                            rs.getBigDecimal("ProbabilidadImplicitaSeleccionPorcentaje"),
-                            obligatorio(rs.getString("ResultadoSeleccion"), "ResultadoSeleccion"));
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"Seleccion",String.class,true), "Seleccion"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"CuotaAplicada",java.math.BigDecimal.class,true), "CuotaAplicada"),
+                            LecturaUsuarioSQL.dato(rs,"ProbabilidadImplicitaSeleccionPorcentaje",java.math.BigDecimal.class,true),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"ResultadoSeleccion",String.class,true), "ResultadoSeleccion"));
                     AnaliticaBoletoUsuario boleto = boletos.get(detalle.getIdBoleto());
                     if (boleto == null || !boleto.getCodigoBoleto().equals(detalle.getCodigoBoleto())
                             || detalle.getIdDetalle() <= 0 || !idsDetalle.add(detalle.getIdDetalle())
@@ -79,21 +81,42 @@ public class AnaliticaUsuarioDAO {
                     boleto.agregarDetalle(detalle);
                 }
             }
-            boolean resultado = cs.getMoreResults();
-            while (resultado || cs.getUpdateCount() != -1) {
-                if (resultado) {
-                    try (ResultSet adicional = cs.getResultSet()) {
-                        throw new SQLException("Resultado adicional inesperado.");
-                    }
+            List<MetricasModalidadUsuario> modalidades=LecturaUsuarioSQL.metricas(cs);
+            Map<Integer,DetalleAnaliticaBoletoUsuario> porDetalle=new HashMap<>();
+            for(AnaliticaBoletoUsuario b:boletos.values())for(DetalleAnaliticaBoletoUsuario d:b.getDetalles())porDetalle.put(d.getIdDetalle(),d);
+            Set<Integer> historicos=new HashSet<>();
+            try(ResultSet rs=LecturaUsuarioSQL.resultado(cs,false,
+                    "IdDetalle,IdBoleto,CodigoBoleto,IdUsuario,TipoBoleto,ResultadoDetalle,CuotaAplicada,DescripcionAcierto,IdSeleccion,Seleccion,IdMercado,Mercado,IdEvento,Evento,FechaInicio,IdLiga,Liga,IdDeporte,Deporte,"+LecturaUsuarioSQL.MODALIDAD)) {
+                while(rs.next()) {
+                    int id=LecturaUsuarioSQL.dato(rs,"IdDetalle",Integer.class,false);
+                    DetalleAnaliticaBoletoUsuario d=porDetalle.get(id);
+                    if(d==null || !historicos.add(id)
+                            || LecturaUsuarioSQL.dato(rs,"IdUsuario",Integer.class,false)!=idUsuario
+                            || LecturaUsuarioSQL.dato(rs,"IdBoleto",Integer.class,false)!=d.getIdBoleto()
+                            || !LecturaUsuarioSQL.dato(rs,"CodigoBoleto",String.class,false).equals(d.getCodigoBoleto())
+                            || !LecturaUsuarioSQL.dato(rs,"TipoBoleto",String.class,false).equals(boletos.get(d.getIdBoleto()).getTipoBoleto())
+                            || LecturaUsuarioSQL.dato(rs,"IdSeleccion",Integer.class,false)!=d.getIdSeleccion()
+                            || LecturaUsuarioSQL.dato(rs,"IdMercado",Integer.class,false)!=d.getIdMercado()
+                            || LecturaUsuarioSQL.dato(rs,"IdEvento",Integer.class,false)!=d.getIdEvento()
+                            || LecturaUsuarioSQL.dato(rs,"IdLiga",Integer.class,false)!=d.getIdLiga()
+                            || LecturaUsuarioSQL.dato(rs,"IdDeporte",Integer.class,false)!=d.getIdDeporte()
+                            || LecturaUsuarioSQL.dato(rs,"CuotaAplicada",java.math.BigDecimal.class,false).compareTo(d.getCuotaAplicada())!=0
+                            || !LecturaUsuarioSQL.dato(rs,"ResultadoDetalle",String.class,false).equals(d.getResultadoSeleccion()))throw LecturaUsuarioSQL.error();
+                    // RS2 ya transporta estos campos; comprobar la asociacion por ID, no por posicion.
+                    for(String c:new String[]{"Seleccion","Mercado","Evento","Liga","Deporte"})LecturaUsuarioSQL.dato(rs,c,String.class,false);
+                    LecturaUsuarioSQL.dato(rs,"FechaInicio",Timestamp.class,false);
+                    LecturaUsuarioSQL.modalidad(rs,d);
+                    d.setDescripcionAcierto(LecturaUsuarioSQL.dato(rs,"DescripcionAcierto",String.class,false));
                 }
-                resultado = cs.getMoreResults();
             }
-            return new ArrayList<>(boletos.values());
+            if(!historicos.equals(porDetalle.keySet()))throw LecturaUsuarioSQL.error();
+            comprobarFinResumen(cs);
+            return new ConsultaAnaliticaUsuario<>(new ArrayList<>(boletos.values()),modalidades);
         }
     }
 
 
-    public List<ResumenUsuarioPorDeporte> obtenerResumenUsuarioPorDeporte(int idUsuario)
+    public ConsultaAnaliticaUsuario<List<ResumenUsuarioPorDeporte>> consultarResumenPorDeporte(int idUsuario)
             throws SQLException {
         try (Connection conexion = obtenerConexion();
              CallableStatement cs = conexion.prepareCall(
@@ -102,10 +125,11 @@ public class AnaliticaUsuarioDAO {
             exigirResultado(cs, cs.execute());
             List<ResumenUsuarioPorDeporte> deportes = new ArrayList<>();
             try (ResultSet rs = cs.getResultSet()) {
+                LecturaUsuarioSQL.columnas(rs,"IdDeporte,Deporte,CantidadBoletos,BoletosPendientes,BoletosGanadores,BoletosPerdedores,BoletosAnulados,CantidadSelecciones,SeleccionesPendientes,SeleccionesGanadas,SeleccionesPerdidas,SeleccionesAnuladas,CuotaPromedio,ProbabilidadImplicitaPromedio,PorcentajeEfectividad");
                 while (rs.next()) {
                     deportes.add(new ResumenUsuarioPorDeporte(
                             obligatorio(entero(rs, "IdDeporte"), "IdDeporte"),
-                            obligatorio(rs.getString("Deporte"), "Deporte"),
+                            obligatorio(LecturaUsuarioSQL.dato(rs,"Deporte",String.class,true), "Deporte"),
                             obligatorio(entero(rs, "CantidadBoletos"), "CantidadBoletos"),
                             obligatorio(entero(rs, "BoletosPendientes"), "BoletosPendientes"),
                             obligatorio(entero(rs, "BoletosGanadores"), "BoletosGanadores"),
@@ -116,17 +140,18 @@ public class AnaliticaUsuarioDAO {
                             obligatorio(entero(rs, "SeleccionesGanadas"), "SeleccionesGanadas"),
                             obligatorio(entero(rs, "SeleccionesPerdidas"), "SeleccionesPerdidas"),
                             obligatorio(entero(rs, "SeleccionesAnuladas"), "SeleccionesAnuladas"),
-                            rs.getBigDecimal("CuotaPromedio"),
-                            rs.getBigDecimal("ProbabilidadImplicitaPromedio"),
-                            rs.getBigDecimal("PorcentajeEfectividad")));
+                            LecturaUsuarioSQL.dato(rs,"CuotaPromedio",java.math.BigDecimal.class,true),
+                            LecturaUsuarioSQL.dato(rs,"ProbabilidadImplicitaPromedio",java.math.BigDecimal.class,true),
+                            LecturaUsuarioSQL.dato(rs,"PorcentajeEfectividad",java.math.BigDecimal.class,true)));
                 }
             }
+            List<MetricasModalidadUsuario> modalidades=LecturaUsuarioSQL.metricas(cs);
             comprobarFinResumen(cs);
-            return deportes;
+            return new ConsultaAnaliticaUsuario<>(deportes,modalidades);
         }
     }
 
-    public ResumenGeneralUsuario obtenerResumenGeneralUsuario(int idUsuario) throws SQLException {
+    public ConsultaAnaliticaUsuario<ResumenGeneralUsuario> consultarResumenGeneral(int idUsuario) throws SQLException {
         try (Connection conexion = obtenerConexion();
              CallableStatement cs = conexion.prepareCall(
                      "{call dbo.sp_ObtenerResumenGeneralUsuario(?)}")) {
@@ -134,6 +159,7 @@ public class AnaliticaUsuarioDAO {
             exigirResultado(cs, cs.execute());
             ResumenGeneralUsuario resumen;
             try (ResultSet rs = cs.getResultSet()) {
+                LecturaUsuarioSQL.columnas(rs,"CantidadBoletos,BoletosPendientes,BoletosGanadores,BoletosPerdedores,BoletosAnulados,TotalApostado,TotalComisionesHistoricas,TotalCargoHistorico,PremioPotencialPendiente,GananciaNetaPotencialPendiente,TotalPremiosGanadores,TotalDevueltoPorAnulacion,ResultadoNetoRealizado,PorcentajeEfectividad,CuotaPromedio,ProbabilidadImplicitaPromedio");
                 if (!rs.next()) throw new SQLException("Falta el resumen general.");
                 // SUM sin filas conserva NULL; no sustituirlo por cero.
                 resumen = new ResumenGeneralUsuario(
@@ -142,22 +168,33 @@ public class AnaliticaUsuarioDAO {
                         entero(rs, "BoletosGanadores"),
                         entero(rs, "BoletosPerdedores"),
                         entero(rs, "BoletosAnulados"),
-                        obligatorio(rs.getBigDecimal("TotalApostado"), "TotalApostado"),
-                        obligatorio(rs.getBigDecimal("TotalComisionesHistoricas"), "TotalComisionesHistoricas"),
-                        obligatorio(rs.getBigDecimal("TotalCargoHistorico"), "TotalCargoHistorico"),
-                        obligatorio(rs.getBigDecimal("PremioPotencialPendiente"), "PremioPotencialPendiente"),
-                        obligatorio(rs.getBigDecimal("GananciaNetaPotencialPendiente"), "GananciaNetaPotencialPendiente"),
-                        obligatorio(rs.getBigDecimal("TotalPremiosGanadores"), "TotalPremiosGanadores"),
-                        obligatorio(rs.getBigDecimal("TotalDevueltoPorAnulacion"), "TotalDevueltoPorAnulacion"),
-                        obligatorio(rs.getBigDecimal("ResultadoNetoRealizado"), "ResultadoNetoRealizado"),
-                        rs.getBigDecimal("PorcentajeEfectividad"),
-                        rs.getBigDecimal("CuotaPromedio"),
-                        rs.getBigDecimal("ProbabilidadImplicitaPromedio"));
+                        obligatorio(LecturaUsuarioSQL.dato(rs,"TotalApostado",java.math.BigDecimal.class,true), "TotalApostado"),
+                        obligatorio(LecturaUsuarioSQL.dato(rs,"TotalComisionesHistoricas",java.math.BigDecimal.class,true), "TotalComisionesHistoricas"),
+                        obligatorio(LecturaUsuarioSQL.dato(rs,"TotalCargoHistorico",java.math.BigDecimal.class,true), "TotalCargoHistorico"),
+                        obligatorio(LecturaUsuarioSQL.dato(rs,"PremioPotencialPendiente",java.math.BigDecimal.class,true), "PremioPotencialPendiente"),
+                        obligatorio(LecturaUsuarioSQL.dato(rs,"GananciaNetaPotencialPendiente",java.math.BigDecimal.class,true), "GananciaNetaPotencialPendiente"),
+                        obligatorio(LecturaUsuarioSQL.dato(rs,"TotalPremiosGanadores",java.math.BigDecimal.class,true), "TotalPremiosGanadores"),
+                        obligatorio(LecturaUsuarioSQL.dato(rs,"TotalDevueltoPorAnulacion",java.math.BigDecimal.class,true), "TotalDevueltoPorAnulacion"),
+                        obligatorio(LecturaUsuarioSQL.dato(rs,"ResultadoNetoRealizado",java.math.BigDecimal.class,true), "ResultadoNetoRealizado"),
+                        LecturaUsuarioSQL.dato(rs,"PorcentajeEfectividad",java.math.BigDecimal.class,true),
+                        LecturaUsuarioSQL.dato(rs,"CuotaPromedio",java.math.BigDecimal.class,true),
+                        LecturaUsuarioSQL.dato(rs,"ProbabilidadImplicitaPromedio",java.math.BigDecimal.class,true));
                 if (rs.next()) throw new SQLException("Resumen general duplicado.");
             }
+            List<MetricasModalidadUsuario> modalidades=LecturaUsuarioSQL.metricas(cs);
             comprobarFinResumen(cs);
-            return resumen;
+            return new ConsultaAnaliticaUsuario<>(resumen,modalidades);
         }
+    }
+
+    public List<AnaliticaBoletoUsuario> obtenerAnaliticaBoletosUsuario(int idUsuario,Integer idDeporte) throws SQLException {
+        return consultarHistorial(idUsuario,idDeporte).getDatos();
+    }
+    public List<ResumenUsuarioPorDeporte> obtenerResumenUsuarioPorDeporte(int idUsuario) throws SQLException {
+        return consultarResumenPorDeporte(idUsuario).getDatos();
+    }
+    public ResumenGeneralUsuario obtenerResumenGeneralUsuario(int idUsuario) throws SQLException {
+        return consultarResumenGeneral(idUsuario).getDatos();
     }
 
     private void comprobarFinResumen(CallableStatement cs) throws SQLException {
@@ -178,12 +215,11 @@ public class AnaliticaUsuarioDAO {
     }
 
     private Integer entero(ResultSet rs, String columna) throws SQLException {
-        int valor = rs.getInt(columna);
-        return rs.wasNull() ? null : valor;
+        return LecturaUsuarioSQL.dato(rs,columna,Integer.class,true);
     }
 
     private LocalDateTime fecha(ResultSet rs, String columna) throws SQLException {
-        Timestamp valor = rs.getTimestamp(columna);
+        Timestamp valor = LecturaUsuarioSQL.dato(rs,columna,Timestamp.class,true);
         return valor == null ? null : valor.toLocalDateTime();
     }
 

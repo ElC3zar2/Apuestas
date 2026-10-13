@@ -67,7 +67,7 @@ public class PruebaResumenAnaliticaUsuario {
     private static final Set<String> SUMAS_NULAS = new HashSet<>(Arrays.asList(
             "BoletosPendientes","BoletosGanadores","BoletosPerdedores","BoletosAnulados"));
 
-    private static class Jdbc extends AnaliticaUsuarioDAO {
+    static class Jdbc extends AnaliticaUsuarioDAO {
         final boolean deportes;
         final List<Map<String,Object>> filas = new ArrayList<>();
         final List<Object> resultados = new ArrayList<>();
@@ -77,6 +77,7 @@ public class PruebaResumenAnaliticaUsuario {
         boolean runtime, errorConexion, errorPreparar, errorParametro, errorLeer, errorFinal;
         boolean sinResultado, extra, conteos;
         String sql;
+        boolean faltaModalidades,tipoModalidadInvalido;
         Jdbc(boolean deportes) { this.deportes = deportes; filas.add(deportes ? deporte() : general()); }
 
         @Override protected Connection obtenerConexion() throws SQLException {
@@ -113,6 +114,11 @@ public class PruebaResumenAnaliticaUsuario {
                         if (conteos) { resultados.add(0); resultados.add(2); }
                         if (!sinResultado) resultados.add(filas);
                         if (conteos) resultados.add(0);
+                        if(!faltaModalidades) {
+                            Map<String,Object> metrica=DatosPruebaConsultasUsuario.metrica();
+                            if(tipoModalidadInvalido)metrica.put("CantidadDetalles",1);
+                            resultados.add(filas.isEmpty()?Collections.emptyList():Arrays.asList(metrica));
+                        }
                         if (extra) resultados.add(Collections.emptyList());
                         return esResultado();
                     case "getUpdateCount":
@@ -141,11 +147,12 @@ public class PruebaResumenAnaliticaUsuario {
                         return ++pos[0] < datos.size();
                     case "close": cerrar(nombre); return null;
                     case "wasNull": return nulo[0];
-                    case "getInt": case "getString": case "getBigDecimal":
+                    case "getMetaData": return DatosPruebaConsultasUsuario.metadata(datos.isEmpty()?(datos==filas?(deportes?deporte():general()).keySet():DatosPruebaConsultasUsuario.metrica().keySet()):datos.get(0).keySet());
+                    case "getObject": case "getInt": case "getString": case "getBigDecimal":
                         String columna = (String)a[0];
                         Map<String,Object> fila = datos.get(pos[0]);
                         if (!fila.containsKey(columna)) throw new SQLException("PRIVADO columna");
-                        columnas.add(columna);
+                        if(datos==filas)columnas.add(columna);
                         Object valor = fila.get(columna);
                         nulo[0] = valor == null;
                         return valor == null && m.getName().equals("getInt") ? Integer.valueOf(0) : valor;
@@ -154,18 +161,18 @@ public class PruebaResumenAnaliticaUsuario {
             });
         }
     }
-    private static class Entrada {
+    static class Entrada {
         boolean sesion = true, expirada, errorRequest;
         Object id = 7, rol = "USUARIO";
     }
-    private static class Salida {
+    static class Salida {
         int estado = 200, sesiones;
         String tipo;
         final Map<String,String> headers = new HashMap<>();
         final StringWriter cuerpo = new StringWriter();
         JsonNode json;
     }
-    private static Salida ejecutar(Entrada e, Jdbc jdbc, int esperado) throws Exception {
+    static Salida ejecutar(Entrada e, Jdbc jdbc, int esperado) throws Exception {
         HttpServlet servlet = jdbc.deportes ? new ResumenUsuarioPorDeporteServlet() : new ResumenGeneralUsuarioServlet();
         servlet.init();
         Field campo = servlet.getClass().getDeclaredField("analiticaServicio");
@@ -217,7 +224,7 @@ public class PruebaResumenAnaliticaUsuario {
             }
         }
         if (esperado == 200) {
-            exigir(s.json.size() == (jdbc.deportes ? 3 : 2), "Estructura exacta");
+            exigir(s.json.size() == (jdbc.deportes ? 4 : 3), "Estructura exacta");
             if (jdbc.deportes) {
                 exigir(s.json.get("cantidadDeportes").asInt() == jdbc.filas.size(), "Cantidad real");
                 exigir(s.json.get("deportes").isArray() && s.json.get("deportes").size() == jdbc.filas.size(), "Lista");

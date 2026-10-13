@@ -9,6 +9,13 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.sf.jasperreports.engine.JRDataSource;
+import net.sf.jasperreports.engine.JRBand;
+import net.sf.jasperreports.engine.JRElement;
+import net.sf.jasperreports.engine.design.JasperDesign;
+import net.sf.jasperreports.engine.design.JRDesignTextField;
+import net.sf.jasperreports.engine.type.TextAdjustEnum;
+import net.sf.jasperreports.engine.type.StretchTypeEnum;
+import net.sf.jasperreports.engine.xml.JRXmlLoader;
 import net.sf.jasperreports.engine.JasperCompileManager;
 import net.sf.jasperreports.engine.JasperExportManager;
 import net.sf.jasperreports.engine.JasperFillManager;
@@ -85,10 +92,20 @@ public final class GeneradorReportePDF {
                 );
             }
 
-            JasperReport compilado =
-                    JasperCompileManager.compileReport(
-                            entrada
-                    );
+            JasperDesign diseno=JRXmlLoader.load(entrada);
+            if("reportes/boleto_cliente.jrxml".equals(recursoJrxml)) {
+                // Conservar columnas y estilo; permitir nombres congelados/pronosticos completos.
+                for(JRBand banda:diseno.getDetailSection().getBands()) {
+                    for(JRElement elemento:banda.getElements()) {
+                        if(elemento instanceof JRDesignTextField) {
+                            JRDesignTextField campo=(JRDesignTextField)elemento;
+                            campo.setTextAdjust(TextAdjustEnum.STRETCH_HEIGHT);
+                            campo.setStretchType(StretchTypeEnum.CONTAINER_HEIGHT);
+                        }
+                    }
+                }
+            }
+            JasperReport compilado=JasperCompileManager.compileReport(diseno);
 
             CACHE.put(
                     recursoJrxml,
