@@ -16,6 +16,22 @@ public class AdministracionResultadosServicio {
         if(actor<=0 || !("ADMINISTRADOR".equals(rol)
                 ||(!op.soloAdministrador&&"OPERADOR_EVENTOS".equals(rol)))) throw new SecurityException();
     }
+    /** Permisos exclusivamente de lectura; no modifica la autorizacion de los POST. */
+    public com.apuestas.modelo.ConsultaResultadoEvento consultarPorEvento(int actor,String rol,Map<String,String[]> p)
+            throws SQLException {
+        if(actor<=0||!("ADMINISTRADOR".equals(rol)||"OPERADOR_EVENTOS".equals(rol)||"AUDITOR".equals(rol)))
+            throw new SecurityException();
+        if(p==null||p.size()!=1||!p.containsKey("idEvento"))throw new IllegalArgumentException();
+        String[] valores=p.get("idEvento");
+        if(valores==null||valores.length!=1||valores[0]==null||!valores[0].matches("[0-9]{1,10}"))
+            throw new IllegalArgumentException();
+        int evento=Integer.parseInt(valores[0]);if(evento<=0)throw new IllegalArgumentException();
+        com.apuestas.modelo.ConsultaResultadoEvento consulta=dao.consultarPorEvento(evento);
+        if(consulta==null)throw new NoSuchElementException();
+        if(consulta.idEvento!=evento)throw new SQLException("Respuesta de consulta inconsistente.");
+        return consulta;
+    }
+
     public Resultado ejecutar(OperacionAdministracionResultados op,int actor,String rol,Map<String,String[]> parametros,String ip)
             throws SQLException {
         autorizar(op,actor,rol);
