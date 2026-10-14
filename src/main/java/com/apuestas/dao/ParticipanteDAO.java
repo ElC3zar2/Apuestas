@@ -230,6 +230,62 @@ public class ParticipanteDAO {
         return null;
     }
 
+    /** Consulta administrativa de solo lectura; filtros parametrizados y paginacion SQL. */
+    protected Connection obtenerConexionCatalogo() throws SQLException {
+        return ConexionBD.obtenerConexion();
+    }
+
+    public com.apuestas.modelo.PaginaParticipantes listarPaginados(Integer idDeporte,String buscar,
+            Boolean activo,int pagina,int tamanoPagina) throws SQLException {
+        long offset=((long)pagina-1)*tamanoPagina;
+        if(pagina<1||tamanoPagina<1||tamanoPagina>100||offset>Integer.MAX_VALUE
+                ||(idDeporte!=null&&idDeporte<=0)||buscar==null||buscar.length()>150) {
+            throw new IllegalArgumentException();
+        }
+        // Solo fragmentos constantes. Ningun valor recibido se concatena en SQL.
+        String where=" WHERE 1=1";
+        if(idDeporte!=null) where+=" AND IdDeporte = ?";
+        if(!buscar.isEmpty()) where+=" AND Nombre LIKE ? ESCAPE '!'";
+        if(activo!=null) where+=" AND Activo = ?";
+        try(Connection c=obtenerConexionCatalogo()) {
+            long total;
+            try(PreparedStatement ps=c.prepareStatement("SELECT COUNT_BIG(*) AS Total FROM dbo.Participante"+where)) {
+                parametrosCatalogo(ps,idDeporte,buscar,activo);
+                try(ResultSet rs=ps.executeQuery()) {
+                    if(!rs.next()||!(rs.getObject("Total") instanceof Long)) throw new SQLException("Conteo de catalogo inconsistente.");
+                    total=(Long)rs.getObject("Total");
+                    if(total<0||rs.next()) throw new SQLException("Conteo de catalogo inconsistente.");
+                }
+            }
+            List<Participante> filas=new ArrayList<>();
+            try(PreparedStatement ps=c.prepareStatement("SELECT IdParticipante, IdDeporte, IdPais, Nombre, TipoParticipante, Activo"
+                    +" FROM dbo.Participante"+where+" ORDER BY Nombre, IdParticipante OFFSET ? ROWS FETCH NEXT ? ROWS ONLY")) {
+                int siguiente=parametrosCatalogo(ps,idDeporte,buscar,activo);
+                ps.setLong(siguiente,offset);ps.setInt(siguiente+1,tamanoPagina);
+                try(ResultSet rs=ps.executeQuery()) {
+                    while(rs.next()) {
+                        if(filas.size()>=tamanoPagina) throw new SQLException("Pagina de catalogo inconsistente.");
+                        filas.add(mapearParticipante(rs));
+                    }
+                }
+            }
+            return new com.apuestas.modelo.PaginaParticipantes(pagina,tamanoPagina,total,filas);
+        }
+    }
+
+    private static int parametrosCatalogo(PreparedStatement ps,Integer deporte,String buscar,Boolean activo)
+            throws SQLException {
+        int pos=1;
+        if(deporte!=null) ps.setInt(pos++,deporte);
+        if(!buscar.isEmpty()) {
+            String literal=buscar.replace("!","!!").replace("%","!%")
+                    .replace("_","!_").replace("[","![").replace("]","!]");
+            ps.setString(pos++,"%"+literal+"%");
+        }
+        if(activo!=null) ps.setBoolean(pos++,activo);
+        return pos;
+    }
+
     private Participante mapearParticipante(
             ResultSet rs)
             throws SQLException {
