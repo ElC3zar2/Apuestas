@@ -98,7 +98,12 @@ public class PruebaIntegracionBackendAdministrativo {
                 }
             }
         }
-        exigir(admin==36);
+        int esperadas=OperacionAdministracionUsuario.values().length+OperacionAdministracionEventos.values().length
+                +OperacionAdministracionResultados.values().length+OperacionLiquidacionAdministrativa.values().length
+                +OperacionDashboardAdministrativo.values().length+3; // login, logout y entrega CSRF administrativa
+        exigir(admin==esperadas);
+        exigir("TokenCsrfServlet".equals(rutas.get(CsrfSeguridad.RUTA_ADMIN))
+                &&"TokenCsrfServlet".equals(rutas.get(CsrfSeguridad.RUTA_USUARIO)));
         for(Supplier<Object> f:fabricas()) exigir(rutas.containsKey(new Api(f.get()).h.ruta));
         WebFilter filtro=ControlAccesoAdministrativo.class.getAnnotation(WebFilter.class);
         exigir(Arrays.asList(filtro.urlPatterns()).contains("/administrador/*"));
