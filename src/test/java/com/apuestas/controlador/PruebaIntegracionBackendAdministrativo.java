@@ -67,12 +67,17 @@ public class PruebaIntegracionBackendAdministrativo {
         exigir(h.status==303&&h.creaciones==0&&sesion.invalidada&&sesion.datos.isEmpty());
         exigir("/app/administrador/login".equals(h.headers.get("Location")));casos++;
     }
+    private static Object casoEventos(OperacionAdministracionEventos op) {
+        if(op==OperacionAdministracionEventos.REGISTRAR_INCIDENCIA || op==OperacionAdministracionEventos.ANULAR_INCIDENCIA || op==OperacionAdministracionEventos.ESTADO_SIMULACION)
+            return new PruebaContratosAdministracionEventos.Caso(op);
+        return new PruebaAdministracionEventos.Caso(op);
+    }
     private static List<Supplier<Object>> fabricas() {
         List<Supplier<Object>> f=new ArrayList<>();
         f.add(()->new PruebaDashboardAdministrativo.Caso(false));
         f.add(()->new PruebaDashboardAdministrativo.Caso(true));
         for(OperacionAdministracionUsuario op:OperacionAdministracionUsuario.values()) f.add(()->new PruebaAdministracionUsuario.Caso(op));
-        for(OperacionAdministracionEventos op:OperacionAdministracionEventos.values()) f.add(()->new PruebaAdministracionEventos.Caso(op));
+        for(OperacionAdministracionEventos op:OperacionAdministracionEventos.values()) f.add(()->casoEventos(op));
         for(OperacionAdministracionResultados op:OperacionAdministracionResultados.values()) f.add(()->new PruebaAdministracionResultados.Caso(op));
         f.add(()->new PruebaLiquidacionAdministrativa.Caso(0));
         f.add(()->new PruebaLiquidacionAdministrativa.Caso(1));
@@ -93,7 +98,7 @@ public class PruebaIntegracionBackendAdministrativo {
                 }
             }
         }
-        exigir(admin==33);
+        exigir(admin==36);
         for(Supplier<Object> f:fabricas()) exigir(rutas.containsKey(new Api(f.get()).h.ruta));
         WebFilter filtro=ControlAccesoAdministrativo.class.getAnnotation(WebFilter.class);
         exigir(Arrays.asList(filtro.urlPatterns()).contains("/administrador/*"));
@@ -141,6 +146,10 @@ public class PruebaIntegracionBackendAdministrativo {
         exigir(j.conexionCerrada&&j.statementCerrado&&j.abiertos==j.cerrados);casos++;
     }
     public static void main(String[] args) throws Exception {
+        if(args.length>0 && "eventos".equals(args[0])) {
+            for(OperacionAdministracionEventos op:OperacionAdministracionEventos.values())new Api(casoEventos(op)).ejecutar(200);
+            System.out.println("Integracion administrativa eventos: " + casos + " casos, 0 fallos; sin SQL.");return;
+        }
         if(args.length>0) { tipoJdbcEstricto();return; }
         mappings();navegacion();tipoJdbcEstricto();
         Sesion admin=login("ADMINISTRADOR");
@@ -173,6 +182,7 @@ public class PruebaIntegracionBackendAdministrativo {
                 if(a.caso instanceof PruebaAdministracionUsuario.Caso)
                     permitido=rol.equals("AUDITOR")&&((PruebaAdministracionUsuario.Caso)a.caso).op.lectura();
                 else if(a.caso instanceof PruebaAdministracionEventos.Caso) permitido=rol.equals("OPERADOR_EVENTOS");
+                else if(a.caso instanceof PruebaContratosAdministracionEventos.Caso) permitido=rol.equals("OPERADOR_EVENTOS");
                 else if(a.caso instanceof PruebaAdministracionResultados.Caso)
                     permitido=rol.equals("OPERADOR_EVENTOS")&&!((PruebaAdministracionResultados.Caso)a.caso).op.soloAdministrador;
                 else if(a.caso instanceof PruebaLiquidacionAdministrativa.Caso)

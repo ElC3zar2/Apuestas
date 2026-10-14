@@ -5,6 +5,17 @@ public final class AdministracionEventosHttp {
     private AdministracionEventosHttp() { }
     public static int estadoSql(int codigo) {
         switch(codigo) {
+            case 76900:return 503;
+            case 76001:case 76005:case 76010:case 76204:case 76208:case 76209:case 76210:case 76211:case 76221:return 400;
+            case 76212:case 76302:return 404;
+            case 76002:case 76003:case 76004:case 76006:case 76007:case 76008:case 76009:
+            case 76011:case 76012:case 76013:case 76014:case 76015:case 76016:
+            case 76201:case 76202:case 76203:case 76205:case 76206:case 76207:case 76213:case 76214:case 76215:return 409;
+            // Solo contratos delegados al cambiar estado; no se exponen nuevas acciones de resultados.
+            case 61001:case 61002:case 61038:case 61039:case 61040:return 400;
+            case 61041:case 61042:case 61043:return 403;
+            case 61004:case 61047:return 404;
+            case 61005:case 61006:case 61048:case 76303:return 409;
             case 59002:case 59003:case 59004:return 403;
             case 59013:case 59025:case 59037:case 59040:case 59048:
             case 59052:case 59056:case 59062:case 59069:return 404;

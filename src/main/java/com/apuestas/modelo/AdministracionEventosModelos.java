@@ -9,10 +9,14 @@ public final class AdministracionEventosModelos {
     /** Entrada tipada interna. Solo se rellenan los campos permitidos por la operacion. */
     public static final class Solicitud {
         public Integer idDeporte, idLiga, idPais, idParticipante, idEvento, idMercado, idSeleccion, ordenParticipante;
-        public String nombre, tipoParticipante, descripcion, nuevoEstado, motivo;
+        public String nombre, tipoParticipante, descripcion, nuevoEstado, motivo, tipoMercado, tipoIncidencia;
+        public java.util.UUID referenciaOperacion;
+        public Long idIncidencia;
+        public Integer valorAnotacion,duracionSimulacionSegundos;
+        public Boolean esSimulado;
         public Boolean activo, esLocal;
         public LocalDateTime fechaInicio, fechaFin;
-        public BigDecimal valor;
+        public BigDecimal valor,valorResultado;
     }
     public interface Resultado { }
     public static final class Liga implements Resultado {
@@ -58,5 +62,42 @@ public final class AdministracionEventosModelos {
         public Integer idMercado;
         public String estadoAnterior, estadoActual;
         public Boolean sinCambios;
+    }
+    public static final class IncidenciaRegistrada implements Resultado {
+        public Long idIncidencia;
+        public Boolean solicitudIdempotente;
+    }
+    public static final class IncidenciaAnulada implements Resultado {
+        public Long idIncidencia;
+        public Boolean sinCambios;
+    }
+    /** Respuesta abreviada oficial de inicio/fin, sin inventar estado anterior. */
+    public static final class EstadoSimulacionCambiado implements Resultado {
+        public Integer idEvento;
+        public Boolean sinCambios;
+        public ResultadoSimulacion registrado;
+    }
+    public static final class ResultadoSimulacion implements Resultado {
+        public Integer idResultado,idEvento;
+        public String estadoResultado,resultadoTexto,observacion;
+    }
+    public static final class EventoCancelado implements Resultado {
+        public Integer idResultado,idEvento;
+        public String estadoResultado,estadoEvento;
+        public Boolean sinCambios;
+    }
+    public static final class ParticipanteSimulacion {
+        public Integer ordenParticipante,idParticipante,marcadorActual;
+        public String nombre;
+    }
+    public static final class EstadoSimulacion implements Resultado {
+        public Integer idEvento,duracionSimulacionSegundos,segundosTranscurridos;
+        public String nombre,estadoEvento,versionFila;
+        public Boolean esSimulado,tiempoVisualCumplido;
+        public LocalDateTime fechaInicioRealUtc,fechaFinRealUtc;
+        public Long idPrimeraAnotacion;
+        public Integer idPrimerParticipanteAnotador;
+        public final java.util.List<ParticipanteSimulacion> participantes=new java.util.ArrayList<>();
+        public final java.util.List<IncidenciaEventoExploracion> incidencias=new java.util.ArrayList<>();
     }
 }

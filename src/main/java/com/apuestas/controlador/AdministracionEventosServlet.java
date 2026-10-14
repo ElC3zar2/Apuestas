@@ -18,7 +18,9 @@ import javax.servlet.http.*;
     "/administrador/eventos/participantes/agregar",
     "/administrador/mercados/crear", "/administrador/selecciones/crear",
     "/administrador/cuotas/registrar",
-    "/administrador/eventos/estado/cambiar", "/administrador/mercados/estado/cambiar"
+    "/administrador/eventos/estado/cambiar", "/administrador/mercados/estado/cambiar",
+    "/administrador/eventos/incidencias/registrar", "/administrador/eventos/incidencias/anular",
+    "/administrador/eventos/simulacion/estado"
 })
 public class AdministracionEventosServlet extends HttpServlet {
     private AdministracionEventosServicio servicio;
@@ -29,8 +31,8 @@ public class AdministracionEventosServlet extends HttpServlet {
         OperacionAdministracionEventos op=OperacionAdministracionEventos.deRuta(
                 req.getServletPath()+(req.getPathInfo()==null?"":req.getPathInfo()));
         if(op==null) { AdministracionUsuarioHttp.error(res,404);return; }
-        if(!"POST".equals(req.getMethod())) {
-            res.setHeader("Allow","POST");AdministracionUsuarioHttp.error(res,405);return;
+        if(!op.metodo.equals(req.getMethod())) {
+            res.setHeader("Allow",op.metodo);AdministracionUsuarioHttp.error(res,405);return;
         }
         final int actor;
         final String rol;
@@ -48,7 +50,8 @@ public class AdministracionEventosServlet extends HttpServlet {
             cuerpo.put("ok",true);
             cuerpo.put("resultado",servicio.ejecutar(op,actor,rol,req.getParameterMap(),req.getRemoteAddr()));
             AdministracionUsuarioHttp.escribir(res,200,cuerpo);
-        } catch(SecurityException e) { AdministracionUsuarioHttp.error(res,403); }
+        } catch(java.util.NoSuchElementException e) { AdministracionUsuarioHttp.error(res,404); }
+        catch(SecurityException e) { AdministracionUsuarioHttp.error(res,403); }
         catch(IllegalArgumentException | DateTimeException e) { AdministracionUsuarioHttp.error(res,400); }
         catch(SQLException e) { AdministracionUsuarioHttp.error(res,AdministracionEventosHttp.estadoSql(e.getErrorCode())); }
         catch(RuntimeException | LinkageError e) { AdministracionUsuarioHttp.error(res,500); }

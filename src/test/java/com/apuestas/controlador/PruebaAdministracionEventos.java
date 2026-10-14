@@ -49,24 +49,25 @@ public class PruebaAdministracionEventos {
         }
     }
     private static String[] contrato(OperacionAdministracionEventos op) {
-        // Orden y nombres independientes de los metadatos de produccion.
         switch(op) {
-            case CREAR_LIGA:return new String[]{"sp_CrearLiga","idDeporte","nombre","idPais"};
-            case ACTUALIZAR_LIGA:return new String[]{"sp_ActualizarLiga","idLiga","nombre","idPais","activo"};
-            case CREAR_PARTICIPANTE:return new String[]{"sp_CrearParticipante","idDeporte","nombre","tipoParticipante","idPais"};
-            case ACTUALIZAR_PARTICIPANTE:return new String[]{"sp_ActualizarParticipante","idParticipante","nombre","idPais","activo"};
-            case CREAR_EVENTO:return new String[]{"sp_CrearEvento","idLiga","nombre","fechaInicio","fechaFin"};
-            case ACTUALIZAR_EVENTO:return new String[]{"sp_ActualizarEvento","idEvento","nombre","fechaInicio","fechaFin"};
-            case AGREGAR_PARTICIPANTE:return new String[]{"sp_AgregarParticipanteEvento","idEvento","idParticipante","ordenParticipante","esLocal"};
-            case CREAR_MERCADO:return new String[]{"sp_CrearMercado","idEvento","nombre","descripcion"};
-            case CREAR_SELECCION:return new String[]{"sp_CrearSeleccion","idMercado","nombre"};
-            case REGISTRAR_CUOTA:return new String[]{"sp_RegistrarCuota","idSeleccion","valor"};
-            case ESTADO_EVENTO:return new String[]{"sp_CambiarEstadoEvento","idEvento","nuevoEstado","motivo"};
-            case ESTADO_MERCADO:return new String[]{"sp_CambiarEstadoMercado","idMercado","nuevoEstado","motivo"};
+            case CREAR_LIGA:return new String[]{"sp_CrearLiga","idDeporte","nombre","idPais","ipOrigen"};
+            case ACTUALIZAR_LIGA:return new String[]{"sp_ActualizarLiga","idLiga","nombre","idPais","activo","ipOrigen"};
+            case CREAR_PARTICIPANTE:return new String[]{"sp_CrearParticipante","idDeporte","nombre","tipoParticipante","idPais","ipOrigen"};
+            case ACTUALIZAR_PARTICIPANTE:return new String[]{"sp_ActualizarParticipante","idParticipante","nombre","idPais","activo","ipOrigen"};
+            case CREAR_EVENTO:return new String[]{"sp_CrearEvento","idLiga","nombre","fechaInicio","fechaFin","ipOrigen","esSimulado","duracionSimulacionSegundos"};
+            case ACTUALIZAR_EVENTO:return new String[]{"sp_ActualizarEvento","idEvento","nombre","fechaInicio","fechaFin","ipOrigen"};
+            case AGREGAR_PARTICIPANTE:return new String[]{"sp_AgregarParticipanteEvento","idEvento","idParticipante","ordenParticipante","esLocal","ipOrigen"};
+            case CREAR_MERCADO:return new String[]{"sp_CrearMercado","idEvento","nombre","descripcion","ipOrigen","tipoMercado"};
+            case CREAR_SELECCION:return new String[]{"sp_CrearSeleccion","idMercado","nombre","ipOrigen","idParticipante"};
+            case REGISTRAR_CUOTA:return new String[]{"sp_RegistrarCuota","idSeleccion","valor","ipOrigen","valorResultado"};
+            case ESTADO_EVENTO:return new String[]{"sp_CambiarEstadoEvento","idEvento","nuevoEstado","motivo","ipOrigen"};
+            case ESTADO_MERCADO:return new String[]{"sp_CambiarEstadoMercado","idMercado","nuevoEstado","motivo","ipOrigen"};
             default:throw new AssertionError();
         }
     }
-    private static final Set<String> OPCIONALES=new HashSet<>(Arrays.asList("idPais","fechaFin","esLocal","descripcion","motivo"));
+    private static final Set<String> OPCIONALES=new HashSet<>(Arrays.asList("idPais","fechaFin","esLocal","descripcion","motivo","esSimulado","duracionSimulacionSegundos","tipoMercado","valor","valorResultado"));
+    private static boolean opcional(OperacionAdministracionEventos op,String k){return OPCIONALES.contains(k) || (op==CREAR_SELECCION && k.equals("idParticipante"));}
+    private static List<OperacionAdministracionEventos> base(){return Arrays.asList(CREAR_LIGA,ACTUALIZAR_LIGA,CREAR_PARTICIPANTE,ACTUALIZAR_PARTICIPANTE,CREAR_EVENTO,ACTUALIZAR_EVENTO,AGREGAR_PARTICIPANTE,CREAR_MERCADO,CREAR_SELECCION,REGISTRAR_CUOTA,ESTADO_EVENTO,ESTADO_MERCADO);}
     static class Jdbc {
         final OperacionAdministracionEventos op;
         final List<List<Map<String,Object>>> resultados=new ArrayList<>();
@@ -84,7 +85,7 @@ public class PruebaAdministracionEventos {
                 if(m.getName().equals("prepareCall")) {
                     if(falloPreparar) throw new SQLException(PRIVADO);
                     String[] contrato=contrato(op);
-                    exigir(a[0].equals("{call dbo."+contrato[0]+"("+String.join(", ",Collections.nCopies(contrato.length+1,"?"))+")}"));
+                    exigir(a[0].equals("{call dbo."+contrato[0]+"("+String.join(", ",Collections.nCopies(contrato.length,"?"))+")}"));
                     return statement();
                 }
                 throw new AssertionError(m.getName());
@@ -115,12 +116,20 @@ public class PruebaAdministracionEventos {
                     case "next":return ++pos[0]<filas.size();
                     case "close":cerrados++;return null;
                     case "wasNull":return nulo[0];
+                    case "getMetaData":
+                        List<String> columnas=new ArrayList<>(filas.get(0).keySet());
+                        return proxy(ResultSetMetaData.class,(q,n,b)->{
+                            if(n.getName().equals("getColumnCount"))return columnas.size();
+                            if(n.getName().equals("getColumnLabel"))return columnas.get((Integer)b[0]-1);
+                            throw new AssertionError(n.getName());
+                        });
                 }
                 String col=(String)a[0];Map<String,Object> f=filas.get(pos[0]);
                 if(!f.containsKey(col)) throw new SQLException(PRIVADO);
                 Object v=f.get(col);nulo[0]=v==null;
                 switch(m.getName()) {
-                    case "getInt":return v==null?0:(Integer)v;
+                    case "getInt":return v==null?0:((Number)v).intValue();
+                    case "getObject":return v;
                     case "getString":return (String)v;
                     case "getBoolean":return v==null?false:(Boolean)v;
                     case "getTimestamp":return (Timestamp)v;
@@ -147,7 +156,7 @@ public class PruebaAdministracionEventos {
                 switch(k) {
                     case "idDeporte":p(k,"2");break;
                     case "idLiga":p(k,"11");break;
-                    case "idParticipante":p(k,"12");break;
+                    case "idParticipante":if(op!=CREAR_SELECCION)p(k,"12");break;
                     case "idEvento":p(k,"13");break;
                     case "idMercado":p(k,"15");break;
                     case "idSeleccion":p(k,"16");break;
@@ -158,7 +167,7 @@ public class PruebaAdministracionEventos {
                     case "fechaInicio":p(k,"2099-01-02T03:04:05.1234567");break;
                     case "valor":p(k,"1.2345");break;
                     case "nuevoEstado":p(k,op==ESTADO_EVENTO?"PROGRAMADO":"ABIERTO");break;
-                    default:exigir(OPCIONALES.contains(k));
+                    default:exigir(opcional(op,k));
                 }
             }
             req=proxy(HttpServletRequest.class,(p,m,a)->{
@@ -194,20 +203,21 @@ public class PruebaAdministracionEventos {
         }
         void comprobarParametros() {
             String[] orden=contrato(op);
-            exigir(j.params.size()==orden.length+1&&j.params.get(1).equals(7));
-            exigir(Objects.equals(j.params.get(orden.length+1),ip==null?null:ip.trim()));
+            exigir(j.params.size()==orden.length&&j.params.get(1).equals(7));
             for(int i=1;i<orden.length;i++) {
-                String k=orden[i];String[] raw=params.get(k);String v=raw==null?null:raw[0].trim();
+                String k=orden[i];String[] raw=params.get(k);String v=k.equals("ipOrigen")?ip:raw==null?null:raw[0].trim();
                 if(v!=null&&v.isEmpty()) v=null;
+                if(v==null && k.equals("esSimulado"))v="false";
+                if(v==null && k.equals("tipoMercado"))v="CONVENCIONAL";
                 Object esperado=v;
                 if(v!=null) {
-                    if(k.startsWith("id")||k.equals("ordenParticipante")) esperado=Integer.valueOf(v);
-                    else if(k.equals("activo")||k.equals("esLocal")) esperado=v.equals("true")||v.equals("1");
+                    if(k.startsWith("id")||k.equals("ordenParticipante")||k.equals("duracionSimulacionSegundos")) esperado=Integer.valueOf(v);
+                    else if(k.equals("activo")||k.equals("esLocal")||k.equals("esSimulado")) esperado=v.equals("true")||v.equals("1");
                     else if(k.startsWith("fecha")) esperado=Timestamp.valueOf(v.replace('T',' '));
-                    else if(k.equals("valor")) esperado=new BigDecimal(v);
-                    else if(k.equals("tipoParticipante")||k.equals("nuevoEstado")) esperado=v.toUpperCase(Locale.ROOT);
+                    else if((k.equals("valor")||k.equals("valorResultado"))) esperado=new BigDecimal(v);
+                    else if(k.equals("tipoParticipante")||k.equals("nuevoEstado")||k.equals("tipoMercado")) esperado=v.toUpperCase(Locale.ROOT);
                 } else {
-                    int tipo=k.equals("idPais")?Types.INTEGER:k.equals("esLocal")?Types.BIT:k.equals("fechaFin")?Types.TIMESTAMP:Types.VARCHAR;
+                    int tipo=(k.startsWith("id")||k.equals("duracionSimulacionSegundos"))?Types.INTEGER:(k.equals("valor")||k.equals("valorResultado"))?Types.DECIMAL:k.equals("esLocal")?Types.BIT:k.equals("fechaFin")?Types.TIMESTAMP:Types.VARCHAR;
                     exigir(Objects.equals(j.nulos.get(i+1),tipo));
                 }
                 exigir(Objects.equals(esperado,j.params.get(i+1)));
@@ -227,8 +237,8 @@ public class PruebaAdministracionEventos {
             System.out.println("Filtro eventos JSON: OK");return;
         }
         Set<String> rutas=new HashSet<>(Arrays.asList(AdministracionEventosServlet.class.getAnnotation(WebServlet.class).value()));
-        exigir(rutas.size()==12);
-        for(OperacionAdministracionEventos op:OperacionAdministracionEventos.values()) {
+        exigir(rutas.size()==15);
+        for(OperacionAdministracionEventos op:base()) {
             exigir(rutas.contains(op.ruta));
             Caso c=new Caso(op);c.ejecutar(200);
             c=new Caso(op);c.j.conteo=true;c.ejecutar(200);
@@ -255,7 +265,7 @@ public class PruebaAdministracionEventos {
                 c=new Caso(op);c.p(k,new String[0]);c.ejecutar(400);
                 c=new Caso(op);c.p(k,(String[])null);c.ejecutar(400);
                 c=new Caso(op);c.p(k,(String)null);c.ejecutar(400);
-                if(!OPCIONALES.contains(k)) {
+                if(!opcional(op,k)) {
                     c=new Caso(op);c.params.remove(k);c.ejecutar(400);
                     c=new Caso(op);c.p(k," ");c.ejecutar(400);
                 }
@@ -363,7 +373,7 @@ public class PruebaAdministracionEventos {
         c=new Caso(CREAR_LIGA);c.ip="2001:db8::1";c.ejecutar(200);
         c=new Caso(CREAR_LIGA);c.ip="x".repeat(46);c.ejecutar(400);
         // Identidades de respuesta, proyeccion publica y nulos opcionales.
-        for(OperacionAdministracionEventos op:OperacionAdministracionEventos.values()) {
+        for(OperacionAdministracionEventos op:base()) {
             c=new Caso(op);
             c.j.fila().put("Contrasena",PRIVADO);c.j.fila().put("Token",PRIVADO);
             JsonNode salida=c.ejecutar(200).get("resultado");
@@ -386,7 +396,7 @@ public class PruebaAdministracionEventos {
             c=new Caso(op);c.j.fila().put(campoId,"tipo-incorrecto");c.ejecutar(500);
             for(String opcional:op.parametros) {
                 if(OPCIONALES.contains(opcional)) {
-                    c=new Caso(op);c.p(opcional," ");c.ejecutar(200);
+                    c=new Caso(op);c.p(opcional," ");c.ejecutar(opcional.equals("esSimulado")||opcional.equals("tipoMercado")?400:200);
                 }
             }
         }
