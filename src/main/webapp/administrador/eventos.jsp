@@ -50,7 +50,7 @@
 <form id="wizard-form" novalidate>
 <div data-wizard-step="1"><h3>Deporte y liga</h3><div class="toolbar"><button id="wizard-load-sports" type="button">Cargar / actualizar deportes</button></div>
 <div class="wizard-fields"><label for="wizard-sport">Deporte<select id="wizard-sport" required><option value="">Carga los deportes disponibles</option></select></label><label for="wizard-league">Liga<select id="wizard-league" required><option value="">Primero selecciona un deporte</option></select></label></div><button id="wizard-load-leagues" type="button">Consultar / actualizar ligas</button></div>
-<div data-wizard-step="2" hidden><h3>Participantes</h3><p class="warning">No hay un catálogo global de participantes disponible. Puedes consultar los participantes de un evento existente del mismo deporte. Esta búsqueda no incluye necesariamente todos los equipos o atletas.</p>
+<div data-wizard-step="2" hidden><h3>Participantes</h3><aside class="integration-note" data-participant-catalog="pending"><strong>Selección directa LOCAL / VISITANTE pendiente de catálogo.</strong><p>El backend todavía no ofrece el listado necesario. Se conserva la consulta temporal por evento, sin presentarla como catálogo completo. Las etiquetas para deportes individuales requieren información oficial del tipo de participante.</p></aside><p class="warning">No hay un catálogo global de participantes disponible. Puedes consultar los participantes de un evento existente del mismo deporte. Esta búsqueda no incluye necesariamente todos los equipos o atletas.</p>
 <div class="toolbar"><button id="wizard-source-events" type="button">Buscar eventos del deporte</button><label for="wizard-source">Evento de referencia<select id="wizard-source"><option value="">Consulta eventos disponibles</option></select></label><button id="wizard-source-detail" type="button">Consultar sus participantes</button></div>
 <div class="toolbar"><label for="wizard-candidate">Participante consultado<select id="wizard-candidate"><option value="">Consulta participantes reales</option></select></label><button id="wizard-add" type="button">Añadir participante</button></div>
 <div id="wizard-participants" class="wizard-participants"></div>
@@ -80,6 +80,7 @@
 <div id="management-forms" class="management-grid"></div>
 </details><noscript>Activa JavaScript para consultar y operar estos módulos.</noscript>
 </main></body></html>
+
 
 
 

@@ -193,3 +193,21 @@ progress::-moz-progress-bar { background: var(--accent); }
     .toolbar label { width: 100%; }
     .toolbar label input, .toolbar label select { width: 100%; }
 }
+
+/* Flujos conectados: una operación visible, conservando sus borradores. */
+.operation-nav { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.operation-nav button { background: var(--panel); color: var(--text); border-color: var(--line); }
+.operation-nav button[aria-pressed="true"] { background: var(--active); color: var(--accent-hover); border-color: var(--accent); font-weight: 700; }
+.operation-nav button:disabled { background: var(--surface); color: var(--muted-on-bg); border-color: var(--line); }
+.connected-forms { grid-template-columns: minmax(0, 1fr); }
+.connected-forms > .panel { max-width: 900px; }
+.advanced-reference { margin: 18px 0; }
+.advanced-reference > summary { font-weight: 650; }
+.live-form .advanced-reference { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px; }
+.live-form .advanced-reference label { margin-top: 12px; }
+.reference-field { color: var(--muted-on-bg); font-size: 13px; }
+.integration-note { background: var(--surface); border: 1px solid var(--line); border-inline-start: 3px solid var(--accent); border-radius: 8px; padding: 16px; margin: 18px 0; }
+.integration-note p { margin-bottom: 0; }
+@media (max-width: 700px) {
+    .operation-nav { display: grid; grid-template-columns: minmax(0, 1fr); }
+}

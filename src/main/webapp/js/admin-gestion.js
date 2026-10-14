@@ -47,6 +47,9 @@
     let resultReady = false, officialResultId = null;
     const eventSelectionIds = new Set();
     let eventWizard = null;
+    const connected = page === 'mercados' || page === 'resultados';
+    const operationPanels = new Map(), operationButtons = new Map();
+    let connectedEvent = null, selectedMarket = null, selectedSelection = null, manualReferences = false;
     const controllers = new Set();
     const display = value => value == null || value === '' ? '—' : typeof value === 'boolean' ? (value ? 'Sí' : 'No') : String(value);
     function node(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
@@ -92,6 +95,35 @@
     }
     function link(path, text) { const a = node('a',text); a.href = base + path; return a; }
     function action(text, callback) { const button = node('button',text); button.type = 'button'; button.addEventListener('click', () => { if (!busy && !sessionBlocked) callback(); }); return button; }
+    function openOperation(route, focus = false) {
+        if (!connected || !operationPanels.has(route)) return;
+        for (const [key,panel] of operationPanels) panel.hidden = key !== route;
+        for (const [key,button] of operationButtons) button.setAttribute('aria-pressed',String(key === route));
+        if (focus) { operationPanels.get(route).scrollIntoView({behavior:'smooth',block:'center'}); operationPanels.get(route).focus(); }
+    }
+    function selectionMessage() {
+        if (!connected) return;
+        if(manualReferences){$('management-selection').textContent='Referencias manuales modificadas. Su relación con el evento requiere una nueva consulta; revisa la respuesta oficial de cada operación.';return;}
+        const parts = [connectedEvent?.nombre,selectedMarket?.nombre,selectedSelection?.nombre].filter(Boolean);
+        $('management-selection').textContent = parts.length ? parts.join(' → ') : 'Selecciona un evento de la tabla; las referencias por ID siguen disponibles en modo avanzado.';
+    }
+    function useMarket(market) {
+        manualReferences=false;
+        selectedMarket = {id:market.idMercado,nombre:market.mercado}; selectedSelection = null;
+        document.querySelectorAll('.management-form [name="idMercado"]').forEach(input=>{input.value=String(market.idMercado);});
+        const quota = document.querySelector('[data-operation="cuotas/registrar"] [name="idSeleccion"]'); if(quota)quota.value='';
+        selectionMessage();
+    }
+    function participantPicker(event) {
+        const input = document.querySelector('[data-operation="selecciones/crear"] [name="idParticipante"]');
+        if(!input)return;
+        let label=$('selection-participant-label');
+        if(!label){label=node('label','Participante del evento (opcional)');label.id='selection-participant-label';const select=node('select');select.id='selection-participant-picker';label.htmlFor=select.id;label.append(select);input.closest('fieldset').prepend(label);select.addEventListener('change',()=>{input.value=select.value;});}
+        const select=$('selection-participant-picker'),value=input.value;select.replaceChildren();
+        const empty=node('option','Sin participante / referencia avanzada');empty.value='';select.append(empty);
+        event.participantes.forEach(participant=>{const option=node('option',participant.participante);option.value=String(participant.idParticipante);select.append(option);});
+        select.value=[...select.options].some(option=>option.value===value)?value:'';
+    }
     function table(target, caption, headings, rows) {
         const wrap = node('div',undefined,'table-scroll'); const table = node('table'); table.append(node('caption',caption));
         const header = node('tr'); headings.forEach(text => { const th = node('th',text); th.scope = 'col'; header.append(th); });
@@ -103,6 +135,7 @@
     }
     function fill(formRoute, values) {
         const form = document.querySelector('[data-operation="'+formRoute+'"]'); if (!form) return;
+        openOperation(formRoute);
         for (const [key,value] of Object.entries(values)) {
             const control = form.elements.namedItem(key); if (!control) continue;
             control.value = value == null ? '' : String(value);
@@ -112,6 +145,11 @@
     }
     function selectEvent(eventId) {
         if (!Number.isInteger(Number(eventId)) || Number(eventId) < 1 || Number(eventId) > 2147483647) return;
+        if(page === 'mercados' && connectedEvent?.idEvento !== Number(eventId)) {
+            document.querySelectorAll('.management-form').forEach(form=>form.reset());
+            connectedEvent=null;selectedMarket=null;selectedSelection=null;
+            const picker=$('selection-participant-picker');if(picker)picker.replaceChildren();
+        }
         if (page === 'resultados' && resultEventContext !== String(eventId)) {
             document.querySelectorAll('.management-form').forEach(form => form.reset());
             document.querySelectorAll('.management-form [name="idResultadoEvento"]').forEach(input => { input.value = ''; input.readOnly = false; });
@@ -150,7 +188,7 @@
             || (payload.has('idResultadoEvento') && result.idResultado !== Number(payload.get('idResultadoEvento')))) throw new Error('El resultado recibido no corresponde al evento o resultado solicitado.');
         return true;
     }
-    function showResult(result, bindResult = true) {
+    function showResult(result, bindResult = true, route = '') {
         $('operation-values').replaceChildren(); resultValues($('operation-values'),result); $('operation-result').hidden = false;
         if (page === 'resultados') {
             if (result.idEvento) selectEvent(result.idEvento);
@@ -169,16 +207,35 @@
         }
         if (result.idMercado) document.querySelectorAll('.management-form [name="idMercado"]').forEach(input => { input.value = String(result.idMercado); });
         if (result.idSeleccion) document.querySelectorAll('.management-form [name="idSeleccion"]').forEach(input => { input.value = String(result.idSeleccion); });
+        if(connected){
+            if(route === 'mercados/crear'){selectedMarket={id:result.idMercado,nombre:result.nombre};selectedSelection=null;openOperation('selecciones/crear');}
+            if(route === 'selecciones/crear'){
+                selectedSelection={id:result.idSeleccion,nombre:result.nombre};
+                const quota=document.querySelector('[data-operation="cuotas/registrar"]');if(quota){quota.elements.valor.value='';quota.elements.valorResultado.value='';}
+                openOperation('cuotas/registrar');
+            }
+            if(route === 'resultados/registrar' || result.requiereNuevaResolucion === true)openOperation('resultados/selecciones/resolver');
+            selectionMessage();
+        }
     }
     function renderForms() {
         operations[page].forEach(([route,title,fields],index) => {
             if (page === 'eventos' && route === 'eventos/crear' && $('event-wizard')) return;
             const panel = node('section',undefined,'panel'); panel.append(node('h2',title));
+            if(connected){
+                panel.id='operation-panel-'+index;panel.tabIndex=-1;operationPanels.set(route,panel);
+                const button=node('button',title);button.type='button';button.setAttribute('aria-controls',panel.id);button.setAttribute('aria-pressed','false');
+                if(route==='resultados/corregir'||route==='resultados/anular')button.dataset.adminOnly='true';
+                button.addEventListener('click',()=>{if(!busy&&!sessionBlocked)openOperation(route,true);});
+                operationButtons.set(route,button);$('management-flow').append(button);
+            }
             const form = node('form',undefined,'live-form management-form'); form.dataset.operation = route; form.action = base+'/administrador/'+route; form.method = 'post';
             if (route === 'resultados/corregir' || route === 'resultados/anular') {
                 form.dataset.adminOnly = 'true'; panel.append(node('p','Acción exclusiva de ADMINISTRADOR.','warning'));
             }
             const fieldset = node('fieldset'); fieldset.append(node('legend','Los campos sin indicación de opcional son obligatorios.'));
+            let references;
+            if(connected){references=node('details',undefined,'advanced-reference');references.append(node('summary','Referencias reales y modo avanzado'));}
             fields.forEach(schema => {
                 const label = node('label',schema.label); const input = node(schema.type === 'textarea' ? 'textarea' : schema.type === 'select' ? 'select' : 'input');
                 input.id = 'operation-'+index+'-'+schema.name; label.htmlFor = input.id; input.name = schema.name; input.required = schema.required;
@@ -189,12 +246,16 @@
                 }
                 for (const key of ['min','max','step','maxLength','pattern','inputMode']) if (schema[key] !== undefined) input[key] = schema[key];
                 if (schema.type === 'textarea') input.rows = 2;
-                label.append(input); fieldset.append(label);
+                label.append(input);
+                if(references && schema.name.startsWith('id'))references.append(label);else fieldset.append(label);
+                if(connected && schema.name.startsWith('id'))input.addEventListener('input',()=>{manualReferences=true;selectionMessage();});
             });
+            if(references)fieldset.append(references);
             if (route === 'cuotas/registrar') fieldset.append(node('small','Punto decimal y hasta cuatro decimales. El backend decide qué valor exige cada modalidad y valida el rango; no se calculan cuotas aquí.'));
             if (route.includes('estado/cambiar')) fieldset.append(node('small','El backend valida la transición. Cambiar estado no sustituye la oficialización de resultados ni la liquidación de apuestas.'));
             if (route === 'eventos/crear') fieldset.append(node('small','La duración es opcional y la controla el backend. Las fechas se envían sin convertir la zona horaria.'));
             const submit = node('button',title,'primary'); submit.type = 'submit'; fieldset.append(submit);
+            if(references)submit.addEventListener('click',()=>{for(const input of references.querySelectorAll('input'))if(!input.checkValidity()){references.open=true;break;}});
             form.append(fieldset); panel.append(form); $('management-forms').append(panel);
             form.addEventListener('submit', async event => {
                 event.preventDefault(); if (busy || uncertain || sessionBlocked) return;
@@ -225,7 +286,7 @@
                     if (!data.resultado || typeof data.resultado !== 'object' || Array.isArray(data.resultado) || !Object.keys(data.resultado).length) throw new Error('Respuesta sin resultado oficial.');
                     const bindResult = page === 'resultados' ? confirmResultResponse(route,data.resultado,payload) : true;
                     form.dataset.lastSuccess = fingerprint;
-                    showResult(data.resultado,bindResult); status(title+': operación confirmada por el servidor. Actualiza las consultas para ver los datos actuales.');
+                    showResult(data.resultado,bindResult,route); status(title+': operación confirmada por el servidor. Actualiza las consultas para ver los datos actuales.');
                 } catch (error) {
                     report(error);
                     if (sent && (!error.status || error.status >= 500)) {
@@ -235,10 +296,12 @@
                 } finally { busy = false; sync(); }
             });
         });
+        if(connected)openOperation(operations[page][0][0]);
     }
     function renderDetail(event) {
         if (!event || !Number.isInteger(event.idEvento) || !Array.isArray(event.participantes) || !Array.isArray(event.mercados)) throw new Error('El detalle no cumple el contrato esperado.');
         const target = $('detail-results'); target.replaceChildren(); selectEvent(event.idEvento);
+        if(connected){connectedEvent=event;manualReferences=false;selectionMessage();if(page==='mercados')participantPicker(event);}
         target.append(node('h3',display(event.nombre)));
         resultValues(target,{idEvento:event.idEvento,idLiga:event.idLiga,estadoEvento:event.estadoEvento,fechaInicio:event.fechaInicio,fechaFin:event.fechaFin});
         if (page === 'resultados') resultValues(target,{resultadoTexto:event.resultadoTexto,estadoResultado:event.estadoResultado});
@@ -247,16 +310,16 @@
         if (page === 'eventos') target.append(action('Cargar datos para configurar este evento',() => fill('eventos/actualizar',{idEvento:event.idEvento,nombre:event.nombre,fechaInicio:event.fechaInicio,fechaFin:event.fechaFin})));
         table(target,'Participantes asociados',['ID','Participante','Tipo','Orden','Local','País'],event.participantes.map(p=>[p.idParticipante,p.participante,p.tipoParticipante,p.ordenParticipante,p.esLocal,p.idPais]));
         for (const market of event.mercados) {
-            target.append(node('h3','#'+display(market.idMercado)+' · '+display(market.mercado)));
+            target.append(node('h3',display(market.mercado)));
             target.append(node('p','Modalidad: '+display(market.tipoMercado)+' · Estado: '+display(market.estadoMercado)+' · '+display(market.descripcionMercado),'muted'));
-            if (page === 'mercados') target.append(action('Usar ID de este mercado',() => {
-                document.querySelectorAll('.management-form [name="idMercado"]').forEach(input => {input.value=String(market.idMercado);}); status('ID de mercado seleccionado.');
-            }));
+            if (page === 'mercados') {
+                target.append(action('Crear selección en '+market.mercado,()=>{useMarket(market);fill('selecciones/crear',{idMercado:market.idMercado});}),document.createTextNode(' '),action('Cambiar estado de '+market.mercado,()=>{useMarket(market);fill('mercados/estado/cambiar',{idMercado:market.idMercado});}));
+            }
             if (!Array.isArray(market.selecciones)) throw new Error('Respuesta de selecciones inválida.');
-            table(target,'Selecciones y cuotas disponibles',['ID selección','Selección','Participante ID','Activa','Cuota ID','Cuota','Valor','Valor resultado','Cuota activa','Acción'],market.selecciones.map(selection=>[
-                selection.idSeleccion,selection.seleccion,selection.idParticipante,selection.seleccionActiva,selection.idCuota,selection.cuota,selection.valor,selection.valorResultado,selection.cuotaActiva,
-                page === 'mercados' ? action('Usar selección',()=>fill('cuotas/registrar',{idSeleccion:selection.idSeleccion,valor:'',valorResultado:''}))
-                    : page === 'resultados' ? action('Resolver selección',()=>fill('resultados/selecciones/resolver',{idSeleccion:selection.idSeleccion,resultado:''})) : '—'
+            table(target,'Selecciones y cuotas disponibles',['Selección','Referencia','Participante','Activa','Cuota ID','Cuota','Valor','Valor resultado','Cuota activa','Acción'],market.selecciones.map(selection=>[
+                selection.seleccion,selection.idSeleccion,event.participantes.find(participant=>participant.idParticipante===selection.idParticipante)?.participante || selection.idParticipante,selection.seleccionActiva,selection.idCuota,selection.cuota,selection.valor,selection.valorResultado,selection.cuotaActiva,
+                page === 'mercados' ? action('Registrar cuota',()=>{useMarket(market);selectedSelection={id:selection.idSeleccion,nombre:selection.seleccion};selectionMessage();fill('cuotas/registrar',{idSeleccion:selection.idSeleccion,valor:'',valorResultado:''});})
+                    : page === 'resultados' ? action('Resolver selección',()=>{manualReferences=false;selectedSelection={id:selection.idSeleccion,nombre:selection.seleccion};selectionMessage();fill('resultados/selecciones/resolver',{idSeleccion:selection.idSeleccion,resultado:''});}) : '—'
             ]));
             if (page === 'resultados') table(target,'Resoluciones devueltas por el servidor',['ID selección','Selección','Resolución oficial','Fecha de resolución'],market.selecciones.map(selection=>[selection.idSeleccion,selection.seleccion,selection.resultadoSeleccion,selection.fechaResolucion]));
         }
@@ -269,6 +332,10 @@
     }
     function detail(eventId) {
         if (!$('detail-results') || busy || sessionBlocked) return;
+        if(connected && connectedEvent && connectedEvent.idEvento!==Number(eventId)){
+            connectedEvent=null;selectedMarket=null;selectedSelection=null;selectionMessage();
+            if(page==='mercados')selectEvent(eventId);
+        }
         if (page === 'resultados') {
             if (resultEventContext !== null && resultEventContext !== String(eventId)
                 && [...document.querySelectorAll('.management-form textarea')].some(input => input.value.trim())
@@ -302,6 +369,11 @@
         $('browse-results').replaceChildren();
         query('/deportes/exploracion',data=> {
             if (!Array.isArray(data.deportes)) throw new Error('Respuesta de deportes inválida.');
+            if($('browse-sport').tagName==='SELECT'){
+                const old=$('browse-sport').value;$('browse-sport').replaceChildren();const placeholder=node('option','Selecciona un deporte');placeholder.value='';$('browse-sport').append(placeholder);
+                data.deportes.forEach(sport=>{const option=node('option',sport.nombre);option.value=String(sport.idDeporte);$('browse-sport').append(option);});
+                if(data.deportes.some(sport=>String(sport.idDeporte)===old))$('browse-sport').value=old;
+            }
             table($('browse-results'),'Deportes activos',['ID','Deporte','Acción'],data.deportes.map(sport=>[sport.idDeporte,sport.nombre,action('Usar deporte',()=> {
                 $('browse-sport').value=String(sport.idDeporte); document.querySelectorAll('.management-form [name="idDeporte"]').forEach(input=>{input.value=String(sport.idDeporte);}); status('ID de deporte seleccionado.');
             })]));
@@ -316,7 +388,7 @@
         });
         else query('/eventos/exploracion?'+new URLSearchParams({idDeporte:$('browse-sport').value,vista:'TODOS',cantidad:'100'}),data=> {
             if (!Array.isArray(data.eventos)) throw new Error('Respuesta de eventos inválida.');
-            table($('browse-results'),'Eventos disponibles (máximo 100; también puedes consultar por ID)',['ID','Evento','Liga','Estado','Acción'],data.eventos.map(event=>[event.idEvento,event.evento,event.liga,event.estadoEvento,action('Consultar evento',()=>detail(event.idEvento))]));
+            table($('browse-results'),'Eventos disponibles (máximo 100; también puedes consultar por ID)',['Evento','Liga','Estado','Referencia','Acción'],data.eventos.map(event=>[event.evento,event.liga,event.estadoEvento,event.idEvento,action('Abrir evento',()=>detail(event.idEvento))]));
         });
     });
     if ($('detail-form')) $('detail-form').addEventListener('submit',event=>{event.preventDefault(); if (!busy) detail($('detail-id').value);});

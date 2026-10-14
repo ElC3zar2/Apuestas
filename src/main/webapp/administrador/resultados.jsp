@@ -42,19 +42,20 @@
 <p id="management-status" class="live-status" role="status" aria-live="polite">Selecciona una consulta o completa un formulario.</p>
 <a id="management-login" href="${pageContext.request.contextPath}/administrador/login" hidden>Volver a iniciar sesión</a>
 <button id="acknowledge-write" type="button" class="critical" hidden>Ya comprobé el resultado; habilitar formularios</button>
-<section class="panel" aria-labelledby="query-title"><h2 id="query-title">Consultar información disponible</h2>
-<form id="browse-form" class="toolbar"><label for="browse-sport">ID real de deporte<input id="browse-sport" name="idDeporte" type="number" min="1" max="2147483647" required></label><button type="submit">Consultar eventos</button></form>
+<section class="panel" aria-labelledby="query-title"><h2 id="query-title">1. Selecciona un evento</h2>
+<form id="browse-form" class="toolbar"><label for="browse-sport">Deporte<select id="browse-sport" name="idDeporte" required><option value="">Carga los deportes disponibles</option></select></label><button type="submit">Consultar eventos</button></form>
 <button id="load-sports" type="button">Consultar deportes activos</button>
 <div id="browse-results" class="management-results"></div>
-<form id="detail-form" class="toolbar"><label for="detail-id">ID real del evento<input id="detail-id" name="idEvento" type="number" min="1" max="2147483647" step="1" required></label><button type="submit">Consultar / actualizar evento</button></form>
-<div class="toolbar"><a id="selected-live" hidden>Control en vivo del evento</a><a id="selected-markets" hidden>Mercados del evento</a></div>
+<details class="advanced-reference"><summary>Consultar un evento por ID real (avanzado)</summary><form id="detail-form" class="toolbar"><label for="detail-id">ID real del evento<input id="detail-id" name="idEvento" type="number" min="1" max="2147483647" step="1" required></label><button type="submit">Consultar / actualizar evento</button></form>
+</details><div class="toolbar"><a id="selected-live" hidden>Control en vivo del evento</a><a id="selected-markets" hidden>Mercados del evento</a></div>
 <p class="muted">La exploración puede omitir datos no publicados. Un listado vacío no confirma que no existan registros administrativos.</p>
 <div id="detail-results" class="management-results"></div>
 </section>
 <section id="operation-result" class="panel" hidden aria-labelledby="result-title"><h2 id="result-title">Respuesta oficial de la operación</h2><div id="operation-values"></div></section>
-<p class="warning">Terminar un evento no oficializa su resultado. La resolución manual no determina ganadores en el navegador; el backend valida CONVENCIONAL, MARCADOR_FINAL y PRIMERA_ANOTACION.</p><p class="muted">La consulta pública no incluye el ID administrativo del resultado. Usa el ID real devuelto al registrar o proporcionado por administración para resultados anteriores.</p><p id="result-context" class="muted" role="status">Consulta un evento para trabajar con sus resultados. El ID de un resultado previo puede introducirse manualmente si no está disponible.</p><div id="management-forms" class="management-grid"></div>
+<p class="warning">Terminar un evento no oficializa su resultado. La resolución manual no determina ganadores en el navegador; el backend valida CONVENCIONAL, MARCADOR_FINAL y PRIMERA_ANOTACION.</p><p class="muted">La consulta pública no incluye el ID administrativo del resultado. Usa el ID real devuelto al registrar o proporcionado por administración para resultados anteriores.</p><p id="result-context" class="muted" role="status">Consulta un evento para trabajar con sus resultados. El ID de un resultado previo puede introducirse manualmente si no está disponible.</p><section class="panel"><h2>2. Elige una operación</h2><p id="management-selection" class="muted" role="status">Selecciona un evento de la tabla para trabajar con sus datos oficiales.</p><nav id="management-flow" class="operation-nav" aria-label="Operaciones del registro seleccionado"></nav></section><div id="management-forms" class="management-grid connected-forms"></div>
 <noscript>Activa JavaScript para consultar y operar estos módulos.</noscript>
 </main></body></html>
+
 
 
 

@@ -20,6 +20,7 @@
     const errors = {400:'Los parámetros no son válidos.',401:'La sesión expiró. Vuelve a iniciar sesión.',403:'Acceso no permitido para esta operación.',404:'No se encontró el usuario o registro solicitado.',405:'Método no permitido.',409:'La operación no es compatible con el estado actual.',500:'El servidor no pudo procesar la solicitud.',503:'Servicio temporalmente no disponible.'};
     const labels = {idUsuario:'ID de usuario',idVerificacion:'ID de verificación',idRestriccion:'ID de restricción',estadoVerificacion:'Estado de verificación',estadoUsuario:'Estado de cuenta',correoVerificado:'Correo verificado',sinCambios:'Sin cambios',estadoAnterior:'Estado anterior',estadoActual:'Estado actual',tipoRestriccion:'Tipo de restricción',motivo:'Motivo',fechaFin:'Fecha de fin',activa:'Activa'};
     const forms = new Map(), controllers = new Set(), uncertain = new Set();
+    const operationPanels = new Map(), operationButtons = new Map();
     let detail = null, busy = false, expired = false, stale = false;
     const display = value => value == null || value === '' ? '—' : typeof value === 'boolean' ? (value ? 'Sí' : 'No') : String(value);
     const identity = user => [user.nombre,user.apellido].filter(Boolean).join(' ').trim() || user.correo || 'Cuenta consultada';
@@ -48,6 +49,7 @@
         for(const id of ['pending-form','user-query'])$(id).querySelectorAll('input,button').forEach(el=>{el.disabled=busy||expired||!readable;});
         document.querySelectorAll('[data-user-action]').forEach(el=>{el.disabled=busy||expired;});
         for(const [route,form] of forms)form.querySelector('fieldset').disabled=busy||expired||!available(route,form);
+        for(const [route,button] of operationButtons)button.disabled=busy||expired||!available(route,forms.get(route));
         $('users-operation-panel').hidden=!detail||!writable||stale;
         $('users-uncertain').hidden=!uncertain.size;
         $('users-forms').setAttribute('aria-busy',String(busy));
@@ -87,11 +89,20 @@
     function pickVerification(id) {
         if(!detail?.verificaciones.some(item=>item.idVerificacion===id))return;
         for(const form of forms.values()){const control=form.elements.namedItem('idVerificacion');if(control)control.value=String(id);}
+        const verification=detail.verificaciones.find(item=>item.idVerificacion===id);
+        if(verification.estadoVerificacion==='PENDIENTE')openUserOperation('verificacion/iniciar',true);
+        else if(verification.estadoVerificacion==='EN_REVISION')openUserOperation('verificacion/aprobar',true);
+        else {const next=[...forms].find(([route,form])=>available(route,form));if(next)openUserOperation(next[0]);}
         status('Verificación seleccionada para '+identity(detail.usuario)+'. Revisa el estado y las observaciones antes de confirmar.');sync();
     }
     function pickRestriction(id) {
         if(!detail?.restricciones.some(item=>item.idRestriccion===id&&item.activa===true))return;
-        forms.get('restricciones/levantar').elements.idRestriccion.value=String(id);status('Restricción seleccionada para '+identity(detail.usuario)+'. Escribe el motivo para levantarla.');sync();
+        forms.get('restricciones/levantar').elements.idRestriccion.value=String(id);openUserOperation('restricciones/levantar',true);status('Restricción seleccionada para '+identity(detail.usuario)+'. Escribe el motivo para levantarla.');sync();
+    }
+    function openUserOperation(route,focus=false){
+        for(const [key,panel] of operationPanels)panel.hidden=key!==route;
+        for(const [key,button] of operationButtons)button.setAttribute('aria-pressed',String(key===route));
+        if(focus){$('users-operation-panel').hidden=false;const panel=operationPanels.get(route);panel.scrollIntoView({behavior:'smooth',block:'center'});panel.focus();}
     }
     function clearUserDisplay() {
         $('user-detail').hidden=true;
@@ -121,6 +132,7 @@
             const restriction=form.elements.namedItem('idRestriccion');if(restriction&&!next.restricciones.some(item=>item.idRestriccion===Number(restriction.value)))restriction.value='';
         }
         uncertain.delete(user.idUsuario);
+        if(changed){const next=[...forms].find(([route,form])=>available(route,form));openUserOperation(next?next[0]:operations[0][0]);}
     }
     async function readDetail(id) {
         clearUserDisplay();
@@ -162,12 +174,14 @@
     function renderForms() {
         for(const [route,title,fields] of operations){
             const section=node('section',undefined,'panel');section.append(node('h3',title));
+            section.id='user-operation-'+route.replaceAll('/','-');section.tabIndex=-1;operationPanels.set(route,section);
+            const choice=node('button',title);choice.type='button';choice.setAttribute('aria-controls',section.id);choice.setAttribute('aria-pressed','false');choice.addEventListener('click',()=>{if(!busy&&!expired&&available(route,forms.get(route)))openUserOperation(route,true);});operationButtons.set(route,choice);$('users-flow').append(choice);
             const form=node('form',undefined,'live-form');form.dataset.operation=route;form.action=base+prefix+route;form.method='post';
             const fieldset=node('fieldset');
             for(const schema of fields){
                 const label=node('label',schema.label);const select=schema.type==='state'||schema.type==='restriction';
                 const input=node(select?'select':schema.type==='textarea'?'textarea':'input');input.id='user-'+route.replaceAll('/','-')+'-'+schema.name;input.name=schema.name;input.required=schema.required;label.htmlFor=input.id;
-                if(schema.type==='target'){input.type='text';input.readOnly=true;input.placeholder='Selecciona un registro del detalle';}
+                if(schema.type==='target'){input.type='text';input.readOnly=true;input.placeholder='Selecciona un registro del detalle';label.classList.add('reference-field');}
                 if(schema.type==='textarea'){input.maxLength=500;input.rows=3;}
                 if(schema.type==='datetime-local'){input.type='datetime-local';input.step='1';input.min='0001-01-01T00:00:00';input.max='9999-12-31T23:59:59';}
                 if(select){const options=schema.type==='state'?['PENDIENTE','ACTIVO','SUSPENDIDO','CERRADO']:['APOSTAR','TODAS_OPERACIONES'];const empty=node('option','Selecciona una opción');empty.value='';input.append(empty);for(const value of options){const item=node('option',value);item.value=value;input.append(item);}}
@@ -210,7 +224,7 @@
         if(detail&&Number($('user-id').value)!==detail.usuario.idUsuario){stale=true;clearUserDisplay();$('users-operation-result').hidden=true;sync();}
     });
     window.addEventListener('pagehide',()=>{controllers.forEach(controller=>controller.abort());});
-    renderForms();sync();
+    renderForms();openUserOperation(operations[0][0]);sync();
     if(!['ADMINISTRADOR','OPERADOR_EVENTOS','CAJERO','AUDITOR'].includes(role)){
         status('No se pudo obtener el rol de la sesión administrativa. Vuelve a iniciar sesión. No se ha consultado el backend de usuarios.',true);
         $('users-login').hidden=false;

@@ -54,6 +54,7 @@
 <h3>Restricciones registradas</h3><div id="user-restrictions" class="management-results"></div></div>
 </section>
 <section id="users-operation-result" class="panel" hidden><h2>Respuesta oficial de la operación</h2><div id="users-operation-values" class="management-results"></div></section>
-<section id="users-operation-panel" hidden><h2>Operaciones sobre la cuenta consultada</h2><p id="operation-user" class="muted"></p><p class="muted">Los IDs de operación se cargan desde el detalle. Aprobar no garantiza activación: el backend comprueba el correo y el estado de la cuenta.</p><div id="users-forms" class="management-grid"></div></section>
+<section id="users-operation-panel" hidden><h2>Operaciones sobre la cuenta consultada</h2><p id="operation-user" class="muted"></p><p class="muted">Los IDs de operación se cargan desde el detalle. Aprobar no garantiza activación: el backend comprueba el correo y el estado de la cuenta.</p><nav id="users-flow" class="operation-nav" aria-label="Operaciones de la cuenta consultada"></nav><div id="users-forms" class="management-grid connected-forms"></div></section>
 <noscript>Activa JavaScript para consultar y administrar usuarios.</noscript></main></body></html>
+
 

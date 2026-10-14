@@ -17,7 +17,7 @@
     const confirmed = new Set();
     const ready = new Map();
     const controllers = new Set();
-    let busy = false, expired = false, selected = null, storageUsable = true;
+    let busy = false, expired = false, selected = null, selectedInfo = null, storageUsable = true;
     const validId = id => /^[0-9]+$/.test(String(id)) && Number(id) > 0 && Number(id) <= 2147483647;
     try {
         const saved = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
@@ -30,10 +30,12 @@
     function sync() {
         document.querySelectorAll('#contenido button, #contenido input').forEach(el => { el.disabled = busy || expired; });
         $('ready-panel').hidden = !canOperate;
-        $('settle-panel').hidden = !canOperate;
+        $('settle-panel').hidden = !canOperate || !selected;
         $('settlement-query').querySelectorAll('input,button').forEach(el => { el.disabled = busy || expired || !canConsult; });
         $('settle-button').disabled = busy || expired || !canOperate || !storageUsable || !selected || !ready.has(selected) || pending.has(selected) || confirmed.has(selected);
-        $('selected-ticket').textContent = selected ? 'Boleto #' + selected + (ready.has(selected) ? ' · devuelto en la lista oficial.' : ' · actualiza la lista para comprobar disponibilidad.') : 'Selecciona un boleto de la lista oficial.';
+        const info=ready.get(selected)||selectedInfo;
+        $('selected-ticket').textContent = selected ? (info?.codigoBoleto || 'Boleto consultado')+(info?.correo?' · '+info.correo:'')+' · referencia #'+selected+(ready.has(selected)?' · disponible en la lista oficial.':' · actualiza la lista para comprobar disponibilidad.') : 'Selecciona un boleto de la lista oficial.';
+        if(role==='AUDITOR'||pending.size)$('ticket-lookup').open=true;
         $('uncertain-status').textContent = !storageUsable ? 'No se pudo recuperar o guardar la protección de envíos pendientes en esta pestaña. La liquidación permanece deshabilitada.'
             : pending.size ? 'Liquidación pendiente de comprobación para los IDs: ' + [...pending].join(', ') + '. Consulta cada boleto por ID antes de considerar un reintento.' : '';
         $('ready-results').setAttribute('aria-busy',String(busy));
@@ -88,7 +90,7 @@
         if (Array.isArray(result.detalles)) table(target,'Detalles oficiales por modalidad',['Modalidad','Pronóstico A','Pronóstico B','Clasificación','Cuota aplicada','Cuota resultado aplicada','Cuota liquidación'],result.detalles.map(detail=>[detail.tipoMercadoAplicado,detail.pronosticoA,detail.pronosticoB,detail.clasificacionAcierto,detail.cuotaAplicada,detail.cuotaResultadoAplicada,detail.cuotaLiquidacion]));
     }
     function button(text, callback) {const el=node('button',text);el.type='button';el.addEventListener('click',()=>{if(!busy&&!expired)callback();});return el;}
-    function select(id) {selected=String(id);$('ticket-id').value=selected;sync();}
+    function select(id,info=null) {selected=String(id);selectedInfo=info||ready.get(selected)||(String(selectedInfo?.idBoleto)===selected?selectedInfo:null);$('ticket-id').value=selected;sync();}
     async function readList() {
         ready.clear(); $('ready-results').replaceChildren();
         const data=await api(routes.list+'?cantidad='+encodeURIComponent($('ready-count').value));
@@ -96,10 +98,11 @@
         data.boletos.forEach(ticket=>ready.set(String(ticket.idBoleto),ticket));
         table($('ready-results'),'Boletos devueltos por el servidor',['ID / código','Cliente','Tipo','Apostado','Cuota total','Ganancia potencial','Selecciones (total / ganadas / perdidas / anuladas)','Propuesta oficial','Acciones'],data.boletos.map(ticket=>{
             const actions=node('div');
-            actions.append(button('Seleccionar',()=>{
+            actions.append(button('Revisar para liquidar',()=>{
                 select(ticket.idBoleto);$('ticket-results').replaceChildren(node('h3','Información de la lista oficial'));values($('ticket-results'),ticket);status('Boleto seleccionado. La propuesta e importes proceden del servidor.');
+                $('settle-panel').scrollIntoView({behavior:'smooth',block:'center'});if(!$('settle-button').disabled)$('settle-button').focus();
             }),document.createTextNode(' '),button('Consultar liquidación',()=>consult(ticket.idBoleto)));
-            return [ticket.idBoleto+' / '+ticket.codigoBoleto,ticket.correo,ticket.tipoBoleto,ticket.montoApostado,ticket.cuotaTotal,ticket.gananciaPotencial,[ticket.cantidadSelecciones,ticket.seleccionesGanadas,ticket.seleccionesPerdidas,ticket.seleccionesAnuladas].map(display).join(' / '),ticket.resultadoPropuesto,actions];
+            return [ticket.codigoBoleto+' · #'+ticket.idBoleto,ticket.correo,ticket.tipoBoleto,ticket.montoApostado,ticket.cuotaTotal,ticket.gananciaPotencial,[ticket.cantidadSelecciones,ticket.seleccionesGanadas,ticket.seleccionesPerdidas,ticket.seleccionesAnuladas].map(display).join(' / '),ticket.resultadoPropuesto,actions];
         }));
     }
     async function readTicket(id) {
@@ -107,7 +110,7 @@
         const data=await api(routes.consult+'?idBoleto='+encodeURIComponent(id));
         const result=data.resultado;
         if (!result || result.idBoleto !== Number(id) || typeof result.estadoBoleto !== 'string' || typeof result.estadoLiquidacion !== 'string' || !Array.isArray(result.detalles)) throw new Error('La consulta del boleto no cumple el contrato.');
-        values($('ticket-results'),result);select(id);
+        values($('ticket-results'),result);select(id,result);
         if (pending.has(String(id))) {
             const next=new Set(pending);next.delete(String(id));
             try {persistPending(next);} catch {storageUsable=false;}
@@ -122,7 +125,10 @@
     }
     async function consult(id) {
         if(busy||expired||!canConsult||!validId(id))return;
-        id=String(Number(id));busy=true;sync();status('Consultando estado oficial del boleto #'+id+'…');
+        id=String(Number(id));
+        if(selected!==id){selected=null;selectedInfo=null;}
+        ready.delete(id);$('ticket-id').value=id;$('ticket-lookup').open=true;
+        busy=true;sync();status('Consultando estado oficial del boleto #'+id+'…');
         try {
             await readTicket(id);
             // Tras comprobar un POST incierto se exige una lista nueva para habilitar otra solicitud.
@@ -176,5 +182,6 @@
         $('settlement-login').hidden=false;
     } else if(!canConsult)status('Tu rol no tiene permisos para consultar u operar liquidaciones.',true);
     const initial=new URLSearchParams(location.search).get('idBoleto');
+    if(!initial&&pending.size&&!$('ticket-id').value)$('ticket-id').value=[...pending][0];
     if(initial&&validId(initial)&&canConsult){$('ticket-id').value=initial;consult(initial);}
 })();
