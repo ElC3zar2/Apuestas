@@ -18,7 +18,20 @@ public final class DashboardAdministrativoModelos {
             idDeporte=deporte;this.vista=vista;horasPrevia=horas;this.cantidad=cantidad;
         }
     }
+    public static final class Modalidad {
+        public Integer idEvento;
+        public String tipoMercadoAplicado;
+        public Long cantidadDetalles;
+        public Integer marcadoresExactos,aciertosResultado,aciertosPrimeraAnotacion;
+    }
+    public static final class ConciliacionCasa {
+        public Integer idBilletera;
+        public BigDecimal saldoDisponible,saldoComprometido,reservasBoletos,diferencia;
+        public Integer reservasFueraDePendiente;
+    }
     public static final class Dashboard {
+        public List<Modalidad> modalidades;
+        public List<ConciliacionCasa> conciliacionCasa;
         public final boolean ok=true;
         public FiltrosDashboard filtros;
         public Resumen resumen;
@@ -26,6 +39,8 @@ public final class DashboardAdministrativoModelos {
         public List<Auditoria> auditoriaReciente;
     }
     public static final class Analitica {
+        public List<Modalidad> modalidades;
+        public List<ConciliacionCasa> conciliacionCasa;
         public final boolean ok=true;
         public FiltrosEventos filtros;
         public List<Evento> eventos;

@@ -67,6 +67,14 @@ public class PruebaDashboardAdministrativo {
         if(grupo==2) return !Arrays.asList("IdAuditoria","FechaAccion","Accion").contains(col);
         return grupo==3&&Arrays.asList("FechaFin","CuotaPromedioBoletos","UltimaApuestaRelacionada").contains(col);
     }
+    static Map<String,Object> modalidad() {
+        return fila("IdEvento",19,"TipoMercadoAplicado","MARCADOR_FINAL","CantidadDetalles",5000000000L,
+                "MarcadoresExactos",1,"AciertosResultado",2,"AciertosPrimeraAnotacion",0);
+    }
+    static Map<String,Object> casa() {
+        return fila("IdBilletera",4,"SaldoDisponible",decimal("123.45"),"SaldoComprometido",decimal("12.34"),
+                "ReservasBoletos",decimal("12.44"),"Diferencia",decimal("-0.10"),"ReservasFueraDePendiente",0);
+    }
     static class Bloque {
         final List<String> columnas;
         final List<Map<String,Object>> filas=new ArrayList<>();
@@ -82,6 +90,7 @@ public class PruebaDashboardAdministrativo {
             this.eventos=eventos;
             if(eventos) bloques.add(new Bloque(evento()));
             else { bloques.add(new Bloque(resumen()));bloques.add(new Bloque(deporte()));bloques.add(new Bloque(auditoria())); }
+            bloques.add(new Bloque(modalidad()));bloques.add(new Bloque(casa()));
         }
         Map<String,Object> fila(int i) { return bloques.get(i).filas.get(0); }
         int bloqueActual() { return conteos?indice/2:indice; }
@@ -175,7 +184,7 @@ public class PruebaDashboardAdministrativo {
             exigir(json.path("ok").asBoolean()==(esperado==200));
             if(esperado!=200) exigir(json.size()==2&&json.has("mensaje"));
             else {
-                exigir(json.size()==(j.eventos?3:5)&&json.has("filtros"));
+                exigir(json.size()==(j.eventos?5:7)&&json.has("filtros"));
                 exigir(json.at("/filtros/horasPrevia").asInt()==numero("horasPrevia",24));
                 if(j.eventos) {
                     exigir(json.at("/filtros/cantidad").asInt()==numero("cantidad",100));
@@ -210,6 +219,7 @@ public class PruebaDashboardAdministrativo {
         return 500;
     }
     public static void main(String[] args) throws Exception {
+        if(args.length>0 && "contrato-actual".equals(args[0])) { new Caso(false).ejecutar(200);return; }
         if(args.length>0) { Caso c=new Caso(false);c.h.previa=null;c.ejecutar(401);return; }
         Set<String> rutas=new HashSet<>(Arrays.asList(DashboardAdministrativoServlet.class.getAnnotation(WebServlet.class).value()));
         exigir(rutas.equals(new HashSet<>(Arrays.asList("/administrador/dashboard/resumen","/administrador/analitica/eventos"))));
@@ -276,7 +286,7 @@ public class PruebaDashboardAdministrativo {
             for(int b=0;b<bloques;b++) {
                 int grupo=eventos?3:b;
                 c=new Caso(eventos);c.j.bloques.remove(b);c.ejecutar(500);
-                c=new Caso(eventos);c.j.bloques.get(b).filas.clear();c.ejecutar(!eventos&&b==0?500:200);
+                c=new Caso(eventos);c.j.bloques.get(b).filas.clear();if(eventos&&b==0)c.j.bloques.get(1).filas.clear();c.ejecutar(!eventos&&b==0?500:200);
                 c=new Caso(eventos);c.j.bloques.get(b).filas.add(new LinkedHashMap<>(c.j.fila(b)));c.ejecutar(500);
                 for(Map.Entry<String,Object> col:new Caso(eventos).j.fila(b).entrySet()) {
                     c=new Caso(eventos);c.j.fila(b).remove(col.getKey());c.ejecutar(500);
@@ -322,6 +332,40 @@ public class PruebaDashboardAdministrativo {
         exigir(c.ejecutar(200).at("/eventos/0/evento").asText().equals(nombre));
         c=new Caso(false);c.j.fila(0).put("Password",PRIVADO);c.j.fila(1).put("Token",PRIVADO);c.ejecutar(200);
         c=new Caso(false);c.directo=true;c.h.ruta="/administrador/dashboard/desconocido";c.ejecutar(404);
+        for(boolean eventos:new boolean[]{false,true}) {
+            int m=eventos?1:3,k=m+1;
+            c=new Caso(eventos);JsonNode nuevo=c.ejecutar(200);
+            exigir(nuevo.at("/modalidades/0/cantidadDetalles").longValue()==5000000000L);
+            exigir(nuevo.at("/conciliacionCasa/0/diferencia").decimalValue().compareTo(decimal("-0.10"))==0);
+            for(int b:new int[]{m,k}) {
+                c=new Caso(eventos);c.j.bloques.remove(b);c.ejecutar(500);
+                c=new Caso(eventos);c.j.bloques.get(b).filas.clear();c.ejecutar(200);
+                c=new Caso(eventos);c.j.bloques.get(b).filas.add(new LinkedHashMap<>(c.j.fila(b)));c.ejecutar(500);
+                for(String col:new Caso(eventos).j.fila(b).keySet()) {
+                    c=new Caso(eventos);c.j.fila(b).remove(col);c.ejecutar(500);
+                    c=new Caso(eventos);c.j.fila(b).put(col,null);c.ejecutar(500);
+                    c=new Caso(eventos);c.j.fila(b).put(col,new Object());c.ejecutar(500);
+                    c=new Caso(eventos);c.j.bloques.get(b).columnas.remove(col);c.ejecutar(500);
+                }
+            }
+            c=new Caso(eventos);Collections.swap(c.j.bloques,m,k);c.ejecutar(500);
+            c=new Caso(eventos);c.j.fila(m).put("CantidadDetalles",1);c.ejecutar(500);
+            c=new Caso(eventos);c.j.fila(m).put("TipoMercadoAplicado","INVENTADO");c.ejecutar(500);
+            for(String modalidad:new String[]{"CONVENCIONAL","MARCADOR_FINAL","PRIMERA_ANOTACION"}) {
+                c=new Caso(eventos);c.j.fila(m).put("TipoMercadoAplicado",modalidad);c.ejecutar(200);
+            }
+            for(String col:new String[]{"SaldoDisponible","SaldoComprometido","ReservasBoletos","Diferencia"}) {
+                c=new Caso(eventos);c.j.fila(k).put(col,1.1d);c.ejecutar(500);
+                c=new Caso(eventos);c.j.fila(k).put(col,decimal("1.001"));c.ejecutar(500);
+                c=new Caso(eventos);c.j.fila(k).put(col,decimal("-1.00"));c.ejecutar(col.equals("Diferencia")?200:500);
+            }
+            c=new Caso(eventos);c.j.fila(k).put("ReservasBoletos",decimal("12345678901234567890.12"));
+            exigir(c.ejecutar(200).at("/conciliacionCasa/0/reservasBoletos").decimalValue().equals(decimal("12345678901234567890.12")));
+            c=new Caso(eventos);c.j.fila(k).put("ReservasFueraDePendiente",2);c.ejecutar(200);
+            c=new Caso(eventos);c.j.codigo=76220;c.ejecutar(403);
+            for(int codigo:new int[]{76900,1205,1222}) {c=new Caso(eventos);c.j.codigo=codigo;c.ejecutar(503);}
+        }
+        c=new Caso(true);c.j.fila(1).put("IdEvento",999);c.ejecutar(500);
         System.out.println("Dashboard administrativo: "+casos+" casos, 0 fallos.");
     }
 }

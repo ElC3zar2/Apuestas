@@ -146,6 +146,24 @@ public class PruebaIntegracionBackendAdministrativo {
         exigir(j.conexionCerrada&&j.statementCerrado&&j.abiertos==j.cerrados);casos++;
     }
     public static void main(String[] args) throws Exception {
+        if(args.length>0 && "resultados-liquidacion-dashboard".equals(args[0])) {
+            List<Supplier<Object>> bloque=new ArrayList<>();
+            for(OperacionAdministracionResultados op:OperacionAdministracionResultados.values())
+                bloque.add(()->new PruebaAdministracionResultados.Caso(op));
+            for(int variante:new int[]{0,1,2,3}) bloque.add(()->new PruebaLiquidacionAdministrativa.Caso(variante));
+            bloque.add(()->new PruebaDashboardAdministrativo.Caso(false));
+            bloque.add(()->new PruebaDashboardAdministrativo.Caso(true));
+            for(Supplier<Object> fabrica:bloque) {
+                Api api=new Api(fabrica.get());Map<String,Object> identidad=new HashMap<>(api.h.previa.datos);
+                api.ejecutar(200);exigir(api.h.previa.datos.equals(identidad));
+                api=new Api(fabrica.get());api.h.previa=null;api.ejecutar(401);
+                api=new Api(fabrica.get());api.h.previa.expirada=true;api.ejecutar(401);
+                api=new Api(fabrica.get());api.h.previa.datos.put("adminRol","CASA");api.ejecutar(403);
+                api=new Api(fabrica.get());api.params.put("idUsuarioProceso",new String[]{"99"});api.ejecutar(400);
+                api=new Api(fabrica.get());api.h.method="DELETE";api.ejecutar(405);
+            }
+            System.out.println("Integracion resultados/liquidacion/dashboard: "+casos+" casos, 0 fallos; sin SQL.");return;
+        }
         if(args.length>0 && "eventos".equals(args[0])) {
             for(OperacionAdministracionEventos op:OperacionAdministracionEventos.values())new Api(casoEventos(op)).ejecutar(200);
             System.out.println("Integracion administrativa eventos: " + casos + " casos, 0 fallos; sin SQL.");return;

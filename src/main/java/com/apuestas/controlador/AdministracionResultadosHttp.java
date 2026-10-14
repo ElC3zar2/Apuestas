@@ -12,8 +12,9 @@ public final class AdministracionResultadosHttp {
             case 61041:case 61042:case 61043:return 403;
             case 61004:case 61010:case 61012:case 61020:case 61035:case 61047:return 404;
             case 61005:case 61006:case 61011:case 61013:case 61014:case 61015:
-            case 61021:case 61022:case 61023:case 61024:case 61036:case 61037:case 61048:return 409;
+            case 76301:case 76217:case 76218:case 76219:case 61021:case 61022:case 61023:case 61024:case 61036:case 61037:case 61048:return 409;
             // Catalogos internos incompletos y errores desconocidos no se revelan.
+            case 76900:case 1205:case 1222:return 503;
             default:return 500;
         }
     }

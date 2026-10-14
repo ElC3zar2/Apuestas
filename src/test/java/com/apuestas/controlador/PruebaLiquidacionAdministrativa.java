@@ -58,6 +58,11 @@ public class PruebaLiquidacionAdministrativa {
                 "FechaCreacion",fecha(),"FechaInicioProceso",fecha(),"FechaFinalizacion",fecha(),
                 "IdUsuarioProceso",7,"UsuarioProceso","admin@example.test","Observacion",null);
     }
+    static Map<String,Object> detalle() {
+        return fila("TipoMercadoAplicado","MARCADOR_FINAL","PronosticoA",2,"PronosticoB",1,
+                "ClasificacionAcierto","EXACTO","CuotaAplicada",dinero("3.2500"),
+                "CuotaResultadoAplicada",dinero("1.7500"),"CuotaLiquidacion",dinero("3.2500"));
+    }
     private static Map<String,Object> respuesta(int variante) {
         return variante==0?listo():variante==1?nueva():variante==2?repetida():consulta();
     }
@@ -86,6 +91,7 @@ public class PruebaLiquidacionAdministrativa {
         Jdbc(int variante) {
             op=variante==0?LISTAR:variante==3?CONSULTAR:LIQUIDAR;
             resultados.add(new ArrayList<>(Arrays.asList(respuesta(variante))));
+            if(variante==3) resultados.add(new ArrayList<>(Arrays.asList(detalle())));
         }
         Map<String,Object> fila() { return resultados.get(0).get(0); }
         Connection conexion() throws SQLException {
@@ -131,6 +137,13 @@ public class PruebaLiquidacionAdministrativa {
                 switch(m.getName()) {
                     case "next":return ++pos[0]<filas.size();
                     case "close":cerrados++;return null;
+                    case "getMetaData":
+                        java.util.List<String> cols=new java.util.ArrayList<>((filas.isEmpty()?detalle():filas.get(0)).keySet());
+                        return proxy(ResultSetMetaData.class,(mp,mm,ma)-> {
+                            if(mm.getName().equals("getColumnCount")) return cols.size();
+                            if(mm.getName().equals("getColumnLabel")) return cols.get((Integer)ma[0]-1);
+                            throw new AssertionError(mm.getName());
+                        });
                     case "getObject":
                         Map<String,Object> fila=filas.get(pos[0]);
                         if(!fila.containsKey(a[0])) throw new SQLException(PRIVADO);
@@ -201,6 +214,7 @@ public class PruebaLiquidacionAdministrativa {
         return 500;
     }
     public static void main(String[] args) throws Exception {
+        if(args.length>0 && "contrato-actual".equals(args[0])) { new Caso(3).ejecutar(200);return; }
         if(args.length>0) {
             Caso c=new Caso(0);c.h.previa=null;c.ejecutar(401);
             System.out.println("Filtro liquidacion JSON: OK");return;
@@ -211,7 +225,7 @@ public class PruebaLiquidacionAdministrativa {
             Caso c=new Caso(variante);exigir(rutas.contains(c.j.op.ruta));
             JsonNode json=c.ejecutar(200);
             JsonNode r=variante==0?json.at("/boletos/0"):json.get("resultado");
-            exigir(r.size()==respuesta(variante).size());
+            exigir(r.size()==respuesta(variante).size()+(variante==3?1:0));
             for(Map.Entry<String,Object> col:respuesta(variante).entrySet()) {
                 String propiedad=Character.toLowerCase(col.getKey().charAt(0))+col.getKey().substring(1);
                 exigir(r.has(propiedad));
@@ -315,6 +329,42 @@ public class PruebaLiquidacionAdministrativa {
         exigir(a.get("montoLiquidado").equals(b.get("montoLiquidado")));
         exigir(estado.invocaciones==2&&estado.efectos==1);
         exigir(!b.has("gananciaNeta")&&!b.has("usuarioDisponiblePosterior"));
+        // Segundo ResultSet oficial, sin determinar aciertos ni modificar cuotas.
+        for(String modalidad:new String[]{"CONVENCIONAL","MARCADOR_FINAL","PRIMERA_ANOTACION"}) {
+            String[] clases=modalidad.equals("MARCADOR_FINAL")?new String[]{"EXACTO","RESULTADO","NO_ACIERTO","ANULADO"}:
+                    modalidad.equals("PRIMERA_ANOTACION")?new String[]{"PRIMERA_ANOTACION","NO_ACIERTO","ANULADO"}:new String[]{null};
+            for(String clase:clases) {
+                c=new Caso(3);Map<String,Object> d=c.j.resultados.get(1).get(0);
+                d.put("TipoMercadoAplicado",modalidad);d.put("ClasificacionAcierto",clase);
+                if(!modalidad.equals("MARCADOR_FINAL")) {
+                    d.put("PronosticoA",null);d.put("PronosticoB",null);d.put("CuotaResultadoAplicada",null);
+                }
+                String cuota=clase==null?"3.2500":clase.equals("NO_ACIERTO")?"0.0000":
+                        clase.equals("ANULADO")?"1.0000":clase.equals("RESULTADO")?"1.7500":"3.2500";
+                d.put("CuotaLiquidacion",new BigDecimal(cuota));
+                JsonNode v=c.ejecutar(200).at("/resultado/detalles/0");
+                exigir(v.get("tipoMercadoAplicado").asText().equals(modalidad));
+                exigir(v.get("cuotaLiquidacion").decimalValue().compareTo(new BigDecimal(cuota))==0);
+                exigir(clase==null?v.get("clasificacionAcierto").isNull():v.get("clasificacionAcierto").asText().equals(clase));
+            }
+        }
+        c=new Caso(3);c.j.resultados.remove(1);c.ejecutar(500);
+        c=new Caso(3);c.j.resultados.get(1).clear();exigir(c.ejecutar(200).at("/resultado/detalles").size()==0);
+        c=new Caso(3);Collections.swap(c.j.resultados,0,1);c.ejecutar(500);
+        for(String col:detalle().keySet()) {
+            c=new Caso(3);c.j.resultados.get(1).get(0).remove(col);c.ejecutar(500);
+            c=new Caso(3);c.j.resultados.get(1).get(0).put(col,new Object());c.ejecutar(500);
+        }
+        for(String col:new String[]{"CuotaAplicada","CuotaResultadoAplicada","CuotaLiquidacion"}) {
+            for(Object malo:new Object[]{1.25d,new BigDecimal("1000000.0000"),new BigDecimal("1.00001"),new BigDecimal("-1")}) {
+                c=new Caso(3);c.j.resultados.get(1).get(0).put(col,malo);c.ejecutar(500);
+            }
+        }
+        c=new Caso(3);c.j.resultados.get(1).get(0).put("ClasificacionAcierto","PRIMERA_ANOTACION");c.ejecutar(500);
+        c=new Caso(3);c.j.resultados.get(1).get(0).put("CuotaLiquidacion",null);c.ejecutar(200);
+        for(int codigo:new int[]{76401,76402,76405,76900,1205,1222}) {
+            c=new Caso(1);c.j.codigo=codigo;c.ejecutar(codigo>=76401&&codigo<=76405?409:503);
+        }
         System.out.println("Liquidacion administrativa: "+casos+" casos, 0 fallos.");
     }
 }

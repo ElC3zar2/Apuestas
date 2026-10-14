@@ -62,7 +62,14 @@ public final class LiquidacionAdministrativaModelos {
         public LocalDateTime fechaFinalizacion;
         public Boolean solicitudIdempotente;
     }
+    public static final class DetalleLiquidacion {
+        public String tipoMercadoAplicado;
+        public Integer pronosticoA,pronosticoB;
+        public String clasificacionAcierto;
+        public BigDecimal cuotaAplicada,cuotaResultadoAplicada,cuotaLiquidacion;
+    }
     public static final class Consulta implements Resultado {
+        public java.util.List<DetalleLiquidacion> detalles;
         public Long idLiquidacion;
         public Integer idBoleto;
         public String codigoBoleto;

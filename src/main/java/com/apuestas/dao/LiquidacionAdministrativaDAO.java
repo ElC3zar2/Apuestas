@@ -54,8 +54,46 @@ public class LiquidacionAdministrativaDAO {
                 r=leerConsulta(rs);
                 if(r.idBoleto!=idBoleto||rs.next()) throw contrato();
             }
+            if(!siguiente(cs,false)) throw contrato();
+            r.detalles=new ArrayList<>();
+            try(ResultSet rs=cs.getResultSet()) {
+                if(rs==null) throw contrato();
+                columnas(rs,"TipoMercadoAplicado","PronosticoA","PronosticoB","ClasificacionAcierto",
+                        "CuotaAplicada","CuotaResultadoAplicada","CuotaLiquidacion");
+                while(rs.next()) r.detalles.add(leerDetalle(rs));
+            }
             fin(cs);return r;
         }
+    }
+    private static void columnas(ResultSet rs,String... requeridas) throws SQLException {
+        ResultSetMetaData md=rs.getMetaData();if(md==null) throw contrato();
+        Set<String> nombres=new HashSet<>();
+        for(int i=1;i<=md.getColumnCount();i++) if(!nombres.add(md.getColumnLabel(i))) throw contrato();
+        for(String col:requeridas) if(!nombres.contains(col)) throw contrato();
+    }
+    private static BigDecimal cuota(ResultSet rs,String col,boolean nullable) throws SQLException {
+        if(rs.getObject(col)==null&&nullable) return null;
+        return decimal(rs,col,10,4);
+    }
+    private static DetalleLiquidacion leerDetalle(ResultSet rs) throws SQLException {
+        DetalleLiquidacion r=new DetalleLiquidacion();
+        r.tipoMercadoAplicado=texto(rs,"TipoMercadoAplicado",false);
+        if(!Arrays.asList("CONVENCIONAL","MARCADOR_FINAL","PRIMERA_ANOTACION").contains(r.tipoMercadoAplicado)) throw contrato();
+        r.pronosticoA=entero(rs,"PronosticoA",true,0);r.pronosticoB=entero(rs,"PronosticoB",true,0);
+        r.clasificacionAcierto=texto(rs,"ClasificacionAcierto",true);
+        if(r.clasificacionAcierto!=null&&!Arrays.asList("EXACTO","RESULTADO","NO_ACIERTO","ANULADO","PRIMERA_ANOTACION").contains(r.clasificacionAcierto)) throw contrato();
+        r.cuotaAplicada=cuota(rs,"CuotaAplicada",false);
+        r.cuotaResultadoAplicada=cuota(rs,"CuotaResultadoAplicada",true);
+        r.cuotaLiquidacion=cuota(rs,"CuotaLiquidacion",true);
+        boolean marcador="MARCADOR_FINAL".equals(r.tipoMercadoAplicado);
+        if(marcador?(r.pronosticoA==null||r.pronosticoB==null||r.cuotaResultadoAplicada==null):
+                (r.pronosticoA!=null||r.pronosticoB!=null||r.cuotaResultadoAplicada!=null)) throw contrato();
+        if(r.clasificacionAcierto!=null) {
+            if("CONVENCIONAL".equals(r.tipoMercadoAplicado)
+                    ||(marcador&&"PRIMERA_ANOTACION".equals(r.clasificacionAcierto))
+                    ||(!marcador&&Arrays.asList("EXACTO","RESULTADO").contains(r.clasificacionAcierto))) throw contrato();
+        }
+        return r;
     }
     private static boolean siguiente(CallableStatement cs,boolean primero) throws SQLException {
         boolean hay=primero?cs.execute():cs.getMoreResults();

@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 
-/** Solo dos procedimientos de lectura. No agrega ni redondea sus metricas. */
+/** Dos procedimientos de lectura, incluida su conciliacion CASA interna. No agrega ni redondea sus metricas. */
 public class DashboardAdministrativoDAO {
     protected Connection obtenerConexion() throws SQLException { return ConexionBD.obtenerConexion(); }
     private static SQLException contrato() { return new SQLException("Respuesta de dashboard inconsistente."); }
@@ -33,6 +33,7 @@ public class DashboardAdministrativoDAO {
                     d.auditoriaReciente.add(r);
                 }
             }
+            d.modalidades=modalidades(cs,null);d.conciliacionCasa=conciliacion(cs);
             fin(cs);return d;
         }
     }
@@ -51,8 +52,45 @@ public class DashboardAdministrativoDAO {
                     d.eventos.add(r);
                 }
             }
+            d.modalidades=modalidades(cs,ids);d.conciliacionCasa=conciliacion(cs);
             fin(cs);return d;
         }
+    }
+    private static final String[] COLUMNAS_MODALIDAD={"IdEvento","TipoMercadoAplicado","CantidadDetalles","MarcadoresExactos","AciertosResultado","AciertosPrimeraAnotacion"};
+    private static final String[] COLUMNAS_CASA={"IdBilletera","SaldoDisponible","SaldoComprometido","ReservasBoletos","Diferencia","ReservasFueraDePendiente"};
+    private static List<Modalidad> modalidades(CallableStatement cs,Set<Integer> eventos) throws SQLException {
+        List<Modalidad> lista=new ArrayList<>();Set<String> claves=new HashSet<>();
+        try(ResultSet rs=resultado(cs,false,COLUMNAS_MODALIDAD)) {
+            while(rs.next()) {
+                Modalidad r=new Modalidad();r.idEvento=entero(rs,"IdEvento",false,1);
+                r.tipoMercadoAplicado=texto(rs,"TipoMercadoAplicado",false);
+                if(!Arrays.asList("CONVENCIONAL","MARCADOR_FINAL","PRIMERA_ANOTACION").contains(r.tipoMercadoAplicado)
+                        ||(eventos!=null&&!eventos.contains(r.idEvento))
+                        ||!claves.add(r.idEvento+":"+r.tipoMercadoAplicado)) throw contrato();
+                r.cantidadDetalles=largo(rs,"CantidadDetalles",false,true);
+                r.marcadoresExactos=entero(rs,"MarcadoresExactos",false,0);
+                r.aciertosResultado=entero(rs,"AciertosResultado",false,0);
+                r.aciertosPrimeraAnotacion=entero(rs,"AciertosPrimeraAnotacion",false,0);
+                lista.add(r);
+            }
+        }
+        return lista;
+    }
+    private static List<ConciliacionCasa> conciliacion(CallableStatement cs) throws SQLException {
+        List<ConciliacionCasa> lista=new ArrayList<>();Set<Integer> ids=new HashSet<>();
+        try(ResultSet rs=resultado(cs,false,COLUMNAS_CASA)) {
+            while(rs.next()) {
+                ConciliacionCasa r=new ConciliacionCasa();r.idBilletera=entero(rs,"IdBilletera",false,1);
+                if(!ids.add(r.idBilletera)) throw contrato();
+                r.saldoDisponible=decimal(rs,"SaldoDisponible",false,12,2,false);
+                r.saldoComprometido=decimal(rs,"SaldoComprometido",false,12,2,false);
+                r.reservasBoletos=decimal(rs,"ReservasBoletos",false,38,2,false);
+                r.diferencia=decimal(rs,"Diferencia",false,38,2,true);
+                r.reservasFueraDePendiente=entero(rs,"ReservasFueraDePendiente",false,0);
+                lista.add(r);
+            }
+        }
+        return lista;
     }
     private static boolean siguiente(CallableStatement cs,boolean primero) throws SQLException {
         boolean hay=primero?cs.execute():cs.getMoreResults();
