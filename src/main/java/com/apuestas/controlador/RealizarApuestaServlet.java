@@ -112,7 +112,7 @@ public class RealizarApuestaServlet extends HttpServlet {
                 LOG.severe("Error SQL al confirmar apuesta. Codigo: " + e.getErrorCode());
             }
             error(response, estado, mensajeSql(e.getErrorCode()));
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | LinkageError e) {
             LOG.severe("Error interno al confirmar apuesta.");
             error(response, 500, ERROR_INTERNO);
         }

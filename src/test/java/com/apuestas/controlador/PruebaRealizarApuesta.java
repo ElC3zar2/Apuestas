@@ -231,6 +231,20 @@ public class PruebaRealizarApuesta {
     }
 
     public static void main(String[] args) throws Exception {
+        if(args.length>0&&"seguridad".equals(args[0])) {
+            Entrada e=new Entrada();e.sesion=false;rechazo(e,401);
+            e=new Entrada();e.expirada=true;rechazo(e,401);
+            for(String rol:new String[]{"ADMINISTRADOR","CAJERO","CASA"}) {e=new Entrada();e.rol=rol;rechazo(e,403);}
+            e=new Entrada();e.usuario=4294967303L;rechazo(e,401);
+            for(boolean repetida:new boolean[]{false,true}) {
+                Jdbc j=new Jdbc(repetida);exito(ejecutar(new Entrada(),j),repetida,"BOL-25");
+                exigir(j.parametros.get(1).equals(7)&&j.parametros.get(4).equals(REF)&&j.llamadas==1&&j.cierres==3,"Identidad, referencia y cierre");
+            }
+            Jdbc j=new Jdbc(false);j.errorTardio=true;exigir(ejecutar(new Entrada(),j).estado==500&&j.llamadas==1,"Sin reintento ante estado incierto");
+            for(int codigo:new int[]{76900,60031}) {j=new Jdbc(false);j.codigo=codigo;
+                exigir(ejecutar(new Entrada(),j).estado==(codigo==76900?503:409)&&j.llamadas==1&&j.cierres==2,"Rechazo financiero sin reintentar");}
+            System.out.println("Realizacion seguridad/idempotencia: "+casos+" casos, 0 fallos; sin SQL.");return;
+        }
         exigir(Arrays.asList(RealizarApuestaServlet.class.getAnnotation(WebServlet.class).value())
                 .contains("/apuestas/realizar"), "Mapping");
         Entrada e = new Entrada(); e.sesion = false; rechazo(e, 401);

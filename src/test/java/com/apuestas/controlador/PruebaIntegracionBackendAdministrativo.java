@@ -146,6 +146,31 @@ public class PruebaIntegracionBackendAdministrativo {
         exigir(j.conexionCerrada&&j.statementCerrado&&j.abiertos==j.cerrados);casos++;
     }
     public static void main(String[] args) throws Exception {
+        if(args.length>0 && "seguridad".equals(args[0])) {
+            for(Supplier<Object> fabrica:fabricas()) {
+                Api a=new Api(fabrica.get());a.h.previa=null;a.ejecutar(401);
+                a=new Api(fabrica.get());a.h.previa.expirada=true;a.ejecutar(401);
+                a=new Api(fabrica.get());a.h.previa.datos.put("adminRol","USUARIO");a.ejecutar(403);
+                a=new Api(fabrica.get());a.params.put("idUsuarioProceso",new String[]{"99"});a.ejecutar(400);
+                a=new Api(fabrica.get());a.h.method="DELETE";a.ejecutar(405);
+                for(String rol:new String[]{"ADMINISTRADOR","OPERADOR_EVENTOS","CAJERO","AUDITOR"}) {
+                    a=new Api(fabrica.get());a.h.previa.datos.put("adminRol",rol);
+                    boolean permitido=rol.equals("ADMINISTRADOR");
+                    if(a.caso instanceof PruebaAdministracionUsuario.Caso)
+                        permitido|=rol.equals("AUDITOR")&&((PruebaAdministracionUsuario.Caso)a.caso).op.lectura();
+                    else if(a.caso instanceof PruebaAdministracionEventos.Caso || a.caso instanceof PruebaContratosAdministracionEventos.Caso)
+                        permitido|=rol.equals("OPERADOR_EVENTOS");
+                    else if(a.caso instanceof PruebaAdministracionResultados.Caso)
+                        permitido|=rol.equals("OPERADOR_EVENTOS")&&!((PruebaAdministracionResultados.Caso)a.caso).op.soloAdministrador;
+                    else if(a.caso instanceof PruebaLiquidacionAdministrativa.Caso)
+                        permitido|=rol.equals("CAJERO")||(rol.equals("AUDITOR")&&a.h.ruta.endsWith("/consultar"));
+                    else permitido|=rol.equals("AUDITOR");
+                    Map<String,Object> identidad=new HashMap<>(a.h.previa.datos);a.ejecutar(permitido?200:403);
+                    exigir(a.h.previa.datos.equals(identidad)); // POST sin token compatible: filtro CSRF no registrado.
+                }
+            }
+            System.out.println("Integracion seguridad administrativa: "+casos+" casos, 0 fallos; sin SQL/login real.");return;
+        }
         if(args.length>0 && "resultados-liquidacion-dashboard".equals(args[0])) {
             List<Supplier<Object>> bloque=new ArrayList<>();
             for(OperacionAdministracionResultados op:OperacionAdministracionResultados.values())

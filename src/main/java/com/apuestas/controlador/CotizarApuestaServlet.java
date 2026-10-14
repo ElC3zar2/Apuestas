@@ -121,7 +121,7 @@ public class CotizarApuestaServlet extends HttpServlet {
                     estadoHttp,
                     mensaje
             );
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | LinkageError e) {
             escribirError(response, 500, "No fue posible procesar la cotizacion.");
         }
     }

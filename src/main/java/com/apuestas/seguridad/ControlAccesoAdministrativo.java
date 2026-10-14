@@ -52,7 +52,8 @@ public class ControlAccesoAdministrativo implements Filter {
     }
     private static void error(String ruta,HttpServletResponse res,int estado,String mensaje)throws IOException {
         // Las APIs de gestion requieren JSON incluso cuando el filtro corta la solicitud.
-        if(com.apuestas.modelo.OperacionAdministracionUsuario.deRuta(ruta)!=null
+        if(CsrfSeguridad.RUTA_ADMIN.equals(ruta)
+                || com.apuestas.modelo.OperacionAdministracionUsuario.deRuta(ruta)!=null
                 || com.apuestas.modelo.OperacionAdministracionEventos.deRuta(ruta)!=null
                 || com.apuestas.modelo.OperacionAdministracionResultados.deRuta(ruta)!=null
                 || com.apuestas.modelo.OperacionLiquidacionAdministrativa.deRuta(ruta)!=null

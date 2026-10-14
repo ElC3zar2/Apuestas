@@ -38,6 +38,14 @@ public class ImprimirBoletoServlet extends HttpServlet {
     }
 
     @Override
+    protected void service(HttpServletRequest req,HttpServletResponse res) throws ServletException,IOException {
+        if(!"GET".equals(req.getMethod())) {
+            enviarError(res,405,"Metodo no permitido.");res.setHeader("Allow","GET");return;
+        }
+        super.service(req,res);
+    }
+
+    @Override
     protected void doGet(
             HttpServletRequest request,
             HttpServletResponse response)
@@ -80,6 +88,11 @@ public class ImprimirBoletoServlet extends HttpServlet {
         if (!"USUARIO".equals(rol)) {
             enviarError(response, 403, "No tiene permiso para imprimir boletos.");
             return;
+        }
+        java.util.Map<String,String[]> parametros=request.getParameterMap();
+        String[] ids=parametros.get("idBoleto");
+        if(parametros.size()!=1||ids==null||ids.length!=1||ids[0]==null) {
+            enviarError(response,400,"El identificador del boleto no es valido.");return;
         }
         String idBoletoTexto =
                 request.getParameter(
@@ -266,7 +279,7 @@ public class ImprimirBoletoServlet extends HttpServlet {
                     "No fue posible procesar el boleto."
             );
 
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
 
             enviarError(
                     response,
