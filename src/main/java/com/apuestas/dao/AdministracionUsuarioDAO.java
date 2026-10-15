@@ -6,7 +6,7 @@ import java.time.*;
 import java.math.BigDecimal;
 import java.util.*;
 
-/** Solo SP oficiales; todos los recursos acotados por try-with-resources. */
+/** Operaciones mediante SP oficiales y busqueda de lectura; recursos acotados por try-with-resources. */
 public class AdministracionUsuarioDAO {
     protected Connection obtenerConexion() throws SQLException {return ConexionBD.obtenerConexion();}
     private static SQLException contrato(){return new SQLException("Respuesta administrativa inconsistente.");}
@@ -52,6 +52,36 @@ public class AdministracionUsuarioDAO {
     }
     private static void cadena(CallableStatement cs,int i,String s)throws SQLException {
         if(s==null)cs.setNull(i,Types.VARCHAR);else cs.setString(i,s);
+    }
+    /** Busqueda paginada sobre la misma cuenta/perfil del detalle; proyeccion minima sin secretos. */
+    public com.apuestas.modelo.ConsultasAdministrativasModelos.PaginaUsuarios buscarUsuarios(String buscar,int pagina,int tamano)throws SQLException {
+        long offset=((long)pagina-1)*tamano;
+        if(buscar==null||buscar.length()>150||pagina<1||tamano<1||tamano>100||offset>Integer.MAX_VALUE)throw new IllegalArgumentException();
+        String from=" FROM dbo.Usuario U LEFT JOIN dbo.PerfilUsuario P ON P.IdUsuario=U.IdUsuario"
+                +" JOIN dbo.Estado E ON E.IdEstado=U.IdEstado JOIN dbo.TipoEstado TE ON TE.IdTipoEstado=E.IdTipoEstado AND TE.Codigo='USUARIO'"
+                +" JOIN dbo.Rol R ON R.IdRol=U.IdRol";
+        String where=buscar.isEmpty()?"":" WHERE (CONCAT(P.Nombre,' ',P.Apellido) LIKE ? ESCAPE '!' OR U.Correo LIKE ? ESCAPE '!')";
+        String literal="%"+buscar.replace("!","!!").replace("%","!%").replace("_","!_").replace("[","![").replace("]","!]")+"%";
+        try(Connection c=obtenerConexion()) {
+            long total;
+            try(PreparedStatement ps=c.prepareStatement("SELECT COUNT_BIG(*) AS Total"+from+where)) {
+                if(!buscar.isEmpty()){ps.setString(1,literal);ps.setString(2,literal);}
+                try(ResultSet rs=ps.executeQuery()){if(!rs.next()||!(rs.getObject("Total") instanceof Long))throw contrato();total=(Long)rs.getObject("Total");if(total<0||rs.next())throw contrato();}
+            }
+            List<com.apuestas.modelo.ConsultasAdministrativasModelos.UsuarioBusqueda> filas=new ArrayList<>();
+            try(PreparedStatement ps=c.prepareStatement("SELECT U.IdUsuario,P.Nombre,P.Apellido,U.Correo,E.Codigo AS EstadoUsuario,R.Nombre AS Rol"+from+where+" ORDER BY U.Correo,U.IdUsuario OFFSET ? ROWS FETCH NEXT ? ROWS ONLY")) {
+                int i=1;if(!buscar.isEmpty()){ps.setString(i++,literal);ps.setString(i++,literal);}ps.setLong(i,offset);ps.setInt(i+1,tamano);
+                try(ResultSet rs=ps.executeQuery()) {
+                    while(rs.next()) {
+                        com.apuestas.modelo.ConsultasAdministrativasModelos.UsuarioBusqueda v=new com.apuestas.modelo.ConsultasAdministrativasModelos.UsuarioBusqueda();
+                        v.idUsuario=id(rs,"IdUsuario",false);v.nombre=texto(rs,"Nombre",true);v.apellido=texto(rs,"Apellido",true);
+                        v.correo=texto(rs,"Correo",false);v.estadoUsuario=texto(rs,"EstadoUsuario",false);v.rol=texto(rs,"Rol",false);
+                        if(filas.size()>=tamano)throw contrato();filas.add(v);
+                    }
+                }
+            }
+            return new com.apuestas.modelo.ConsultasAdministrativasModelos.PaginaUsuarios(pagina,tamano,total,filas);
+        }
     }
     public List<Pendiente> pendientes(int actor,int cantidad)throws SQLException {
         try(Connection c=obtenerConexion();CallableStatement cs=c.prepareCall(

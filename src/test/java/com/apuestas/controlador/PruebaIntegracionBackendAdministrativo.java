@@ -101,7 +101,7 @@ public class PruebaIntegracionBackendAdministrativo {
         }
         int esperadas=OperacionAdministracionUsuario.values().length+OperacionAdministracionEventos.values().length
                 +OperacionAdministracionResultados.values().length+OperacionLiquidacionAdministrativa.values().length
-                +OperacionDashboardAdministrativo.values().length+5; // login, logout, CSRF, resultado por evento y catalogo de participantes
+                +OperacionDashboardAdministrativo.values().length+5+com.apuestas.seguridad.VistasAdministrativas.values().length+OperacionConsultaAdministrativa.values().length; // login, logout, CSRF, resultado por evento y catalogo de participantes
         if(admin!=esperadas) throw new AssertionError("Rutas administrativas: "+admin+", esperadas: "+esperadas);
         exigir("ConsultaResultadoEventoServlet".equals(rutas.get(ConsultaResultadoEventoServlet.RUTA)));
         exigir("CatalogoParticipantesServlet".equals(rutas.get(CatalogoParticipantesServlet.RUTA)));

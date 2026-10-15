@@ -10,7 +10,7 @@
     const name = (max = 150) => field('nombre', 'Nombre', 'text', true, { maxLength: max });
     const choices = (name, label, options, required = true) => field(name, label, 'select', required, { options });
     const reason = () => field('motivo', 'Motivo (opcional)', 'textarea', false, { maxLength: 250 });
-    const country = () => id('idPais', 'ID real del país (opcional)', false);
+    const country = () => choices('idPais','País (opcional)',[],false);
     const active = () => choices('activo', 'Activo', [['true','Sí'],['false','No']]);
     const date = (name, label, required = true) => field(name, label, 'datetime-local', required, { step: '1', min: '0001-01-01T00:00:00', max: '9999-12-31T23:59:59' });
     const decimal = (name, label) => field(name, label, 'text', false, { maxLength: 32, pattern: '[0-9]+([.][0-9]{1,4})?', inputMode: 'decimal' });
@@ -49,6 +49,7 @@
     let eventWizard = null;
     const connected = page === 'mercados' || page === 'resultados';
     const operationPanels = new Map(), operationButtons = new Map();
+    let catalogParticipants=[],catalogLeagues=[],listedEvents=[];
     let connectedEvent = null, selectedMarket = null, selectedSelection = null, manualReferences = false;
     const controllers = new Set();
     const display = value => value == null || value === '' ? '—' : typeof value === 'boolean' ? (value ? 'Sí' : 'No') : String(value);
@@ -58,38 +59,31 @@
         document.querySelectorAll('#contenido input, #contenido select, #contenido textarea, #contenido button').forEach(el => {
             el.disabled = busy || sessionBlocked || (uncertain && Boolean(el.closest('.management-form')))
                 || (page === 'resultados' && Boolean(el.closest('.management-form')) && (!resultReady || !['ADMINISTRADOR','OPERADOR_EVENTOS'].includes(role)))
+                || (Boolean(el.closest('.management-form'))&&!['ADMINISTRADOR','OPERADOR_EVENTOS'].includes(role))
                 || (el.closest('[data-admin-only]') !== null && role !== 'ADMINISTRADOR');
         });
+        document.querySelectorAll('.management-form').forEach(form=>{form.hidden=!['ADMINISTRADOR','OPERADOR_EVENTOS'].includes(role);});
+        document.querySelectorAll('.management-form select[data-dependent]').forEach(select=>{select.disabled=select.disabled||select.options.length<2;});
+        if($('detail-id'))$('detail-id').disabled=busy||sessionBlocked||$('detail-id').options.length<2;
         $('acknowledge-write').hidden = !uncertain;
         $('management-forms').setAttribute('aria-busy', String(busy));
+        window.BetZoneAdmin.syncPages(busy||sessionBlocked);
         if (eventWizard) eventWizard.sync(busy || sessionBlocked || uncertain);
     }
     function report(error) {
         status(error.status ? errors[error.status] || 'Error al procesar la solicitud.' : error.name === 'AbortError' ? 'Solicitud interrumpida o demasiado lenta. Reintenta manualmente la consulta.' : error instanceof TypeError ? 'No fue posible conectar con el servidor.' : error.message, true);
         if (error.status === 401 || error.status === 403) status('Servidor HTTP '+error.status+' en '+(error.endpoint || 'la operación solicitada')+': '+(error.status===401?errors[401]:'Acceso denegado por el backend. No se modificaron sus permisos.'),true);
-        if (error.status === 401 || (error.status === 403 && page !== 'resultados')) {
+        if (error.status === 401) {
             sessionBlocked = true; $('management-login').hidden = false;
         }
     }
     async function api(path, options = {}) {
-        const controller = new AbortController(); controllers.add(controller);
-        const timer = setTimeout(() => controller.abort(), 15000);
-        try {
-            const response = await fetch(base + path, {credentials:'same-origin',cache:'no-store',...options,headers:{Accept:'application/json',...options.headers},signal:controller.signal});
-            if (response.redirected) { const error = new Error(); error.status = 401; error.endpoint = path.split('?')[0]; throw error; }
-            if (!response.ok) { const error = new Error(); error.status = response.status; error.endpoint = path.split('?')[0]; throw error; }
-            const raw = await response.text();
-            if (!raw.trim()) throw new Error('El servidor devolvió una respuesta vacía.');
-            let data;
-            try { data = JSON.parse(raw); } catch { throw new Error('El servidor devolvió JSON inválido.'); }
-            if (!data || data.ok !== true) throw new Error('La respuesta no confirma la operación.');
-            return data;
-        } finally { clearTimeout(timer); controllers.delete(controller); }
+        return window.BetZoneAdmin.request(path, options);
     }
     async function query(path, consume) {
         if (busy || sessionBlocked) return;
         busy = true; sync(); status('Consultando información…');
-        try { consume(await api(path)); status('Consulta completada. Se muestran únicamente los datos devueltos.'); }
+        try { await consume(await api(path)); status('Consulta completada. Se muestran únicamente los datos devueltos.'); }
         catch (error) { report(error); }
         finally { busy = false; sync(); }
     }
@@ -110,19 +104,16 @@
     function useMarket(market) {
         manualReferences=false;
         selectedMarket = {id:market.idMercado,nombre:market.mercado}; selectedSelection = null;
+        populate('idSeleccion',market.selecciones||[],'idSeleccion','seleccion');
         document.querySelectorAll('.management-form [name="idMercado"]').forEach(input=>{input.value=String(market.idMercado);});
         const quota = document.querySelector('[data-operation="cuotas/registrar"] [name="idSeleccion"]'); if(quota)quota.value='';
         selectionMessage();
     }
     function participantPicker(event) {
-        const input = document.querySelector('[data-operation="selecciones/crear"] [name="idParticipante"]');
-        if(!input)return;
-        let label=$('selection-participant-label');
-        if(!label){label=node('label','Participante del evento (opcional)');label.id='selection-participant-label';const select=node('select');select.id='selection-participant-picker';label.htmlFor=select.id;label.append(select);input.closest('fieldset').prepend(label);select.addEventListener('change',()=>{input.value=select.value;});}
-        const select=$('selection-participant-picker'),value=input.value;select.replaceChildren();
-        const empty=node('option','Sin participante / referencia avanzada');empty.value='';select.append(empty);
-        event.participantes.forEach(participant=>{const option=node('option',participant.participante);option.value=String(participant.idParticipante);select.append(option);});
-        select.value=[...select.options].some(option=>option.value===value)?value:'';
+        const select=document.querySelector('[data-operation="selecciones/crear"] [name="idParticipante"]');
+        if(!select)return;
+        window.BetZoneAdmin.choices(select,event.participantes,'idParticipante','participante','Sin participante');
+        select.required=false;
     }
     function table(target, caption, headings, rows) {
         const wrap = node('div',undefined,'table-scroll'); const table = node('table'); table.append(node('caption',caption));
@@ -138,6 +129,7 @@
         openOperation(formRoute);
         for (const [key,value] of Object.entries(values)) {
             const control = form.elements.namedItem(key); if (!control) continue;
+            if(control.tagName==='SELECT'&&value!=null&&![...control.options].some(o=>o.value===String(value)))control.append(window.BetZoneAdmin.option(value,values.nombre||values.nombreEvento||'Registro seleccionado'));
             control.value = value == null ? '' : String(value);
         }
         form.scrollIntoView({behavior:'smooth',block:'center'});
@@ -158,9 +150,9 @@
             resultEventContext = String(eventId);
         }
         document.querySelectorAll('.management-form [name="idEvento"]').forEach(input => { input.value = String(eventId); });
-        if ($('detail-id')) $('detail-id').value = String(eventId);
-        if ($('selected-live')) { $('selected-live').href = base+'/administrador/en-vivo.jsp?idEvento='+encodeURIComponent(eventId); $('selected-live').hidden = false; }
-        if ($('selected-markets')) { $('selected-markets').href = base+'/administrador/mercados.jsp?idEvento='+encodeURIComponent(eventId); $('selected-markets').hidden = false; }
+        if ($('detail-id')) {if(![...$('detail-id').options].some(o=>o.value===String(eventId)))$('detail-id').append(window.BetZoneAdmin.option(eventId,'Evento seleccionado'));$('detail-id').value=String(eventId);}
+        if ($('selected-live')) { $('selected-live').href = base+'/administrador/en-vivo?idEvento='+encodeURIComponent(eventId); $('selected-live').hidden = false; }
+        if ($('selected-markets')) { $('selected-markets').href = base+'/administrador/mercados?idEvento='+encodeURIComponent(eventId); $('selected-markets').hidden = false; }
     }
     const labels = {idLiga:'ID de liga',idDeporte:'ID de deporte',idPais:'ID de país',nombre:'Nombre',activo:'Activo',idParticipante:'ID de participante',tipoParticipante:'Tipo de participante',idEvento:'ID de evento',idEstado:'ID de estado',estadoEvento:'Estado del evento',fechaInicio:'Fecha de inicio',fechaFin:'Fecha de fin',idEventoParticipante:'ID de asociación',ordenParticipante:'Orden',esLocal:'Es local',idMercado:'ID de mercado',descripcion:'Descripción',estadoMercado:'Estado del mercado',idSeleccion:'ID de selección',idCuota:'ID de cuota',idCuotaAnterior:'ID de cuota anterior',valor:'Valor oficial',estadoAnterior:'Estado anterior',estadoActual:'Estado actual',sinCambios:'Sin cambios',idResultado:'ID de resultado',estadoResultado:'Estado del resultado',resultadoTexto:'Resultado',observacion:'Observación'};
     function resultValues(target, value) {
@@ -175,7 +167,7 @@
         if (page !== 'resultados') return;
         $('result-context').textContent = !resultReady ? 'Consulta y confirma el detalle del evento antes de operar.'
             : officialResultId ? 'Evento #'+resultEventContext+' · resultado #'+officialResultId+' confirmado por el backend y cargado en los formularios.'
-            : 'Evento #'+resultEventContext+' consultado. Registra un resultado para reutilizar su ID, o introduce el ID real de un resultado anterior. La consulta disponible no proporciona ese ID.';
+            : 'Evento consultado sin resultado registrado. Puedes registrar su resultado.';
     }
     function confirmResultResponse(route, result, payload) {
         if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Respuesta sin resultado oficial.');
@@ -203,12 +195,13 @@
         }
         if (result.idEvento) {
             selectEvent(result.idEvento);
-            $('operation-values').append(link('/administrador/eventos.jsp?idEvento='+encodeURIComponent(result.idEvento),'Consultar evento'),document.createTextNode(' · '),link('/administrador/en-vivo.jsp?idEvento='+encodeURIComponent(result.idEvento),'Abrir control en vivo'));
+            if(role==='ADMINISTRADOR')$('operation-values').append(link('/administrador/liquidaciones?idEvento='+encodeURIComponent(result.idEvento),'Liquidar evento'),document.createTextNode(' · '));
+            $('operation-values').append(link('/administrador/eventos?idEvento='+encodeURIComponent(result.idEvento),'Consultar evento'),document.createTextNode(' · '),link('/administrador/en-vivo?idEvento='+encodeURIComponent(result.idEvento),'Abrir control en vivo'));
         }
-        if (result.idMercado) document.querySelectorAll('.management-form [name="idMercado"]').forEach(input => { input.value = String(result.idMercado); });
-        if (result.idSeleccion) document.querySelectorAll('.management-form [name="idSeleccion"]').forEach(input => { input.value = String(result.idSeleccion); });
+        if (result.idMercado) document.querySelectorAll('.management-form [name="idMercado"]').forEach(input => {if(![...input.options].some(o=>o.value===String(result.idMercado)))input.append(window.BetZoneAdmin.option(result.idMercado,result.nombre||'Mercado creado'));input.value = String(result.idMercado); });
+        if (result.idSeleccion) document.querySelectorAll('.management-form [name="idSeleccion"]').forEach(input => {if(![...input.options].some(o=>o.value===String(result.idSeleccion)))input.append(window.BetZoneAdmin.option(result.idSeleccion,result.nombre||'Selección creada'));input.value = String(result.idSeleccion); });
         if(connected){
-            if(route === 'mercados/crear'){selectedMarket={id:result.idMercado,nombre:result.nombre};selectedSelection=null;openOperation('selecciones/crear');}
+            if(route === 'mercados/crear'){populate('idSeleccion',[],'idSeleccion','seleccion');selectedMarket={id:result.idMercado,nombre:result.nombre};selectedSelection=null;openOperation('selecciones/crear');}
             if(route === 'selecciones/crear'){
                 selectedSelection={id:result.idSeleccion,nombre:result.nombre};
                 const quota=document.querySelector('[data-operation="cuotas/registrar"]');if(quota){quota.elements.valor.value='';quota.elements.valorResultado.value='';}
@@ -237,7 +230,7 @@
             let references;
             if(connected){references=node('details',undefined,'advanced-reference');references.append(node('summary','Referencias reales y modo avanzado'));}
             fields.forEach(schema => {
-                const label = node('label',schema.label); const input = node(schema.type === 'textarea' ? 'textarea' : schema.type === 'select' ? 'select' : 'input');
+                const label = node('label',({idDeporte:'Deporte',idLiga:'Liga',idParticipante:'Participante',idMercado:'Mercado',idSeleccion:'Selección',idPais:'País (opcional)'}[schema.name]||schema.label)); const input = node(schema.type === 'textarea' ? 'textarea' : schema.type === 'select' ? 'select' : 'input');
                 input.id = 'operation-'+index+'-'+schema.name; label.htmlFor = input.id; input.name = schema.name; input.required = schema.required;
                 if (schema.type !== 'textarea' && schema.type !== 'select') input.type = schema.type;
                 if (schema.type === 'select') {
@@ -246,8 +239,16 @@
                 }
                 for (const key of ['min','max','step','maxLength','pattern','inputMode']) if (schema[key] !== undefined) input[key] = schema[key];
                 if (schema.type === 'textarea') input.rows = 2;
-                label.append(input);
-                if(references && schema.name.startsWith('id'))references.append(label);else fieldset.append(label);
+                if(schema.name.startsWith('id')&&schema.name!=='idPais'){
+                    if(schema.name==='idResultadoEvento'||schema.name==='idEvento'){
+                        input.type='hidden';label.hidden=true;label.append(input);
+                    }else{
+                        const select=node('select');select.id=input.id;select.name=input.name;select.required=input.required;select.dataset.dependent='true';
+                        select.append(window.BetZoneAdmin.option('','Selecciona primero el contexto'));label.append(select);
+                    }
+                }else label.append(input);
+
+                if(references && label.hidden)references.append(label);else fieldset.append(label);
                 if(connected && schema.name.startsWith('id'))input.addEventListener('input',()=>{manualReferences=true;selectionMessage();});
             });
             if(references)fieldset.append(references);
@@ -258,7 +259,7 @@
             if(references)submit.addEventListener('click',()=>{for(const input of references.querySelectorAll('input'))if(!input.checkValidity()){references.open=true;break;}});
             form.append(fieldset); panel.append(form); $('management-forms').append(panel);
             form.addEventListener('submit', async event => {
-                event.preventDefault(); if (busy || uncertain || sessionBlocked) return;
+                event.preventDefault(); if (busy || uncertain || sessionBlocked||!['ADMINISTRADOR','OPERADOR_EVENTOS'].includes(role)) return;
                 if (page === 'resultados' && (!resultReady || !['ADMINISTRADOR','OPERADOR_EVENTOS'].includes(role))) return;
                 if (form.dataset.adminOnly && role !== 'ADMINISTRADOR') return;
                 const payload = new URLSearchParams();
@@ -299,14 +300,17 @@
         if(connected)openOperation(operations[page][0][0]);
     }
     function renderDetail(event) {
+        if(event)event.nombre=event.evento||event.nombre;
         if (!event || !Number.isInteger(event.idEvento) || !Array.isArray(event.participantes) || !Array.isArray(event.mercados)) throw new Error('El detalle no cumple el contrato esperado.');
         const target = $('detail-results'); target.replaceChildren(); selectEvent(event.idEvento);
         if(connected){connectedEvent=event;manualReferences=false;selectionMessage();if(page==='mercados')participantPicker(event);}
         target.append(node('h3',display(event.nombre)));
+        if($('detail-id')){const choice=[...$('detail-id').options].find(o=>o.value===String(event.idEvento));if(choice)choice.textContent=window.BetZoneAdmin.eventLabel(event);}
+        bindEventFields(event);
         resultValues(target,{idEvento:event.idEvento,idLiga:event.idLiga,estadoEvento:event.estadoEvento,fechaInicio:event.fechaInicio,fechaFin:event.fechaFin});
         if (page === 'resultados') resultValues(target,{resultadoTexto:event.resultadoTexto,estadoResultado:event.estadoResultado});
         target.append(node('p','Deporte: '+display(event.deporte)+' · Liga: '+display(event.liga),'muted'));
-        if (page !== 'resultados') target.append(link('/administrador/resultados.jsp?idEvento='+encodeURIComponent(event.idEvento),'Resultados de este evento'));
+        if (page !== 'resultados') target.append(link('/administrador/resultados?idEvento='+encodeURIComponent(event.idEvento),'Resultados de este evento'));
         if (page === 'eventos') target.append(action('Cargar datos para configurar este evento',() => fill('eventos/actualizar',{idEvento:event.idEvento,nombre:event.nombre,fechaInicio:event.fechaInicio,fechaFin:event.fechaFin})));
         table(target,'Participantes asociados',['ID','Participante','Tipo','Orden','Local','País'],event.participantes.map(p=>[p.idParticipante,p.participante,p.tipoParticipante,p.ordenParticipante,p.esLocal,p.idPais]));
         for (const market of event.mercados) {
@@ -344,10 +348,53 @@
         }
         $('detail-results').replaceChildren();
         $('selected-live').hidden = true; $('selected-markets').hidden = true;
-        query('/eventos/exploracion/detalle?idEvento='+encodeURIComponent(eventId),data=> {
+        query('/eventos/exploracion/detalle?idEvento='+encodeURIComponent(eventId),async data=> {
             if (data.evento?.idEvento !== Number(eventId)) throw new Error('El ID devuelto no coincide con la consulta.');
             renderDetail(data.evento);
+            if(page==='resultados'){
+                resultReady=false;const official=await api('/administrador/resultados/por-evento?'+new URLSearchParams({idEvento:eventId}));
+                if(official.idEvento!==Number(eventId)||typeof official.tieneResultado!=='boolean')throw new Error('Consulta de resultado inconsistente.');
+                officialResultId=official.resultado?String(official.resultado.idResultadoEvento):null;
+                document.querySelectorAll('.management-form [name="idResultadoEvento"]').forEach(input=>{input.value=officialResultId||'';});
+                $('detail-results').append(node('p',official.resultado?'Resultado: '+official.resultado.resultadoTexto+' · '+official.resultado.estadoResultado:'Este evento todavía no tiene resultado registrado.'));
+                resultReady=true;resultContextMessage();
+            }
         });
+    }
+    function populate(name,rows,key,label){
+        document.querySelectorAll('.management-form [name="'+name+'"]').forEach(select=>{
+            if(select.tagName!=='SELECT')return;const old=select.value;
+            window.BetZoneAdmin.choices(select,rows,key,label);if(rows.some(row=>String(row[key])===old))select.value=old;
+        });
+    }
+    function bindEventFields(event){
+        populate('idMercado',event.mercados,'idMercado','mercado');
+        populate('idSeleccion',event.mercados.flatMap(m=>m.selecciones),'idSeleccion','seleccion');
+        if(page==='eventos'){
+            populate('idParticipante',[], 'idParticipante','nombre');
+            window.BetZoneAdmin.participants(event.idDeporte).then(rows=>{if(Number($('detail-id').value)===event.idEvento){catalogParticipants=rows;populate('idParticipante',rows,'idParticipante','nombre');sync();}}).catch(report);
+        }
+        document.querySelectorAll('.management-form [name="idMercado"]').forEach(select=>{
+            select.onchange=()=>{const market=event.mercados.find(m=>String(m.idMercado)===select.value);if(market){useMarket(market);populate('idSeleccion',market.selecciones,'idSeleccion','seleccion');}};
+        });
+    }
+    async function catalogContext(){
+        const sport=$('browse-sport').value;
+        catalogParticipants=[];catalogLeagues=[];listedEvents=[];
+        for(const name of ['idLiga','idParticipante','idMercado','idSeleccion'])populate(name,[],name,'nombre');
+        if($('detail-id')){window.BetZoneAdmin.choices($('detail-id'),[],'idEvento','evento','Primero consulta eventos por deporte');$('detail-results').replaceChildren();}
+        document.querySelectorAll('.management-form [name="idEvento"],.management-form [name="idResultadoEvento"]').forEach(input=>{input.value='';});
+        connectedEvent=null;selectedMarket=null;selectedSelection=null;resultReady=false;officialResultId=null;
+        if(!sport)return;
+        populate('idDeporte',[{idDeporte:Number(sport),nombre:$('browse-sport').selectedOptions[0].textContent}],'idDeporte','nombre');
+        if(page==='catalogos')await query('/ligas/exploracion?'+new URLSearchParams({idDeporte:sport}),async data=>{
+            catalogLeagues=data.ligas;populate('idLiga',data.ligas,'idLiga','nombre');
+            catalogParticipants=await window.BetZoneAdmin.participants(sport,false);populate('idParticipante',catalogParticipants,'idParticipante',p=>p.nombre+' · '+p.tipoParticipante);
+            const target=$('browse-results');target.replaceChildren();
+            table(target,'Participantes del deporte',['Nombre','Tipo','Activo','Acción'],catalogParticipants.map(p=>[p.nombre,p.tipoParticipante,p.activo,action('Modificar participante',()=>fill('participantes/actualizar',p))]));
+            table(target,'Ligas del deporte',['Nombre','Activa','Acción'],data.ligas.map(l=>[l.nombre,l.activo,action('Modificar liga',()=>fill('ligas/actualizar',l))]));
+        });
+        else $('browse-form').requestSubmit();
     }
     renderForms();
     if (page === 'eventos' && $('event-wizard') && window.BetZoneEventWizard) {
@@ -369,26 +416,32 @@
         $('browse-results').replaceChildren();
         query('/deportes/exploracion',data=> {
             if (!Array.isArray(data.deportes)) throw new Error('Respuesta de deportes inválida.');
+            populate('idDeporte',data.deportes,'idDeporte','nombre');
             if($('browse-sport').tagName==='SELECT'){
                 const old=$('browse-sport').value;$('browse-sport').replaceChildren();const placeholder=node('option','Selecciona un deporte');placeholder.value='';$('browse-sport').append(placeholder);
                 data.deportes.forEach(sport=>{const option=node('option',sport.nombre);option.value=String(sport.idDeporte);$('browse-sport').append(option);});
                 if(data.deportes.some(sport=>String(sport.idDeporte)===old))$('browse-sport').value=old;
             }
             table($('browse-results'),'Deportes activos',['ID','Deporte','Acción'],data.deportes.map(sport=>[sport.idDeporte,sport.nombre,action('Usar deporte',()=> {
-                $('browse-sport').value=String(sport.idDeporte); document.querySelectorAll('.management-form [name="idDeporte"]').forEach(input=>{input.value=String(sport.idDeporte);}); status('ID de deporte seleccionado.');
+                $('browse-sport').value=String(sport.idDeporte); document.querySelectorAll('.management-form [name="idDeporte"]').forEach(input=>{input.value=String(sport.idDeporte);}); $('browse-sport').dispatchEvent(new Event('change')); status('Deporte seleccionado.');
             })]));
         });
     });
+    $('browse-sport').addEventListener('change',()=>{if(!busy){window.BetZoneAdmin.resetEvents();$('browse-results').replaceChildren();catalogContext();}});
+    if($('detail-id'))$('detail-id').addEventListener('change',()=>{if(!busy&&$('detail-id').value)detail($('detail-id').value);});
+    document.querySelectorAll('.management-form [name="idLiga"]').forEach(select=>select.addEventListener('change',()=>{const l=catalogLeagues.find(l=>String(l.idLiga)===select.value);if(l)fill('ligas/actualizar',l);}));
+    document.querySelectorAll('.management-form [name="idParticipante"]').forEach(select=>select.addEventListener('change',()=>{if(page==='catalogos'){const p=catalogParticipants.find(p=>String(p.idParticipante)===select.value);if(p)fill('participantes/actualizar',p);}}));
     $('browse-form').addEventListener('submit',event=> {
         event.preventDefault(); if (busy) return;
         $('browse-results').replaceChildren();
-        if (page === 'catalogos') query('/ligas/exploracion?idDeporte='+encodeURIComponent($('browse-sport').value),data=> {
-            if (!Array.isArray(data.ligas)) throw new Error('Respuesta de ligas inválida.');
-            table($('browse-results'),'Ligas disponibles por deporte',['ID','Nombre','Deporte ID','País ID','Activa','Acción'],data.ligas.map(liga=>[liga.idLiga,liga.nombre,liga.idDeporte,liga.idPais,liga.activo,action('Modificar',()=>fill('ligas/actualizar',{idLiga:liga.idLiga,nombre:liga.nombre,idPais:liga.idPais,activo:liga.activo}))]));
-        });
-        else query('/eventos/exploracion?'+new URLSearchParams({idDeporte:$('browse-sport').value,vista:'TODOS',cantidad:'100'}),data=> {
+        if (page === 'catalogos') {catalogContext();return;}
+        query(window.BetZoneAdmin.eventsPath($('browse-sport').value),data=> {
             if (!Array.isArray(data.eventos)) throw new Error('Respuesta de eventos inválida.');
-            table($('browse-results'),'Eventos disponibles (máximo 100; también puedes consultar por ID)',['Evento','Liga','Estado','Referencia','Acción'],data.eventos.map(event=>[event.evento,event.liga,event.estadoEvento,event.idEvento,action('Abrir evento',()=>detail(event.idEvento))]));
+            window.BetZoneAdmin.pageData(data);listedEvents=data.eventos;
+            if($('wizard-recovery-id'))window.BetZoneAdmin.choices($('wizard-recovery-id'),data.eventos,'idEvento',window.BetZoneAdmin.eventLabel);
+            window.BetZoneAdmin.choices($('detail-id'),data.eventos,'idEvento',window.BetZoneAdmin.eventLabel);
+            if(!data.eventos.length)status('No hay eventos disponibles en esta consulta.');
+            table($('browse-results'),'Eventos administrativos de esta página',['Evento','Liga','Estado','Referencia','Acción'],data.eventos.map(event=>[event.evento,event.liga,event.estadoEvento,event.idEvento,action('Abrir evento',()=>detail(event.idEvento))]));
         });
     });
     if ($('detail-form')) $('detail-form').addEventListener('submit',event=>{event.preventDefault(); if (!busy) detail($('detail-id').value);});
@@ -401,8 +454,14 @@
         }
     });
     window.addEventListener('pagehide',()=>{controllers.forEach(controller=>controller.abort());});
+    if(page!=='catalogos')window.BetZoneAdmin.eventPagination($('browse-form'));
+    if(page==='catalogos')api('/administrador/catalogos/paises').then(data=>{
+        if(!Array.isArray(data.paises))throw new Error('Catalogo de paises invalido.');
+        populate('idPais',data.paises,'idPais','nombre');sync();
+    }).catch(report);
     const initial = new URLSearchParams(location.search).get('idEvento');
     if ($('detail-form') && initial && /^[0-9]+$/.test(initial) && Number(initial)>0 && Number(initial)<=2147483647) { if(page==='eventos')$('advanced-event-management').open=true; $('detail-id').value=initial; detail(initial); }
-    else if (eventWizard) eventWizard.loadSports();
+    else if (eventWizard) eventWizard.loadSports().then(()=>$('load-sports').click());
+    else $('load-sports').click();
 })();
 

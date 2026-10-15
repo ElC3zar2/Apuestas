@@ -20,23 +20,24 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Control en vivo — BetZone Admin</title>
 <link rel="stylesheet" href="${pageContext.request.contextPath}/css/admin.css">
+<script src="${pageContext.request.contextPath}/js/admin-api.js" defer></script>
 <script src="${pageContext.request.contextPath}/js/admin.js" defer></script>
 <script src="${pageContext.request.contextPath}/js/admin-en-vivo.js" defer></script>
 </head><body data-context-path="${pageContext.request.contextPath}" data-admin-role="<%= adminRoleForView %>">
 <a class="skip-link" href="#contenido">Ir al contenido</a>
 <aside class="sidebar">
-<a class="brand" href="${pageContext.request.contextPath}/administrador/inicio.jsp">BetZone <span>ADMIN</span></a>
+<a class="brand" href="${pageContext.request.contextPath}/administrador/inicio">BetZone <span>ADMIN</span></a>
 <p class="eyebrow">CENTRO DE OPERACIONES</p>
 <nav aria-label="Navegación administrativa">
-<a href="${pageContext.request.contextPath}/administrador/inicio.jsp#resumen">Resumen</a>
-<a href="${pageContext.request.contextPath}/administrador/inicio.jsp#finanzas">Finanzas</a>
-<a href="${pageContext.request.contextPath}/administrador/inicio.jsp#deportes">Deportes</a>
-<a href="${pageContext.request.contextPath}/administrador/inicio.jsp#auditoria">Auditoría reciente</a>
-<a href="${pageContext.request.contextPath}/administrador/en-vivo.jsp" aria-current="page">Control en vivo</a>
-<a href="${pageContext.request.contextPath}/administrador/catalogos.jsp">Ligas y participantes</a>
-<a href="${pageContext.request.contextPath}/administrador/eventos.jsp">Administrar eventos</a>
-<a href="${pageContext.request.contextPath}/administrador/mercados.jsp">Mercados y cuotas</a><a href="${pageContext.request.contextPath}/administrador/resultados.jsp" data-nav="resultados">Resultados</a>
-<a href="${pageContext.request.contextPath}/administrador/liquidaciones.jsp" data-nav="liquidaciones">Liquidaciones</a><a href="${pageContext.request.contextPath}/administrador/usuarios.jsp">Administración de usuarios</a></nav>
+<a href="${pageContext.request.contextPath}/administrador/inicio#resumen">Resumen</a>
+<a href="${pageContext.request.contextPath}/administrador/inicio#finanzas">Finanzas</a>
+<a href="${pageContext.request.contextPath}/administrador/inicio#deportes">Deportes</a>
+<a href="${pageContext.request.contextPath}/administrador/inicio#auditoria">Auditoría reciente</a>
+<a href="${pageContext.request.contextPath}/administrador/en-vivo" aria-current="page">Control en vivo</a>
+<a href="${pageContext.request.contextPath}/administrador/catalogos">Ligas y participantes</a>
+<a href="${pageContext.request.contextPath}/administrador/eventos">Administrar eventos</a>
+<a href="${pageContext.request.contextPath}/administrador/mercados">Mercados y cuotas</a><a href="${pageContext.request.contextPath}/administrador/resultados" data-nav="resultados">Resultados</a>
+<a href="${pageContext.request.contextPath}/administrador/liquidaciones" data-nav="liquidaciones">Liquidaciones</a><a href="${pageContext.request.contextPath}/administrador/usuarios">Administración de usuarios</a></nav>
 <form id="admin-logout" action="${pageContext.request.contextPath}/administrador/logout" method="post"><button type="submit">Cerrar sesión</button></form><p id="logout-status" role="status"></p>
 </aside>
 <main id="contenido" class="workspace">
@@ -45,7 +46,7 @@
 <form id="event-search" class="toolbar"><label for="sport">Deporte<select id="sport" name="idDeporte" required><option value="">Cargando deportes…</option></select></label><button type="submit">Buscar eventos</button><button type="button" id="retry-sports">Recargar deportes</button></form>
 <p id="catalog-status" class="live-status" role="status"></p>
 <form id="event-select" class="toolbar"><label for="event-list">Eventos disponibles<select id="event-list" class="event-picker" required><option value="">Busca eventos por deporte</option></select></label><button type="submit">Abrir evento</button></form>
-<form id="event-id-form" class="toolbar"><label for="event-id">O localizar por ID real<input id="event-id" type="number" min="1" max="2147483647" step="1" required></label><button type="submit">Consultar ID</button></form>
+<form id="event-id-form" hidden><input id="event-id" type="hidden"></form>
 </section>
 <div class="toolbar"><button id="refresh-event" type="button" disabled>Actualizar / reintentar</button><a id="live-login" href="${pageContext.request.contextPath}/administrador/login" hidden>Volver a iniciar sesión</a></div>
 <p id="live-status" class="live-status" role="status" aria-live="polite">Selecciona un evento para consultar su estado.</p>

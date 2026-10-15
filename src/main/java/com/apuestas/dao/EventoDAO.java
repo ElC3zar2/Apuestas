@@ -233,6 +233,47 @@ public class EventoDAO {
         return null;
     }
 
+    protected Connection obtenerConexionSelector() throws SQLException {return ConexionBD.obtenerConexion();}
+    /** Variante paginada de listarEventos: solo datos de identificacion, sin analitica financiera. */
+    public com.apuestas.modelo.ConsultasAdministrativasModelos.PaginaEventos listarSelectores(
+            Integer deporte,String estado,int pagina,int tamano) throws SQLException {
+        long offset=((long)pagina-1)*tamano;
+        if(pagina<1||tamano<1||tamano>100||offset>Integer.MAX_VALUE||(deporte!=null&&deporte<=0))throw new IllegalArgumentException();
+        String from=" FROM dbo.Evento EV JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga"
+                +" JOIN dbo.Deporte D ON D.IdDeporte=L.IdDeporte JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado"
+                +" JOIN dbo.TipoEstado TE ON TE.IdTipoEstado=E.IdTipoEstado AND TE.Codigo='EVENTO'";
+        String where=" WHERE 1=1"+(deporte==null?"":" AND L.IdDeporte=?")+(estado==null?"":" AND E.Codigo=?");
+        try(Connection c=obtenerConexionSelector()) {
+            long total;
+            try(PreparedStatement ps=c.prepareStatement("SELECT COUNT_BIG(*) AS Total"+from+where)) {
+                parametrosSelector(ps,deporte,estado);
+                try(ResultSet rs=ps.executeQuery()){if(!rs.next()||!(rs.getObject("Total") instanceof Long))throw new SQLException("Conteo inconsistente.");total=(Long)rs.getObject("Total");if(total<0||rs.next())throw new SQLException("Conteo inconsistente.");}
+            }
+            List<com.apuestas.modelo.ConsultasAdministrativasModelos.EventoSelector> filas=new ArrayList<>();
+            String columnas="SELECT EV.IdEvento,L.IdDeporte,EV.IdLiga,EV.Nombre AS Evento,D.Nombre AS Deporte,L.Nombre AS Liga,EV.FechaInicio,E.Codigo AS EstadoEvento,"
+                    +" (SELECT TOP(1) P.Nombre FROM dbo.EventoParticipante EP JOIN dbo.Participante P ON P.IdParticipante=EP.IdParticipante WHERE EP.IdEvento=EV.IdEvento ORDER BY EP.OrdenParticipante,EP.IdParticipante) AS Participante1,"
+                    +" (SELECT P.Nombre FROM dbo.EventoParticipante EP JOIN dbo.Participante P ON P.IdParticipante=EP.IdParticipante WHERE EP.IdEvento=EV.IdEvento ORDER BY EP.OrdenParticipante,EP.IdParticipante OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY) AS Participante2";
+            try(PreparedStatement ps=c.prepareStatement(columnas+from+where+" ORDER BY EV.FechaInicio DESC,EV.IdEvento DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY")) {
+                int i=parametrosSelector(ps,deporte,estado);ps.setLong(i,offset);ps.setInt(i+1,tamano);
+                try(ResultSet rs=ps.executeQuery()) {
+                    while(rs.next()) {
+                        com.apuestas.modelo.ConsultasAdministrativasModelos.EventoSelector v=new com.apuestas.modelo.ConsultasAdministrativasModelos.EventoSelector();
+                        v.idEvento=rs.getInt("IdEvento");v.idDeporte=rs.getInt("IdDeporte");v.idLiga=rs.getInt("IdLiga");
+                        v.evento=rs.getString("Evento");v.deporte=rs.getString("Deporte");v.liga=rs.getString("Liga");v.estadoEvento=rs.getString("EstadoEvento");
+                        v.participante1=rs.getString("Participante1");v.participante2=rs.getString("Participante2");
+                        Timestamp fecha=rs.getTimestamp("FechaInicio");v.fechaInicio=fecha==null?null:fecha.toLocalDateTime();
+                        if(v.idEvento<=0||v.idDeporte<=0||v.idLiga<=0||v.evento==null||v.estadoEvento==null||v.fechaInicio==null||filas.size()>=tamano)throw new SQLException("Evento inconsistente.");
+                        filas.add(v);
+                    }
+                }
+            }
+            return new com.apuestas.modelo.ConsultasAdministrativasModelos.PaginaEventos(pagina,tamano,total,filas);
+        }
+    }
+    private static int parametrosSelector(PreparedStatement ps,Integer deporte,String estado)throws SQLException {
+        int i=1;if(deporte!=null)ps.setInt(i++,deporte);if(estado!=null)ps.setString(i++,estado);return i;
+    }
+
     private Evento mapearEvento(
             ResultSet rs)
             throws SQLException {

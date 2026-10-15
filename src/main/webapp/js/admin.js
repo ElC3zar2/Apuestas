@@ -2,7 +2,7 @@
     'use strict';
     const base = document.body.dataset.contextPath || '';
     const loginUrl = base + '/administrador/login';
-    const homeUrl = base + '/administrador/inicio.jsp';
+    const landingPaths = ['inicio', 'eventos', 'liquidaciones'].map(view => base + '/administrador/' + view);
     const message = (id, text, error = false) => {
         const element = document.getElementById(id);
         element.textContent = text;
@@ -44,9 +44,10 @@
                 const response = await request('/administrador/login', {
                     method: 'POST', body: new URLSearchParams(new FormData(login))
                 });
-                // El servlet responde 303 al JSP protegido; fetch sigue esa redirección.
-                if (response.ok && response.redirected && new URL(response.url).pathname === homeUrl) {
-                    location.replace(homeUrl);
+                // El servlet responde 303 a la vista permitida; fetch sigue esa redirección.
+                const destination = new URL(response.url);
+                if (response.ok && response.redirected && destination.origin === location.origin && landingPaths.includes(destination.pathname)) {
+                    location.replace(destination.pathname);
                     return;
                 }
                 login.elements.contrasena.value = '';

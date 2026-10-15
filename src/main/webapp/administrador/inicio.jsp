@@ -1,4 +1,14 @@
 <%@page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" session="false"%>
+<%
+    String adminRoleForView = "";
+    try {
+        javax.servlet.http.HttpSession adminViewSession = request.getSession(false);
+        Object adminViewRole = adminViewSession == null ? null : adminViewSession.getAttribute("adminRol");
+        for (String allowedRole : new String[]{"ADMINISTRADOR","OPERADOR_EVENTOS","CAJERO","AUDITOR"})
+            if (allowedRole.equals(adminViewRole)) adminRoleForView = allowedRole;
+    } catch (IllegalStateException expiredSession) { }
+%>
+
 <%!
 private String seguro(Object v) {
     return v == null ? "No disponible" : v.toString().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
@@ -9,25 +19,26 @@ private String seguro(Object v) {
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard — BetZone Admin</title>
 <link rel="stylesheet" href="${pageContext.request.contextPath}/css/admin.css">
+<script src="${pageContext.request.contextPath}/js/admin-api.js" defer></script>
 <script src="${pageContext.request.contextPath}/js/admin.js" defer></script>
 </head>
-<body data-context-path="${pageContext.request.contextPath}">
+<body data-admin-role="<%= adminRoleForView %>" data-context-path="${pageContext.request.contextPath}">
 <a class="skip-link" href="#contenido">Ir al contenido</a>
 <aside class="sidebar">
-<a class="brand" href="${pageContext.request.contextPath}/administrador/inicio.jsp">BetZone <span>ADMIN</span></a>
+<a class="brand" href="${pageContext.request.contextPath}/administrador/inicio">BetZone <span>ADMIN</span></a>
 <p class="eyebrow">CENTRO DE OPERACIONES</p>
 <nav aria-label="Navegación administrativa">
-<a href="#resumen" aria-current="location">Resumen</a><a href="#finanzas">Finanzas</a><a href="#deportes">Deportes</a><a href="#auditoria">Auditoría reciente</a><a href="${pageContext.request.contextPath}/administrador/en-vivo.jsp">Control en vivo</a>
-<a href="${pageContext.request.contextPath}/administrador/catalogos.jsp">Ligas y participantes</a>
-<a href="${pageContext.request.contextPath}/administrador/eventos.jsp">Administrar eventos</a>
-<a href="${pageContext.request.contextPath}/administrador/mercados.jsp">Mercados y cuotas</a><a href="${pageContext.request.contextPath}/administrador/resultados.jsp" data-nav="resultados">Resultados</a>
-<a href="${pageContext.request.contextPath}/administrador/liquidaciones.jsp" data-nav="liquidaciones">Liquidaciones</a><a href="${pageContext.request.contextPath}/administrador/usuarios.jsp">Administración de usuarios</a></nav>
+<a href="#resumen" aria-current="location">Resumen</a><a href="#finanzas">Finanzas</a><a href="#deportes">Deportes</a><a href="#auditoria">Auditoría reciente</a><a href="${pageContext.request.contextPath}/administrador/en-vivo">Control en vivo</a>
+<a href="${pageContext.request.contextPath}/administrador/catalogos">Ligas y participantes</a>
+<a href="${pageContext.request.contextPath}/administrador/eventos">Administrar eventos</a>
+<a href="${pageContext.request.contextPath}/administrador/mercados">Mercados y cuotas</a><a href="${pageContext.request.contextPath}/administrador/resultados" data-nav="resultados">Resultados</a>
+<a href="${pageContext.request.contextPath}/administrador/liquidaciones" data-nav="liquidaciones">Liquidaciones</a><a href="${pageContext.request.contextPath}/administrador/usuarios">Administración de usuarios</a></nav>
 <div class="identity"><p><%= seguro(request.getSession(false).getAttribute("adminCorreo")) %></p><small><%= seguro(request.getSession(false).getAttribute("adminRol")) %></small></div>
 <form id="admin-logout" action="${pageContext.request.contextPath}/administrador/logout" method="post"><button type="submit">Cerrar sesión</button></form>
 <p id="logout-status" role="status"></p>
 </aside>
 <main id="contenido" class="workspace">
-<header class="page-header"><div><p class="eyebrow">BETZONE ADMIN</p><h1>Dashboard</h1><p class="muted">Actividad y resultados de la operación.</p></div><a href="${pageContext.request.contextPath}/administrador/inicio.jsp">Inicio administrativo ↗</a></header>
+<header class="page-header"><div><p class="eyebrow">BETZONE ADMIN</p><h1>Dashboard</h1><p class="muted">Actividad y resultados de la operación.</p></div><a href="${pageContext.request.contextPath}/administrador/inicio">Inicio administrativo ↗</a></header>
 <form id="dashboard-filters" class="toolbar">
 <label for="horas">Ventana previa <select id="horas" name="horasPrevia"><option value="24">24 horas</option><option value="48">48 horas</option><option value="72">72 horas</option></select></label>
 <label for="cantidad">Registros de auditoría <select id="cantidad" name="cantidadAuditoria"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select></label>

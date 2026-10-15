@@ -40,11 +40,19 @@ public class ControlAccesoAdministrativo implements Filter {
         }
         if(s==null) {
             if(("GET".equals(req.getMethod()) || "HEAD".equals(req.getMethod()))
-                    && (ruta.endsWith(".jsp") || "/administrador/".equals(ruta))) redirigir(req,res);
+                    && (ruta.endsWith(".jsp") || VistasAdministrativas.deRuta(ruta)!=null || "/administrador/".equals(ruta))) redirigir(req,res);
             else error(ruta,res,401,"Autenticación requerida.");
             return;
         }
         if(!valida){error(ruta,res,403,"Acceso no permitido.");return;}
+        VistasAdministrativas vista=VistasAdministrativas.deJsp(ruta);
+        if(vista!=null) {
+            if(!vista.permite((String)s.getAttribute("adminRol"))){res.setStatus(403);return;}
+            if(req.getDispatcherType()!=DispatcherType.FORWARD){
+                if(!"GET".equals(req.getMethod())&&!"HEAD".equals(req.getMethod())){res.setStatus(405);res.setHeader("Allow","GET, HEAD");return;}
+                res.setStatus(303);res.setHeader("Location",req.getContextPath()+vista.ruta);return;
+            }
+        }
         chain.doFilter(req,res);
     }
     private static void redirigir(HttpServletRequest req,HttpServletResponse res) {
@@ -52,7 +60,8 @@ public class ControlAccesoAdministrativo implements Filter {
     }
     private static void error(String ruta,HttpServletResponse res,int estado,String mensaje)throws IOException {
         // Las APIs de gestion requieren JSON incluso cuando el filtro corta la solicitud.
-        if(com.apuestas.controlador.ConsultaResultadoEventoServlet.RUTA.equals(ruta)
+        if(com.apuestas.modelo.OperacionConsultaAdministrativa.deRuta(ruta)!=null
+                || com.apuestas.controlador.ConsultaResultadoEventoServlet.RUTA.equals(ruta)
                 || com.apuestas.controlador.CatalogoParticipantesServlet.RUTA.equals(ruta)
                 || CsrfSeguridad.RUTA_ADMIN.equals(ruta)
                 || com.apuestas.modelo.OperacionAdministracionUsuario.deRuta(ruta)!=null

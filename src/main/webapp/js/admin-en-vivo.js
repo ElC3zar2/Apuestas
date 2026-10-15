@@ -46,7 +46,7 @@
             $(id).querySelectorAll('input, select, button').forEach(el => { el.disabled = busy || catalogBusy; });
         }
         document.querySelectorAll('[data-void-id]').forEach(el => { el.disabled = !available || !['EN_VIVO','PENDIENTE_RESULTADO'].includes(official?.estadoEvento); });
-        $('event-content').setAttribute('aria-busy', String(busy));
+        $('event-content').setAttribute('aria-busy', String(busy));window.BetZoneAdmin.syncPages(busy||catalogBusy||stopped);
     }
     function report(error, target = 'live-status') {
         const text = error.name === 'AbortError' ? 'La solicitud tardó demasiado o fue interrumpida. Reintenta manualmente.'
@@ -61,25 +61,7 @@
         }
     }
     async function api(path, options = {}) {
-        const controller = new AbortController();
-        controllers.add(controller);
-        const timeout = setTimeout(() => controller.abort(), 15000);
-        try {
-            const response = await fetch(base + path, {
-                credentials: 'same-origin', cache: 'no-store', ...options,
-                headers: { Accept: 'application/json', ...options.headers }, signal: controller.signal
-            });
-            if (response.redirected || response.status === 401) {
-                const error = new Error(); error.status = 401; throw error;
-            }
-            if (!response.ok) { const error = new Error(); error.status = response.status; throw error; }
-            const raw = await response.text();
-            if (!raw.trim()) throw new Error('El servidor devolvió una respuesta vacía. Reintenta manualmente.');
-            let data;
-            try { data = JSON.parse(raw); } catch { throw new Error('El servidor devolvió JSON inválido. Reintenta manualmente.'); }
-            if (!data || data.ok !== true) throw new Error('La respuesta no confirma la operación. Actualiza antes de reintentar.');
-            return data;
-        } finally { clearTimeout(timeout); controllers.delete(controller); }
+        return window.BetZoneAdmin.request(path, options);
     }
     function schedule() {
         stopPolling();
@@ -327,6 +309,7 @@
         } catch (error) { report(error, 'catalog-status'); }
         finally { catalogBusy = false; syncControls(); schedule(); }
     }
+    $('sport').addEventListener('change',()=>{if(!busy&&!catalogBusy){window.BetZoneAdmin.resetEvents();$('event-list').replaceChildren(option('','Busca eventos del deporte seleccionado'));$('event-search').requestSubmit();}});
     $('retry-sports').addEventListener('click', sports);
     $('event-search').addEventListener('submit', async event => {
         event.preventDefault(); if (catalogBusy || busy) return;
@@ -335,18 +318,18 @@
         try {
             if (refreshTask) await refreshTask;
             if (stopped) return;
-            const data = await api('/eventos/exploracion?' + new URLSearchParams({ idDeporte: $('sport').value, vista: 'TODOS', cantidad: '100' }));
+            const data = await api(window.BetZoneAdmin.eventsPath($('sport').value));
             if (!Array.isArray(data.eventos)) throw new Error('Respuesta de eventos inválida.');
             $('event-list').replaceChildren(option('', 'Selecciona un evento'));
-            data.eventos.forEach(item => $('event-list').append(option(item.idEvento, '#' + item.idEvento + ' · ' + item.evento + ' · ' + item.estadoEvento)));
-            status('catalog-status', data.eventos.length ? 'Eventos devueltos: ' + data.eventos.length + ' (máximo 100). Si no aparece, consulta su ID real.' : 'No hay eventos en esta consulta. Puedes consultar un ID real.');
+            window.BetZoneAdmin.pageData(data);data.eventos.forEach(item => $('event-list').append(option(item.idEvento, window.BetZoneAdmin.eventLabel(item))));
+            status('catalog-status', data.eventos.length ? 'Eventos devueltos: ' + data.eventos.length + ' en esta página.' : 'No hay eventos en esta consulta. Puedes consultar un ID real.');
         } catch (error) { $('event-list').replaceChildren(option('', 'Sin lista disponible')); report(error, 'catalog-status'); }
         finally { catalogBusy = false; syncControls(); schedule(); }
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) stopPolling(); else if (official?.estadoEvento === 'EN_VIVO') refresh(); });
     window.addEventListener('pagehide', () => { stopped = true; ++viewVersion; stopPolling(); controllers.forEach(controller => controller.abort()); });
     window.addEventListener('pageshow', event => { if (event.persisted) { stopped = false; authorized = false; if (eventId) refresh(true); } });
-    incidentType(); syncControls();
+    window.BetZoneAdmin.eventPagination($('event-search'));incidentType(); syncControls();
     const initialEvent = new URLSearchParams(location.search).get('idEvento');
     if (initialEvent && /^[0-9]+$/.test(initialEvent) && Number(initialEvent) > 0 && Number(initialEvent) <= 2147483647) {
         sports().then(() => open(initialEvent));

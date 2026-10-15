@@ -122,7 +122,7 @@ public class PruebaLoginAdministrativo {
         exigir(RECHAZO.equals(h.body.toString()));casos++;
     }
     static void exito(Http h,String rol){
-        exigir(h.status==303 && "/app/administrador/inicio.jsp".equals(h.headers.get("Location")));
+        exigir(h.status==303 && ("/app"+com.apuestas.seguridad.VistasAdministrativas.inicio(rol)).equals(h.headers.get("Location")));
         exigir(h.creaciones==1 && h.previa.invalidada && h.previa.datos.isEmpty());
         exigir(h.nueva.datos.size()==5 && SesionAdministrativa.valida(h.nueva.ref));
         exigir(h.nueva.datos.get("adminRol").equals(rol));

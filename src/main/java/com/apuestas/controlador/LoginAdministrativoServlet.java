@@ -45,7 +45,7 @@ public class LoginAdministrativoServlet extends HttpServlet {
             nueva = req.getSession(true);
             SesionAdministrativa.guardar(nueva,r);
             res.setStatus(303);
-            res.setHeader("Location", req.getContextPath()+"/administrador/inicio.jsp");
+            res.setHeader("Location", req.getContextPath()+com.apuestas.seguridad.VistasAdministrativas.inicio(r.getRol()));
         } catch (IllegalArgumentException e) {
             descartar(nueva); error(res,400);
         } catch (SQLException | RuntimeException | LinkageError e) {

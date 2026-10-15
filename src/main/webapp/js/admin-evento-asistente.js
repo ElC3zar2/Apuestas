@@ -27,6 +27,8 @@ window.BetZoneEventWizard = function (options) {
         blocked=disabled;
         root.querySelectorAll('button,input,select').forEach(el=>{el.disabled=disabled||!canWrite;});
         if(snapshot)root.querySelectorAll('[data-wizard-step="1"] input,[data-wizard-step="1"] select,[data-wizard-step="1"] button,[data-wizard-step="2"] input,[data-wizard-step="2"] select,[data-wizard-step="2"] button,[data-wizard-step="3"] input').forEach(el=>{el.disabled=true;});
+        $('wizard-league').disabled=disabled||!canWrite||Boolean(snapshot)||!leagues.size;
+        for(const id of ['wizard-first','wizard-second'])$(id).disabled=disabled||!canWrite||Boolean(snapshot)||!candidates.size||!leagues.has($('wizard-league').value);
         $('wizard-duration').disabled=disabled||!canWrite||Boolean(snapshot)||!$('wizard-simulated').checked;
         $('wizard-prev').disabled=disabled||step===1||Boolean(snapshot);
         $('wizard-next').hidden=step>=4||Boolean(snapshot);
@@ -36,7 +38,7 @@ window.BetZoneEventWizard = function (options) {
         $('wizard-resume').disabled=disabled||!canWrite||!eventId||needsCheck||snapshot?.participants.every(p=>p.status==='confirmed')||snapshot?.participants.some(p=>p.status==='conflict');
         $('wizard-new').disabled=disabled||!canWrite||!complete();
         $('wizard-markets').hidden=!complete();
-        if(complete())$('wizard-markets').href=base+'/administrador/mercados.jsp?idEvento='+encodeURIComponent(eventId);
+        if(complete())$('wizard-markets').href=base+'/administrador/mercados?idEvento='+encodeURIComponent(eventId);
         root.setAttribute('aria-busy',String(disabled));
     }
     function showStep(next,focus=true) {
@@ -56,6 +58,7 @@ window.BetZoneEventWizard = function (options) {
         for(const control of container.querySelectorAll('input,select'))if(!control.disabled&&!control.checkValidity()){control.reportValidity();return false;}
         if(number===1&&(!sports.has($('wizard-sport').value)||!leagues.has($('wizard-league').value))){message('Selecciona un deporte y una liga consultados.',true);return false;}
         if(number===2){
+            if(selected.length!==2){message("Selecciona dos participantes diferentes de la liga y deporte consultados.",true);return false;}
             const ids=new Set(),orders=new Set();
             for(const participant of selected){if(!idValid(participant.id)||!Number.isInteger(participant.order)||participant.order<1||participant.order>255||ids.has(participant.id)||orders.has(participant.order)){message('Revisa los participantes y sus órdenes; no pueden repetirse.',true);return false;}ids.add(participant.id);orders.add(participant.order);}
         }
@@ -75,22 +78,36 @@ window.BetZoneEventWizard = function (options) {
         rows.forEach(([label,value])=>dl.append(node('dt',label),node('dd',value||'No disponible')));$('wizard-summary').replaceChildren(dl);
     }
     function participantRows() {
-        const container=$('wizard-participants');container.replaceChildren();
-        if(!selected.length){container.append(node('p','No has seleccionado participantes.'));return;}
-        selected.forEach(participant=>{
-            const row=node('div');row.className='wizard-participant';row.append(node('p',participant.name||'Referencia manual #'+participant.id+' · nombre no consultado'));
-            const orderLabel=node('label','Orden'),order=node('input');order.type='number';order.min='1';order.max='255';order.step='1';order.required=true;order.value=String(participant.order);order.setAttribute('aria-label','Orden de '+(participant.name||'referencia manual'));
-            order.addEventListener('input',()=>{participant.order=Number(order.value);});orderLabel.append(order);row.append(orderLabel);
-            const localLabel=node('label','Condición'),local=node('select');local.append(option('','Sin especificar'),option('true','Local'),option('false','Visitante'));local.value=participant.local;local.addEventListener('change',()=>{participant.local=local.value;});localLabel.append(local);row.append(localLabel);
-            const remove=node('button','Quitar');remove.type='button';remove.addEventListener('click',()=>{if(!blocked&&!snapshot){selected=selected.filter(p=>p!==participant);participantRows();sync(blocked);}});row.append(remove);container.append(row);
-        });
+        $('wizard-participants').replaceChildren(node('p',selected.length?selected.map(p=>p.name).join(' · '):'Selecciona dos participantes diferentes.'));
     }
-    function addParticipant(id,name=null) {
-        id=Number(id);if(!idValid(id)){message('Especifica una referencia oficial válida.',true);return;}
-        if(selected.some(p=>p.id===id)){message('Ese participante ya está seleccionado.',true);return;}
-        const used=new Set(selected.map(p=>p.order));let order=1;while(used.has(order))order++;
-        if(order>255){message('No quedan órdenes disponibles.',true);return;}
-        selected.push({id,name,order,local:''});participantRows();sync(blocked);
+    function clearParticipants() {
+        candidates.clear();selected=[];participantRows();
+        for(const id of ['wizard-first','wizard-second']){$(id).replaceChildren(option('','Primero selecciona una liga'));$(id).disabled=true;}
+    }
+    function chooseParticipants() {
+        selected=[];
+        for(const [index,id] of ['wizard-first','wizard-second'].entries()){
+            const p=candidates.get($(id).value);if(p)selected.push({id:p.id,name:p.name,order:index+1,local:p.type==='EQUIPO'?String(index===0):''});
+        }
+        for(const [id,other] of [['wizard-first','wizard-second'],['wizard-second','wizard-first']])
+            for(const item of $(id).options)item.disabled=Boolean(item.value)&&item.value===$(other).value;
+        if(selected.length===2&&selected[0].id===selected[1].id){$('wizard-second').value='';selected.pop();}
+        participantRows();
+    }
+    async function loadParticipants() {
+        clearParticipants();
+        const league=leagues.get($('wizard-league').value);if(!league){sync(blocked);return;}
+        return task(async()=>{
+            message('Cargando participantes…');
+            const rows=await window.BetZoneAdmin.participants($('wizard-sport').value);
+            rows.forEach(p=>candidates.set(String(p.idParticipante),{id:p.idParticipante,name:p.nombre,type:p.tipoParticipante}));
+            const teams=rows.length>0&&rows.every(p=>p.tipoParticipante==='EQUIPO');
+            $('wizard-first-label').textContent=teams?'Equipo local':'Participante 1';$('wizard-second-label').textContent=teams?'Equipo visitante':'Participante 2';
+            for(const id of ['wizard-first','wizard-second']){
+                $(id).replaceChildren(option('','Selecciona un participante'));for(const [key,p] of candidates)$(id).append(option(key,p.name+' · '+p.type));
+            }
+            message(rows.length?'Participantes activos compatibles con el deporte de la liga.':'No hay participantes disponibles para esta liga.');
+        });
     }
     async function loadSports() {
         if (snapshot) return;
@@ -162,27 +179,12 @@ window.BetZoneEventWizard = function (options) {
     $('wizard-load-sports').addEventListener('click',loadSports);$('wizard-load-leagues').addEventListener('click',loadLeagues);
     $('wizard-sport').addEventListener('change',()=>{
         if(snapshot||blocked)return;
-        onSport($('wizard-sport').value);
-        leagues.clear();candidates.clear();selected=[];participantRows();$('wizard-league').replaceChildren(option('','Selecciona una liga'));$('wizard-source').replaceChildren(option('','Consulta eventos disponibles'));$('wizard-candidate').replaceChildren(option('','Consulta participantes reales'));loadLeagues();
+        onSport($('wizard-sport').value);leagues.clear();clearParticipants();
+        $('wizard-league').replaceChildren(option('','Primero selecciona un deporte'));$('wizard-league').disabled=true;
+        if(sports.has($('wizard-sport').value))loadLeagues();
     });
-    $('wizard-source-events').addEventListener('click',()=>task(async()=>{
-        const data=await request('/eventos/exploracion?'+new URLSearchParams({idDeporte:$('wizard-sport').value,vista:'TODOS',cantidad:'100'}));
-        if(!Array.isArray(data.eventos)||data.eventos.some(event=>Number(event.idDeporte)!==Number($('wizard-sport').value)))throw new Error('Respuesta de eventos de referencia inválida.');
-        $('wizard-source').replaceChildren(option('','Selecciona un evento de referencia'));data.eventos.forEach(event=>$('wizard-source').append(option(event.idEvento,event.evento+' · '+event.liga)));
-        message(data.eventos.length?'Selecciona un evento y consulta sus participantes.':'La consulta no devolvió eventos. No equivale a un catálogo de participantes.');
-    }));
-    $('wizard-source-detail').addEventListener('click',()=>{
-        if(!idValid($('wizard-source').value)){message('Selecciona un evento de referencia.',true);return;}
-        task(async()=>{
-            const id=$('wizard-source').value;const data=await request('/eventos/exploracion/detalle?'+new URLSearchParams({idEvento:id}));const event=data.evento;
-            if(!event||event.idEvento!==Number(id)||event.idDeporte!==Number($('wizard-sport').value)||!Array.isArray(event.participantes)||event.participantes.some(p=>!idValid(p.idParticipante)||typeof p.participante!=='string'))throw new Error('No se pudieron verificar los participantes y el deporte del evento.');
-            event.participantes.forEach(p=>candidates.set(String(p.idParticipante),{id:p.idParticipante,name:p.participante}));
-            $('wizard-candidate').replaceChildren(option('','Selecciona un participante consultado'));for(const [id,p] of candidates)$('wizard-candidate').append(option(id,p.name));
-            message(event.participantes.length?'Participantes reales consultados. Selecciona cuáles utilizarás en el nuevo evento.':'Este evento no devuelve participantes.');
-        });
-    });
-    $('wizard-add').addEventListener('click',()=>{const participant=candidates.get($('wizard-candidate').value);if(participant&&!blocked&&!snapshot)addParticipant(participant.id,participant.name);else message('Primero selecciona un participante consultado.',true);});
-    $('wizard-add-id').addEventListener('click',()=>{if(!blocked&&!snapshot&&$('wizard-advanced-id').reportValidity())addParticipant($('wizard-advanced-id').value,candidates.get($('wizard-advanced-id').value)?.name||null);});
+    $('wizard-league').addEventListener('change',()=>{if(!snapshot&&!blocked)loadParticipants();});
+    for(const id of ['wizard-first','wizard-second'])$(id).addEventListener('change',chooseParticipants);
     $('wizard-simulated').addEventListener('change',()=>sync(blocked));
     $('wizard-prev').addEventListener('click',()=>{if(!blocked&&!snapshot&&step>1)showStep(step-1);});
     $('wizard-next').addEventListener('click',()=>{if(!blocked&&!snapshot&&step<4&&validateStep(step))showStep(step+1);});
@@ -206,9 +208,9 @@ window.BetZoneEventWizard = function (options) {
     });
     $('wizard-reconcile').addEventListener('click',()=>{if(eventId&&snapshot)task(()=>reconcile(eventId));});
     $('wizard-resume').addEventListener('click',()=>{if(eventId&&snapshot&&!needsCheck&&!snapshot.participants.some(p=>p.status==='conflict')&&window.confirm('¿Asociar únicamente los participantes pendientes al evento ya creado #'+eventId+'? No se creará otro evento.'))task(associate);});
-    $('wizard-recover').addEventListener('click',()=>{if(snapshot&&createUncertain&&idValid($('wizard-recovery-id').value))task(()=>reconcile(Number($('wizard-recovery-id').value),true));else message('Indica el ID real del evento que localizaste.',true);});
+    $('wizard-recover').addEventListener('click',()=>{if(snapshot&&createUncertain&&idValid($('wizard-recovery-id').value))task(()=>reconcile(Number($('wizard-recovery-id').value),true));else message('Selecciona el evento localizado en el listado.',true);});
     $('wizard-advanced').addEventListener('click',()=>{if(eventId)onEvent(eventId);if(snapshot?.sportId)onSport(snapshot.sportId);$('advanced-event-management').open=true;});
-    $('wizard-new').addEventListener('click',()=>{if(complete()&&window.confirm('El evento #'+eventId+' está confirmado. ¿Preparar otro evento?')){snapshot=null;eventId=null;createUncertain=false;needsCheck=false;officialParticipantCount=0;selected=[];save();$('wizard-form').reset();leagues.clear();candidates.clear();$('wizard-league').replaceChildren(option('','Selecciona una liga'));$('wizard-candidate').replaceChildren(option('','Consulta participantes reales'));participantRows();showStep(1);message('Puedes preparar un nuevo evento.');}});
+    $('wizard-new').addEventListener('click',()=>{if(complete()&&window.confirm('El evento #'+eventId+' está confirmado. ¿Preparar otro evento?')){snapshot=null;eventId=null;createUncertain=false;needsCheck=false;officialParticipantCount=0;selected=[];save();$('wizard-form').reset();leagues.clear();candidates.clear();$('wizard-league').replaceChildren(option('','Selecciona una liga'));clearParticipants();participantRows();showStep(1);message('Puedes preparar un nuevo evento.');}});
     try{
         const saved=JSON.parse(sessionStorage.getItem(key)||'null');
         if(saved){

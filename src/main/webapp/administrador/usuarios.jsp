@@ -20,26 +20,27 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Administración de usuarios — BetZone Admin</title>
 <link rel="stylesheet" href="${pageContext.request.contextPath}/css/admin.css">
+<script src="${pageContext.request.contextPath}/js/admin-api.js" defer></script>
 <script src="${pageContext.request.contextPath}/js/admin.js" defer></script>
 <script src="${pageContext.request.contextPath}/js/admin-usuarios.js" defer></script>
 </head><body data-context-path="${pageContext.request.contextPath}" data-admin-role="<%= adminRoleForView %>">
 <a class="skip-link" href="#contenido">Ir al contenido</a>
-<aside class="sidebar"><a class="brand" href="${pageContext.request.contextPath}/administrador/inicio.jsp">BetZone <span>ADMIN</span></a><p class="eyebrow">CENTRO DE OPERACIONES</p>
+<aside class="sidebar"><a class="brand" href="${pageContext.request.contextPath}/administrador/inicio">BetZone <span>ADMIN</span></a><p class="eyebrow">CENTRO DE OPERACIONES</p>
 <nav aria-label="Navegación administrativa">
-<a href="${pageContext.request.contextPath}/administrador/inicio.jsp#resumen">Resumen</a>
-<a href="${pageContext.request.contextPath}/administrador/inicio.jsp#finanzas">Finanzas</a>
-<a href="${pageContext.request.contextPath}/administrador/inicio.jsp#deportes">Deportes</a>
-<a href="${pageContext.request.contextPath}/administrador/inicio.jsp#auditoria">Auditoría reciente</a>
-<a href="${pageContext.request.contextPath}/administrador/en-vivo.jsp">Control en vivo</a>
-<a href="${pageContext.request.contextPath}/administrador/catalogos.jsp" data-nav="catalogos">Ligas y participantes</a>
-<a href="${pageContext.request.contextPath}/administrador/eventos.jsp" data-nav="eventos">Administrar eventos</a>
-<a href="${pageContext.request.contextPath}/administrador/mercados.jsp" data-nav="mercados">Mercados y cuotas</a>
-<a href="${pageContext.request.contextPath}/administrador/resultados.jsp" data-nav="resultados">Resultados</a>
-<a href="${pageContext.request.contextPath}/administrador/liquidaciones.jsp" data-nav="liquidaciones">Liquidaciones</a><a href="${pageContext.request.contextPath}/administrador/usuarios.jsp" aria-current="page">Administración de usuarios</a></nav><form id="admin-logout" action="${pageContext.request.contextPath}/administrador/logout" method="post"><button type="submit">Cerrar sesión</button></form><p id="logout-status" role="status"></p></aside>
+<a href="${pageContext.request.contextPath}/administrador/inicio#resumen">Resumen</a>
+<a href="${pageContext.request.contextPath}/administrador/inicio#finanzas">Finanzas</a>
+<a href="${pageContext.request.contextPath}/administrador/inicio#deportes">Deportes</a>
+<a href="${pageContext.request.contextPath}/administrador/inicio#auditoria">Auditoría reciente</a>
+<a href="${pageContext.request.contextPath}/administrador/en-vivo">Control en vivo</a>
+<a href="${pageContext.request.contextPath}/administrador/catalogos" data-nav="catalogos">Ligas y participantes</a>
+<a href="${pageContext.request.contextPath}/administrador/eventos" data-nav="eventos">Administrar eventos</a>
+<a href="${pageContext.request.contextPath}/administrador/mercados" data-nav="mercados">Mercados y cuotas</a>
+<a href="${pageContext.request.contextPath}/administrador/resultados" data-nav="resultados">Resultados</a>
+<a href="${pageContext.request.contextPath}/administrador/liquidaciones" data-nav="liquidaciones">Liquidaciones</a><a href="${pageContext.request.contextPath}/administrador/usuarios" aria-current="page">Administración de usuarios</a></nav><form id="admin-logout" action="${pageContext.request.contextPath}/administrador/logout" method="post"><button type="submit">Cerrar sesión</button></form><p id="logout-status" role="status"></p></aside>
 <main id="contenido" class="workspace">
 <header class="page-header"><div><p class="eyebrow">ADMINISTRACIÓN DE CUENTAS</p><h1>Administración de usuarios</h1><p class="muted">Verificación, estados y restricciones de cuentas cliente.</p></div></header>
 <p class="muted">ADMINISTRADOR puede consultar y modificar. AUDITOR puede consultar. El servidor valida los permisos y las condiciones de cada operación.</p>
-<p id="users-status" class="live-status" role="status" aria-live="polite">Consulta los pendientes o busca un usuario por su ID real.</p>
+<p id="users-status" class="live-status" role="status" aria-live="polite">Selecciona una cuenta del listado de verificaciones pendientes.</p>
 <a id="users-login" href="${pageContext.request.contextPath}/administrador/login" hidden>Volver a iniciar sesión</a>
 <p id="users-uncertain" class="warning" role="status" hidden>Hay una operación sin confirmación. Consulta de nuevo el detalle del mismo usuario antes de considerar un reintento. No se reenvía ningún POST automáticamente.</p>
 <section class="panel"><h2>Usuarios pendientes de verificación</h2>
@@ -47,7 +48,9 @@
 <p class="muted">Esta consulta incluye verificaciones pendientes o en revisión; no es un listado general de usuarios.</p><div id="pending-results" class="management-results"></div>
 </section>
 <section class="panel"><h2>Consultar usuario</h2><p class="muted">Este módulo consulta únicamente cuentas cliente con rol USUARIO. Las cuentas administrativas no están admitidas por este contrato.</p>
-<form id="user-query" class="toolbar"><label for="user-id">ID real del usuario<input id="user-id" name="idUsuario" type="number" min="1" max="2147483647" step="1" required></label><button type="submit">Consultar / actualizar detalle</button></form>
+<section class="panel"><h2>Buscar cuentas</h2><form id="user-search" class="toolbar"><label for="user-search-text">Nombre o correo<input id="user-search-text" name="buscar" type="search" maxlength="150"></label><button type="submit">Buscar usuarios</button></form>
+<div class="toolbar"><button id="users-prev" type="button" disabled>Anterior</button><span id="users-page" role="status"></span><button id="users-next" type="button" disabled>Siguiente</button></div><div id="user-search-results" class="management-results"></div>
+<form id="user-query" hidden><input id="user-id" name="idUsuario" type="hidden"></form></section>
 <div id="user-detail" hidden><h3 id="user-identity"></h3><p id="user-email" class="muted"></p><div id="user-account" class="management-results"></div>
 <details id="review-data"><summary>Datos personales para revisión de identidad</summary><p class="muted">Consulta estos datos solo cuando sean necesarios para revisar la cuenta seleccionada.</p><div id="user-personal" class="management-results"></div></details>
 <h3>Historial de verificaciones</h3><p class="muted">Selecciona un registro real para iniciar, aprobar o rechazar su verificación.</p><div id="user-verifications" class="management-results"></div>

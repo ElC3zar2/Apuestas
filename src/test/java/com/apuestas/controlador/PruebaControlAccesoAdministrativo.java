@@ -10,7 +10,7 @@ import static com.apuestas.controlador.PruebaLoginAdministrativo.*;
 public class PruebaControlAccesoAdministrativo {
     private static int casos;
     private static Http contexto(){
-        Http h=new Http();h.method="GET";h.ruta="/administrador/inicio.jsp";
+        Http h=new Http();h.method="GET";h.ruta="/administrador/inicio";
         h.previa=new Sesion();
         h.previa.datos.put("adminIdUsuario",7);h.previa.datos.put("adminIdRol",3);
         h.previa.datos.put("adminCorreo","admin@example.test");

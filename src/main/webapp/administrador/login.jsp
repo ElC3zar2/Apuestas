@@ -9,7 +9,7 @@
 </head>
 <body class="login-page" data-context-path="${pageContext.request.contextPath}">
 <main class="login-card">
-<a class="brand" href="${pageContext.request.contextPath}/index.jsp">BetZone <span>ADMIN</span></a>
+<a class="brand" href="${pageContext.request.contextPath}/">BetZone <span>ADMIN</span></a>
 <p class="eyebrow">CENTRO DE OPERACIONES</p><h1>Acceso administrativo</h1>
 <p class="muted">Ingresa con tu cuenta de personal autorizado.</p>
 <form id="admin-login" action="${pageContext.request.contextPath}/administrador/login" method="post">
@@ -18,6 +18,6 @@
 <button class="primary" type="submit">Ingresar al panel</button>
 <p id="login-status" role="status" aria-live="polite"></p>
 </form>
-<a class="muted" href="${pageContext.request.contextPath}/index.jsp">← Volver a BetZone</a>
+<a class="muted" href="${pageContext.request.contextPath}/">← Volver a BetZone</a>
 </main>
 </body></html>

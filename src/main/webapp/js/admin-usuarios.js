@@ -21,7 +21,7 @@
     const labels = {idUsuario:'ID de usuario',idVerificacion:'ID de verificación',idRestriccion:'ID de restricción',estadoVerificacion:'Estado de verificación',estadoUsuario:'Estado de cuenta',correoVerificado:'Correo verificado',sinCambios:'Sin cambios',estadoAnterior:'Estado anterior',estadoActual:'Estado actual',tipoRestriccion:'Tipo de restricción',motivo:'Motivo',fechaFin:'Fecha de fin',activa:'Activa'};
     const forms = new Map(), controllers = new Set(), uncertain = new Set();
     const operationPanels = new Map(), operationButtons = new Map();
-    let detail = null, busy = false, expired = false, stale = false;
+    let detail = null, busy = false, expired = false, stale = false, searchPage=1, searchTotal=0, searchText="";
     const display = value => value == null || value === '' ? '—' : typeof value === 'boolean' ? (value ? 'Sí' : 'No') : String(value);
     const identity = user => [user.nombre,user.apellido].filter(Boolean).join(' ').trim() || user.correo || 'Cuenta consultada';
     const validId = value => /^[0-9]+$/.test(String(value)) && Number(value)>0 && Number(value)<=2147483647;
@@ -46,12 +46,14 @@
         }
     }
     function sync() {
-        for(const id of ['pending-form','user-query'])$(id).querySelectorAll('input,button').forEach(el=>{el.disabled=busy||expired||!readable;});
+        for(const id of ['pending-form','user-query','user-search'])$(id).querySelectorAll('input,button').forEach(el=>{el.disabled=busy||expired||!readable;});
         document.querySelectorAll('[data-user-action]').forEach(el=>{el.disabled=busy||expired;});
         for(const [route,form] of forms)form.querySelector('fieldset').disabled=busy||expired||!available(route,form);
         for(const [route,button] of operationButtons)button.disabled=busy||expired||!available(route,forms.get(route));
         $('users-operation-panel').hidden=!detail||!writable||stale;
         $('users-uncertain').hidden=!uncertain.size;
+        $('users-prev').disabled=busy||expired||!readable||searchPage<=1;
+        $('users-next').disabled=busy||expired||!readable||searchPage*50>=searchTotal;
         $('users-forms').setAttribute('aria-busy',String(busy));
     }
     function report(error) {
@@ -61,18 +63,8 @@
         status((error.status===401||error.status===403?'Servidor HTTP '+error.status+' en '+(error.endpoint||'la operación solicitada')+': ':'')+message,true);
         if(error.status===401){expired=true;$('users-login').hidden=false;}
     }
-    async function api(path,options={}) {
-        const controller=new AbortController();controllers.add(controller);const timer=setTimeout(()=>controller.abort(),15000);
-        try{
-            const response=await fetch(base+path,{credentials:'same-origin',cache:'no-store',...options,headers:{Accept:'application/json',...options.headers},signal:controller.signal});
-            if(response.redirected){const error=new Error();error.status=401;error.endpoint=path.split('?')[0];throw error;}
-            const raw=await response.text();let data;
-            try{data=raw.trim()?JSON.parse(raw):null;}catch{data=null;}
-            if(!response.ok){const error=new Error();error.status=response.status;error.endpoint=path.split('?')[0];if(data?.ok===false&&typeof data.mensaje==='string')error.serverMessage=data.mensaje;throw error;}
-            if(!raw.trim())throw new Error('El servidor devolvió una respuesta vacía.');
-            if(!data||data.ok!==true)throw new Error('El servidor no devolvió un JSON de éxito válido.');
-            return data;
-        }finally{clearTimeout(timer);controllers.delete(controller);}
+    async function api(path, options = {}) {
+        return window.BetZoneAdmin.request(path, options);
     }
     function values(target,rows) {
         const dl=node('dl',undefined,'operation-values');
@@ -218,6 +210,20 @@
             });
         }
     }
+    async function searchUsers(page){
+        if(busy||expired||!readable)return;
+        busy=true;sync();status('Buscando usuarios…');$('user-search-results').replaceChildren();
+        try {
+            const data=await api('/administrador/usuarios/buscar?'+new URLSearchParams({buscar:searchText,pagina:page,tamanoPagina:50}));
+            if(!Array.isArray(data.usuarios)||data.pagina!==page||data.tamanoPagina!==50||!Number.isSafeInteger(data.total)||data.total<0)throw new Error('Respuesta de busqueda invalida.');
+            searchPage=page;searchTotal=data.total;$('users-page').textContent='Página '+page+' · '+data.total+' cuentas';
+            table($('user-search-results'),'Cuentas encontradas',['Nombre','Correo','Estado','Rol','Acción'],data.usuarios.map(user=>[identity(user),user.correo,user.estadoUsuario,user.rol,user.rol==='USUARIO'?button('Seleccionar cuenta',()=>consult(user.idUsuario)):'Datos básicos disponibles en esta fila']));
+            status(data.usuarios.length?'Selecciona una cuenta para consultar su detalle.':'No se encontraron usuarios con esos datos.');
+        }catch(e){report(e);}finally{busy=false;sync();}
+    }
+    $('user-search').addEventListener('submit',event=>{event.preventDefault();searchText=$('user-search-text').value.trim();searchUsers(1);});
+    $('users-prev').addEventListener('click',()=>{if(searchPage>1)searchUsers(searchPage-1);});
+    $('users-next').addEventListener('click',()=>{if(searchPage*50<searchTotal)searchUsers(searchPage+1);});
     $('pending-form').addEventListener('submit',async event=>{event.preventDefault();if(busy||expired||!readable)return;busy=true;sync();status('Consultando usuarios pendientes…');try{await readPending();status('Pendientes actualizados.');}catch(error){report(error);}finally{busy=false;sync();}});
     $('user-query').addEventListener('submit',event=>{event.preventDefault();consult($('user-id').value);});
     $('user-id').addEventListener('input',()=>{
@@ -231,4 +237,5 @@
     }else if(!readable)status('Tu rol no tiene permiso para consultar o administrar usuarios.',true);
     const initial=new URLSearchParams(location.search).get('idUsuario');
     if(readable&&validId(initial)){$('user-id').value=initial;consult(initial);}
+    else if(readable)$('pending-form').requestSubmit();
 })();
