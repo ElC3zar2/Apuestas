@@ -255,7 +255,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_LiquidarBoleto
 (
     @IdUsuarioProceso INT,
     @IdBoleto INT,
-    @IpOrigen VARCHAR(45) = NULL
+    @IpOrigen VARCHAR(45) = NULL,
+    @EmitirResultado BIT = 1
 )
 AS
 BEGIN
@@ -497,6 +498,7 @@ BEGIN
             COMMIT TRANSACTION;
 
 
+            IF @EmitirResultado = 1
             SELECT
                 LB.IdLiquidacion,
                 B.IdBoleto,
@@ -1488,6 +1490,7 @@ BEGIN
            RESPUESTA ESTABLE PARA JAVA
            ==================================================== */
 
+        IF @EmitirResultado = 1
         SELECT
             @IdLiquidacion AS IdLiquidacion,
 
@@ -1725,6 +1728,124 @@ BEGIN
 END;
 GO
 
+
+/* Lote reejecutable. Sin transaccion global: cada iteracion confirma UN boleto.
+   El bloqueo compartido con el SP individual evita atribuir a este lote un pago
+   realizado por otra sesion entre la comprobacion y la llamada financiera.
+   Errores internos o de concurrencia abortan; los boletos anteriores ya confirmados
+   permanecen liquidados y pueden recuperarse repitiendo la peticion. */
+CREATE OR ALTER PROCEDURE dbo.sp_LiquidarBoletosEvento
+(
+    @IdUsuarioProceso INT,
+    @IdEvento INT,
+    @IpOrigen VARCHAR(45) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    EXEC dbo.sp_ValidarPermisoLiquidacion @IdUsuarioProceso=@IdUsuarioProceso;
+    IF @IdEvento IS NULL OR @IdEvento <= 0
+        THROW 62040, 'IdEvento invalido.', 1;
+    IF NOT EXISTS(SELECT 1 FROM dbo.Evento WHERE IdEvento=@IdEvento)
+        THROW 62041, 'Evento inexistente.', 1;
+    IF NOT EXISTS(SELECT 1 FROM dbo.ResultadoEvento R
+        JOIN dbo.Estado E ON E.IdEstado=R.IdEstado
+        JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+        WHERE R.IdEvento=@IdEvento AND T.Codigo='RESULTADO_EVENTO' AND E.Codigo IN ('OFICIAL','ANULADO'))
+        THROW 62042, 'Evento sin resultado oficial o anulado.', 1;
+    -- Un llamador con transaccion ambiental impediria los commits por boleto.
+    IF @@TRANCOUNT <> 0
+        THROW 62043, 'El lote requiere una conexion sin transaccion ambiental.', 1;
+
+    DECLARE @Relacionados TABLE(IdBoleto INT PRIMARY KEY);
+    INSERT INTO @Relacionados
+        SELECT DISTINCT D.IdBoleto FROM dbo.DetalleBoleto D
+        JOIN dbo.Seleccion S ON S.IdSeleccion=D.IdSeleccion WHERE S.IdEvento=@IdEvento;
+    DECLARE @Procesados TABLE(
+        IdBoleto INT PRIMARY KEY, CodigoBoleto VARCHAR(50), ResultadoBoleto VARCHAR(20),
+        EstadoBoleto VARCHAR(40), IdLiquidacion BIGINT, MontoLiquidado DECIMAL(12,2), SolicitudIdempotente BIT);
+    DECLARE @IdBoleto INT, @Anterior INT=0, @Cerrojo INT, @IdCompletada INT,
+        @YaLiquidado BIT;
+    SELECT @IdCompletada=E.IdEstado FROM dbo.Estado E
+        JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+        WHERE T.Codigo='LIQUIDACION' AND E.Codigo='COMPLETADA' AND E.Activo=1;
+    IF @IdCompletada IS NULL THROW 62008, 'Falta catalogo de liquidacion.', 1;
+
+    WHILE 1=1
+    BEGIN
+        SET @IdBoleto=NULL;
+        SELECT @IdBoleto=MIN(IdBoleto) FROM @Relacionados WHERE IdBoleto>@Anterior;
+        IF @IdBoleto IS NULL BREAK;
+        SET @Anterior=@IdBoleto;
+        BEGIN TRY
+            BEGIN TRANSACTION;
+            EXEC @Cerrojo=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+                @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+            IF @Cerrojo<0 THROW 76900, 'No fue posible obtener el bloqueo de operacion; reintente.', 1;
+            SET @YaLiquidado=0;
+            IF EXISTS(SELECT 1 FROM dbo.LiquidacionBoleto WITH(UPDLOCK,HOLDLOCK)
+                WHERE IdBoleto=@IdBoleto AND IdEstado=@IdCompletada)
+                SET @YaLiquidado=1;
+
+            -- Prefiltro de disponibilidad, nunca autoridad financiera. Todas las
+            -- selecciones deben estar resueltas, incluidas las de otros eventos.
+            IF @YaLiquidado=1 OR (
+                EXISTS(SELECT 1 FROM dbo.Boleto B JOIN dbo.Estado E ON E.IdEstado=B.IdEstado
+                    JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+                    WHERE B.IdBoleto=@IdBoleto AND T.Codigo='BOLETO' AND E.Codigo='PENDIENTE')
+                AND NOT EXISTS(SELECT 1 FROM dbo.LiquidacionBoleto WHERE IdBoleto=@IdBoleto)
+                AND EXISTS(SELECT 1 FROM dbo.DetalleBoleto WHERE IdBoleto=@IdBoleto)
+                AND NOT EXISTS(SELECT 1 FROM dbo.DetalleBoleto D
+                    LEFT JOIN dbo.Seleccion S ON S.IdSeleccion=D.IdSeleccion
+                    LEFT JOIN dbo.ResultadoEvento R ON R.IdEvento=S.IdEvento
+                    LEFT JOIN dbo.Estado E ON E.IdEstado=R.IdEstado
+                    WHERE D.IdBoleto=@IdBoleto AND (
+                        D.Resultado IS NULL OR D.Resultado NOT IN ('GANADA','PERDIDA','ANULADA')
+                        OR E.Codigo IS NULL OR E.Codigo NOT IN ('OFICIAL','ANULADO')
+                        OR (D.TipoMercadoAplicado<>'CONVENCIONAL'
+                            AND (D.ClasificacionAcierto IS NULL OR D.CuotaLiquidacion IS NULL)))))
+            BEGIN
+                -- El SP conserva TODAS las validaciones, reservas, pagos y auditoria.
+                EXEC dbo.sp_LiquidarBoleto @IdUsuarioProceso=@IdUsuarioProceso,
+                    @IdBoleto=@IdBoleto,@IpOrigen=@IpOrigen,@EmitirResultado=0;
+                INSERT INTO @Procesados
+                    SELECT B.IdBoleto,B.CodigoBoleto,B.Resultado,E.Codigo,L.IdLiquidacion,
+                        L.MontoLiquidado,@YaLiquidado
+                    FROM dbo.Boleto B JOIN dbo.Estado E ON E.IdEstado=B.IdEstado
+                    JOIN dbo.LiquidacionBoleto L ON L.IdBoleto=B.IdBoleto
+                    WHERE B.IdBoleto=@IdBoleto AND L.IdEstado=@IdCompletada;
+                IF @@ROWCOUNT<>1 THROW 62044, 'Contrato interno de lote inconsistente.', 1;
+            END;
+            COMMIT TRANSACTION;
+        END TRY
+        BEGIN CATCH
+            DECLARE @ErrorBoleto INT=ERROR_NUMBER();
+            IF XACT_STATE()<>0 ROLLBACK TRANSACTION;
+            -- Solo el SP individual decide si supera las validaciones finales
+            -- (cuota, importe, respaldo y saldos). Un rechazo de negocio deja
+            -- el boleto sin efectos y omitido; nunca replicar esos calculos aqui.
+            -- Catalogos, corrupcion financiera, permisos y concurrencia abortan
+            -- la peticion conservando los boletos anteriores ya confirmados.
+            IF @ErrorBoleto NOT IN (62018,62019,62020,62021,62022,62023,62024,
+                                   62030,62031,62039,76401,76402,76405)
+                THROW;
+        END CATCH;
+    END;
+
+    DECLARE @RelacionadosTotal INT=(SELECT COUNT(*) FROM @Relacionados),
+        @Elegibles INT=(SELECT COUNT(*) FROM @Procesados),
+        @Nuevos INT=(SELECT COUNT(*) FROM @Procesados WHERE SolicitudIdempotente=0),
+        @Repetidos INT=(SELECT COUNT(*) FROM @Procesados WHERE SolicitudIdempotente=1);
+    SELECT @IdEvento AS IdEvento,@RelacionadosTotal AS BoletosRelacionados,
+        @Elegibles AS BoletosElegibles,@Nuevos AS BoletosLiquidadosNuevos,
+        @Repetidos AS BoletosYaLiquidados,(@RelacionadosTotal-@Elegibles) AS BoletosOmitidos,
+        CAST(COALESCE((SELECT SUM(MontoLiquidado) FROM @Procesados WHERE SolicitudIdempotente=0),0)
+            AS DECIMAL(38,2)) AS MontoTotalLiquidadoNuevo;
+    SELECT IdBoleto,CodigoBoleto,ResultadoBoleto,EstadoBoleto,IdLiquidacion,MontoLiquidado,SolicitudIdempotente
+        FROM @Procesados ORDER BY IdBoleto;
+END;
+GO
 
 PRINT '=======================================================';
 PRINT ' PROCEDIMIENTOS DE LIQUIDACION CREADOS / ACTUALIZADOS';

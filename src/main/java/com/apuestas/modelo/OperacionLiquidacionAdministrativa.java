@@ -3,6 +3,7 @@ package com.apuestas.modelo;
 public enum OperacionLiquidacionAdministrativa {
     LISTAR("listos","GET","cantidad"),
     LIQUIDAR("liquidar","POST","idBoleto"),
+    LIQUIDAR_EVENTO("liquidar-evento","POST","idEvento"),
     CONSULTAR("consultar","GET","idBoleto");
     public final String ruta,metodo,parametro;
     OperacionLiquidacionAdministrativa(String ruta,String metodo,String parametro) {

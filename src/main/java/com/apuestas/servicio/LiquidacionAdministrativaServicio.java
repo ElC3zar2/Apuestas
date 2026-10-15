@@ -44,6 +44,12 @@ public class LiquidacionAdministrativaServicio {
         if(origen!=null&&origen.length()>45) throw new IllegalArgumentException();
         return Objects.requireNonNull(dao.liquidar(actor,idBoleto,origen));
     }
+    public LiquidacionLoteEvento liquidarEvento(int actor,String rol,int idEvento,String ip) throws SQLException {
+        autorizar(LIQUIDAR_EVENTO,actor,rol);
+        if(idEvento<=0) throw new IllegalArgumentException();
+        if(ip!=null&&ip.length()>45) throw new IllegalArgumentException();
+        return Objects.requireNonNull(dao.liquidarEvento(actor,idEvento,ip));
+    }
     public Consulta consultar(int actor,String rol,int idBoleto) throws SQLException {
         autorizar(CONSULTAR,actor,rol);
         if(idBoleto<=0) throw new IllegalArgumentException();

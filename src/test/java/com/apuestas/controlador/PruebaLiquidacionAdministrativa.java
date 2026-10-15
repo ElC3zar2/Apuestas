@@ -63,8 +63,18 @@ public class PruebaLiquidacionAdministrativa {
                 "ClasificacionAcierto","EXACTO","CuotaAplicada",dinero("3.2500"),
                 "CuotaResultadoAplicada",dinero("1.7500"),"CuotaLiquidacion",dinero("3.2500"));
     }
+    private static Map<String,Object> resumen() {
+        return fila("IdEvento",19,"BoletosRelacionados",2,"BoletosElegibles",1,
+                "BoletosLiquidadosNuevos",1,"BoletosYaLiquidados",0,"BoletosOmitidos",1,
+                "MontoTotalLiquidadoNuevo",dinero("123.45"));
+    }
+    private static Map<String,Object> detalleLote() {
+        return fila("IdBoleto",19,"CodigoBoleto","B-19","ResultadoBoleto","GANADOR",
+                "EstadoBoleto","LIQUIDADO","IdLiquidacion",5000000000L,
+                "MontoLiquidado",dinero("123.45"),"SolicitudIdempotente",false);
+    }
     private static Map<String,Object> respuesta(int variante) {
-        return variante==0?listo():variante==1?nueva():variante==2?repetida():consulta();
+        return variante==4?resumen():variante==0?listo():variante==1?nueva():variante==2?repetida():consulta();
     }
     private static boolean nullable(int variante,String columna) {
         if(variante==1) return Arrays.asList("IdTransaccionDevolucionComisionUsuario","ReferenciaDevolucionComisionUsuario","IdTransaccionCasa","ReferenciaCasa").contains(columna);
@@ -87,10 +97,13 @@ public class PruebaLiquidacionAdministrativa {
         final Map<Integer,Object> params=new HashMap<>();
         int conexiones,llamadas,ejecuciones,indice,abiertos,cerrados,codigo;
         boolean conexionCerrada,statementCerrado,conteo,rsNull,falloConexion,falloPreparar,falloRuntime,falloPosterior;
+        boolean conteoIntermedio,conteoFinal,timeout;
+        String tipoIncorrecto;
         EstadoSP estado;
         Jdbc(int variante) {
-            op=variante==0?LISTAR:variante==3?CONSULTAR:LIQUIDAR;
+            op=variante==4?LIQUIDAR_EVENTO:variante==0?LISTAR:variante==3?CONSULTAR:LIQUIDAR;
             resultados.add(new ArrayList<>(Arrays.asList(respuesta(variante))));
+            if(variante==4) resultados.add(new ArrayList<>(Arrays.asList(detalleLote())));
             if(variante==3) resultados.add(new ArrayList<>(Arrays.asList(detalle())));
         }
         Map<String,Object> fila() { return resultados.get(0).get(0); }
@@ -103,6 +116,7 @@ public class PruebaLiquidacionAdministrativa {
                     llamadas++;
                     if(falloPreparar) throw new SQLException(PRIVADO);
                     String sql=op==LISTAR?"{call dbo.sp_ObtenerBoletosListosLiquidar(?, ?)}":
+                            op==LIQUIDAR_EVENTO?"{call dbo.sp_LiquidarBoletosEvento(?, ?, ?)}":
                             op==LIQUIDAR?"{call dbo.sp_LiquidarBoleto(?, ?, ?)}":"{call dbo.sp_ObtenerLiquidacionBoleto(?, ?)}";
                     exigir(a[0].equals(sql));return sentencia();
                 }
@@ -117,14 +131,16 @@ public class PruebaLiquidacionAdministrativa {
                     case "setNull":exigir((Integer)a[1]==Types.VARCHAR);params.put((Integer)a[0],null);return null;
                     case "execute":
                         ejecuciones++;
+                        if(timeout) throw new SQLTimeoutException(PRIVADO);
                         if(codigo!=0) throw new SQLException(PRIVADO,"TEST",codigo);
                         if(falloRuntime) throw new IllegalStateException(PRIVADO);
                         if(estado!=null) { exigir(op==LIQUIDAR);resultados.set(0,new ArrayList<>(Arrays.asList(estado.ejecutar()))); }
                         indice=conteo?-1:0;return indice>=0&&!resultados.isEmpty();
                     case "getMoreResults":
                         if(falloPosterior) throw new SQLException(PRIVADO);
-                        return ++indice<resultados.size();
-                    case "getUpdateCount":return indice==-1?3:-1;
+                        indice++;
+                        return !(conteoIntermedio&&indice==1)&&indice<resultados.size();
+                    case "getUpdateCount":return indice==-1||conteoIntermedio&&indice==1||conteoFinal&&indice==resultados.size()?3:-1;
                     case "getResultSet":return rsNull?null:rs(resultados.get(indice));
                     case "close":statementCerrado=true;return null;
                     default:throw new AssertionError(m.getName());
@@ -138,10 +154,21 @@ public class PruebaLiquidacionAdministrativa {
                     case "next":return ++pos[0]<filas.size();
                     case "close":cerrados++;return null;
                     case "getMetaData":
-                        java.util.List<String> cols=new java.util.ArrayList<>((filas.isEmpty()?detalle():filas.get(0)).keySet());
+                        java.util.List<String> cols=new java.util.ArrayList<>((filas.isEmpty()?(op==LIQUIDAR_EVENTO?(indice==0?resumen():detalleLote()):detalle()):filas.get(0)).keySet());
                         return proxy(ResultSetMetaData.class,(mp,mm,ma)-> {
                             if(mm.getName().equals("getColumnCount")) return cols.size();
                             if(mm.getName().equals("getColumnLabel")) return cols.get((Integer)ma[0]-1);
+                            String col=cols.get((Integer)ma[0]-1);
+                            if(mm.getName().equals("getColumnType")) {
+                                if(col.equals(tipoIncorrecto)) return Types.DOUBLE;
+                                if(col.equals("IdLiquidacion")) return Types.BIGINT;
+                                if(col.equals("SolicitudIdempotente")) return Types.BIT;
+                                if(col.startsWith("Monto")) return Types.DECIMAL;
+                                if(col.startsWith("Id")||col.startsWith("Boletos")) return Types.INTEGER;
+                                return Types.VARCHAR;
+                            }
+                            if(mm.getName().equals("getScale")) return 2;
+                            if(mm.getName().equals("getPrecision")) return col.equals("MontoLiquidado")?12:38;
                             throw new AssertionError(mm.getName());
                         });
                     case "getObject":
@@ -165,10 +192,10 @@ public class PruebaLiquidacionAdministrativa {
             h.previa=new Sesion();h.previa.datos.put("adminIdUsuario",7);h.previa.datos.put("adminIdRol",3);
             h.previa.datos.put("adminCorreo","admin@example.test");h.previa.datos.put("adminRol","ADMINISTRADOR");
             h.previa.datos.put("adminEstadoUsuario","ACTIVO");
-            if(j.op!=LISTAR) p("idBoleto","19");
+            if(j.op!=LISTAR) p(j.op.parametro,"19");
             req=proxy(HttpServletRequest.class,(p,m,a)->{
                 if(m.getName().equals("getParameterMap")) { exigir("UTF-8".equals(h.encoding));return params; }
-                if(m.getName().equals("getRemoteAddr")) { exigir(j.op==LIQUIDAR);return ip; }
+                if(m.getName().equals("getRemoteAddr")) { exigir(j.op==LIQUIDAR||j.op==LIQUIDAR_EVENTO);return ip; }
                 try { return m.invoke(h.req,a); } catch(InvocationTargetException e) { throw e.getCause(); }
             });
         }
@@ -196,10 +223,10 @@ public class PruebaLiquidacionAdministrativa {
                     exigir(j.conexionCerrada&&j.llamadas==1);
                     if(!j.falloPreparar) {
                         exigir(j.statementCerrado&&j.ejecuciones==1);
-                        exigir(j.params.size()==(j.op==LIQUIDAR?3:2)&&j.params.get(1).equals(7));
+                        exigir(j.params.size()==((j.op==LIQUIDAR||j.op==LIQUIDAR_EVENTO)?3:2)&&j.params.get(1).equals(7));
                         int n=j.op==LISTAR?(params.containsKey("cantidad")?Integer.parseInt(params.get("cantidad")[0].trim()):100):19;
                         exigir(j.params.get(2).equals(n));
-                        if(j.op==LIQUIDAR) exigir(Objects.equals(j.params.get(3),ip));
+                        if(j.op==LIQUIDAR||j.op==LIQUIDAR_EVENTO) exigir(Objects.equals(j.params.get(3),ip));
                     }
                 }
             }
@@ -220,19 +247,19 @@ public class PruebaLiquidacionAdministrativa {
             System.out.println("Filtro liquidacion JSON: OK");return;
         }
         Set<String> rutas=new HashSet<>(Arrays.asList(LiquidacionAdministrativaServlet.class.getAnnotation(WebServlet.class).value()));
-        exigir(rutas.size()==3);
-        for(int variante=0;variante<4;variante++) {
+        exigir(rutas.size()==4);
+        for(int variante=0;variante<5;variante++) {
             Caso c=new Caso(variante);exigir(rutas.contains(c.j.op.ruta));
             JsonNode json=c.ejecutar(200);
             JsonNode r=variante==0?json.at("/boletos/0"):json.get("resultado");
-            exigir(r.size()==respuesta(variante).size()+(variante==3?1:0));
+            exigir(r.size()==respuesta(variante).size()+(variante>=3?1:0));
             for(Map.Entry<String,Object> col:respuesta(variante).entrySet()) {
                 String propiedad=Character.toLowerCase(col.getKey().charAt(0))+col.getKey().substring(1);
                 exigir(r.has(propiedad));
                 if(col.getValue() instanceof BigDecimal) exigir(r.get(propiedad).decimalValue().compareTo((BigDecimal)col.getValue())==0);
                 if(col.getValue() instanceof Long) exigir(r.get(propiedad).longValue()==(Long)col.getValue());
             }
-            c=new Caso(variante);c.j.conteo=true;c.ejecutar(200);
+            c=new Caso(variante);c.j.conteo=true;c.ejecutar(variante==4?500:200);
             for(String rol:new String[]{"ADMINISTRADOR","CAJERO","AUDITOR","OPERADOR_EVENTOS","USUARIO","CASA"}) {
                 c=new Caso(variante);c.h.previa.datos.put("adminRol",rol);
                 boolean permitido=rol.equals("ADMINISTRADOR")||rol.equals("CAJERO")||(variante==3&&rol.equals("AUDITOR"));
@@ -291,8 +318,8 @@ public class PruebaLiquidacionAdministrativa {
                     c=new Caso(variante);c.j.fila().put(col.getKey(),dinero("99999999999999.00"));c.ejecutar(500);
                 }
             }
-            c=new Caso(variante);c.j.fila().put("Contrasena",PRIVADO);c.j.fila().put("Token",PRIVADO);c.ejecutar(200);
-            if(variante>0) { c=new Caso(variante);c.j.fila().put("IdBoleto",999);c.ejecutar(500); }
+            c=new Caso(variante);c.j.fila().put("Contrasena",PRIVADO);c.j.fila().put("Token",PRIVADO);c.ejecutar(variante==4?500:200);
+            if(variante>0&&variante<4) { c=new Caso(variante);c.j.fila().put("IdBoleto",999);c.ejecutar(500); }
         }
         for(int codigo=62001;codigo<=62039;codigo++) {
             Caso c=new Caso(codigo>=62032&&codigo<=62037?3:codigo==62005?0:1);
@@ -365,6 +392,64 @@ public class PruebaLiquidacionAdministrativa {
         for(int codigo:new int[]{76401,76402,76405,76900,1205,1222}) {
             c=new Caso(1);c.j.codigo=codigo;c.ejecutar(codigo>=76401&&codigo<=76405?409:503);
         }
+        // Contrato estricto del lote, incluso cuando el detalle esta vacio.
+        for(int codigo:new int[]{62040,62041,62042,62043,62044,76900,1205,1222,99999}) {
+            c=new Caso(4);c.j.codigo=codigo;
+            c.ejecutar(codigo==62040?400:codigo==62041?404:codigo==62042?409:
+                    codigo==76900||codigo==1205||codigo==1222?503:500);
+        }
+        c=new Caso(4);c.j.timeout=true;c.ejecutar(503);
+        c=new Caso(4);c.ip="x".repeat(46);c.ejecutar(400);
+        c=new Caso(4);c.ip="2001:db8::1";c.ejecutar(200);
+        for(String col:new String[]{"idBoleto","monto","premio","saldo","resultado","rol","usuario","idUsuarioProceso","idAdministrador","ipOrigen","IpOrigen"}) {
+            c=new Caso(4);c.p(col,"7");c.ejecutar(400);
+        }
+        for(String col:resumen().keySet()) {
+            c=new Caso(4);c.j.tipoIncorrecto=col;c.ejecutar(500);
+            if(col.startsWith("Boletos")) { c=new Caso(4);c.j.fila().put(col,-1);c.ejecutar(500); }
+        }
+        c=new Caso(4);c.j.fila().put("IdEvento",20);c.ejecutar(500);
+        for(String col:detalleLote().keySet()) {
+            for(int error=0;error<3;error++) {
+                c=new Caso(4);Map<String,Object> d=c.j.resultados.get(1).get(0);
+                if(error==0)d.remove(col);else if(error==1)d.put(col,null);else d.put(col,new Object());
+                c.ejecutar(500);
+            }
+            c=new Caso(4);c.j.tipoIncorrecto=col;c.ejecutar(500);
+        }
+        for(Object malo:new Object[]{new BigDecimal("-0.01"),new BigDecimal("1.001"),new BigDecimal("10000000000.00"),1.0d}) {
+            c=new Caso(4);c.j.resultados.get(1).get(0).put("MontoLiquidado",malo);c.ejecutar(500);
+        }
+        for(String col:new String[]{"IdBoleto","IdLiquidacion"}) {
+            c=new Caso(4);c.j.resultados.get(1).get(0).put(col,col.equals("IdBoleto")?(Object)0:0L);c.ejecutar(500);
+        }
+        c=new Caso(4);c.j.resultados.get(1).get(0).put("SolicitudIdempotente",1);c.ejecutar(500);
+        c=new Caso(4);c.j.resultados.get(1).add(detalleLote());c.ejecutar(500);
+        c=new Caso(4);c.j.resultados.remove(1);c.ejecutar(500);
+        c=new Caso(4);c.j.resultados.get(1).clear();c.ejecutar(500);
+        c=new Caso(4);c.j.conteoIntermedio=true;c.ejecutar(500);
+        c=new Caso(4);c.j.conteoFinal=true;c.ejecutar(500);
+        c=new Caso(4);c.j.fila().put("BoletosRelacionados",3);c.ejecutar(500);
+        c=new Caso(4);c.j.fila().put("BoletosYaLiquidados",1);c.ejecutar(500);
+        c=new Caso(4);c.j.fila().put("MontoTotalLiquidadoNuevo",dinero("123.46"));c.ejecutar(500);
+        for(boolean sinRelacionados:new boolean[]{false,true}) {
+            c=new Caso(4);c.j.fila().put("BoletosRelacionados",sinRelacionados?0:2);
+            c.j.fila().put("BoletosElegibles",0);c.j.fila().put("BoletosLiquidadosNuevos",0);
+            c.j.fila().put("BoletosOmitidos",sinRelacionados?0:2);
+            c.j.fila().put("MontoTotalLiquidadoNuevo",dinero("0.00"));c.j.resultados.get(1).clear();
+            exigir(c.ejecutar(200).at("/resultado/detalles").size()==0);
+            Caso vacioIncorrecto=new Caso(4);
+            vacioIncorrecto.j.resultados.set(0,c.j.resultados.get(0));vacioIncorrecto.j.resultados.get(1).clear();
+            vacioIncorrecto.j.tipoIncorrecto="SolicitudIdempotente";vacioIncorrecto.ejecutar(500);
+        }
+        c=new Caso(4);c.j.fila().put("BoletosLiquidadosNuevos",0);c.j.fila().put("BoletosYaLiquidados",1);
+        c.j.fila().put("MontoTotalLiquidadoNuevo",dinero("0.00"));
+        c.j.resultados.get(1).get(0).put("SolicitudIdempotente",true);c.ejecutar(200);
+        c=new Caso(4);Map<String,Object> otro=detalleLote();otro.put("IdBoleto",20);
+        otro.put("CodigoBoleto","B-20");otro.put("IdLiquidacion",5000000001L);otro.put("SolicitudIdempotente",true);
+        c.j.resultados.get(1).add(otro);c.j.fila().put("BoletosElegibles",2);
+        c.j.fila().put("BoletosYaLiquidados",1);c.j.fila().put("BoletosOmitidos",0);
+        exigir(c.ejecutar(200).at("/resultado/detalles").size()==2);
         System.out.println("Liquidacion administrativa: "+casos+" casos, 0 fallos.");
     }
 }

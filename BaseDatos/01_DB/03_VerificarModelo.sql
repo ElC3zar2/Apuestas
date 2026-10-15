@@ -69,6 +69,7 @@ INSERT @Objetos VALUES
 ('sp_ValidarPermisoLiquidacion','P'),
 ('sp_ObtenerBoletosListosLiquidar','P'),
 ('sp_LiquidarBoleto','P'),
+('sp_LiquidarBoletosEvento','P'),
 ('sp_ObtenerLiquidacionBoleto','P'),
 ('sp_ValidarPermisoAdministracionUsuario','P'),
 ('sp_ObtenerDetalleAdministrativoUsuario','P'),

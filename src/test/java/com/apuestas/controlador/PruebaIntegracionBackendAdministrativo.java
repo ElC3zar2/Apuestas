@@ -82,6 +82,7 @@ public class PruebaIntegracionBackendAdministrativo {
         f.add(()->new PruebaLiquidacionAdministrativa.Caso(0));
         f.add(()->new PruebaLiquidacionAdministrativa.Caso(1));
         f.add(()->new PruebaLiquidacionAdministrativa.Caso(3));
+        f.add(()->new PruebaLiquidacionAdministrativa.Caso(4));
         return f;
     }
     private static void mappings() throws Exception {
@@ -100,8 +101,10 @@ public class PruebaIntegracionBackendAdministrativo {
         }
         int esperadas=OperacionAdministracionUsuario.values().length+OperacionAdministracionEventos.values().length
                 +OperacionAdministracionResultados.values().length+OperacionLiquidacionAdministrativa.values().length
-                +OperacionDashboardAdministrativo.values().length+3; // login, logout y entrega CSRF administrativa
-        exigir(admin==esperadas);
+                +OperacionDashboardAdministrativo.values().length+5; // login, logout, CSRF, resultado por evento y catalogo de participantes
+        if(admin!=esperadas) throw new AssertionError("Rutas administrativas: "+admin+", esperadas: "+esperadas);
+        exigir("ConsultaResultadoEventoServlet".equals(rutas.get(ConsultaResultadoEventoServlet.RUTA)));
+        exigir("CatalogoParticipantesServlet".equals(rutas.get(CatalogoParticipantesServlet.RUTA)));
         exigir("TokenCsrfServlet".equals(rutas.get(CsrfSeguridad.RUTA_ADMIN))
                 &&"TokenCsrfServlet".equals(rutas.get(CsrfSeguridad.RUTA_USUARIO)));
         for(Supplier<Object> f:fabricas()) exigir(rutas.containsKey(new Api(f.get()).h.ruta));

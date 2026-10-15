@@ -376,6 +376,7 @@ BEGIN
            AND @SaldoComprometido<>(SELECT ISNULL(SUM(ReservaCasaPendiente),0) FROM dbo.Boleto WHERE IdBilleteraCasaReserva=@IdBilletera)
             THROW 76407,'Conciliacion CASA inconsistente; revisar antes de ajustar.',1;
         DECLARE @IdTransaccion BIGINT;
+        DECLARE @FechaTransaccionAjuste DATETIME2 = SYSDATETIME();
 
         INSERT INTO dbo.TransaccionFinanciera
         (
@@ -385,6 +386,7 @@ BEGIN
             IdBoleto,
             ReferenciaOperacion,
             Monto,
+            FechaSolicitud,
             FechaProcesamiento,
             IdUsuarioProceso,
             Descripcion
@@ -397,7 +399,8 @@ BEGIN
             NULL,
             @ReferenciaOperacion,
             @Monto,
-            SYSDATETIME(),
+            @FechaTransaccionAjuste,
+            @FechaTransaccionAjuste,
             @IdUsuarioProceso,
             CONCAT(@Operacion, ': ', @Motivo)
         );

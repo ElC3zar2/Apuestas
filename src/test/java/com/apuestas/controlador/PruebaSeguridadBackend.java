@@ -176,6 +176,11 @@ public final class PruebaSeguridadBackend {
             c=new C(a);String previo=c.token(a);c.h.previa.ref.invalidate();c.h.previa=new C(a).h.previa;
             caso(!previo.equals(c.token(a)));
         }
+        caso(FiltroCsrf.ambito("/administrador/liquidaciones/liquidar-evento")==Ambito.ADMINISTRADOR);
+        C lote=post(Ambito.ADMINISTRADOR);lote.h.ruta="/administrador/liquidaciones/liquidar-evento";
+        lote.filtrar(403,false);
+        lote=post(Ambito.ADMINISTRADOR);lote.h.ruta="/administrador/liquidaciones/liquidar-evento";
+        lote.header("X-CSRF-Token",lote.token(Ambito.ADMINISTRADOR));lote.filtrar(200,true);
         C u=new C(Ambito.USUARIO),admin=new C(Ambito.ADMINISTRADOR);
         u.header("X-CSRF-Token",admin.token(Ambito.ADMINISTRADOR));caso(!CsrfSeguridad.validar(u.req,Ambito.USUARIO));
         u=new C(Ambito.USUARIO);u.h.previa.datos.put("adminIdUsuario",7);u.entregar(403);

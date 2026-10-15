@@ -1289,6 +1289,8 @@ BEGIN
            ==================================================== */
 
         DECLARE @IdTransaccion BIGINT;
+        -- Operaciones completadas al nacer: ambas fechas usan el mismo instante.
+        DECLARE @FechaTransaccionApuesta DATETIME2 = SYSDATETIME();
 
         INSERT INTO dbo.TransaccionFinanciera
         (
@@ -1298,6 +1300,7 @@ BEGIN
             IdBoleto,
             ReferenciaOperacion,
             Monto,
+            FechaSolicitud,
             FechaProcesamiento,
             IdUsuarioProceso,
             Descripcion
@@ -1310,7 +1313,8 @@ BEGIN
             @IdBoleto,
             @ReferenciaOperacion,
             @Monto,
-            SYSDATETIME(),
+            @FechaTransaccionApuesta,
+            @FechaTransaccionApuesta,
             @IdUsuario,
             CONCAT
             (
@@ -1392,6 +1396,7 @@ BEGIN
             IdBoleto,
             ReferenciaOperacion,
             Monto,
+            FechaSolicitud,
             FechaProcesamiento,
             IdUsuarioProceso,
             Descripcion
@@ -1404,7 +1409,8 @@ BEGIN
             @IdBoleto,
             @ReferenciaComisionUsuario,
             @ComisionServicio,
-            SYSDATETIME(),
+            @FechaTransaccionApuesta,
+            @FechaTransaccionApuesta,
             @IdUsuario,
             CONCAT
             (
@@ -1471,6 +1477,7 @@ BEGIN
             IdBoleto,
             ReferenciaOperacion,
             Monto,
+            FechaSolicitud,
             FechaProcesamiento,
             IdUsuarioProceso,
             Descripcion
@@ -1483,7 +1490,8 @@ BEGIN
             @IdBoleto,
             @ReferenciaComisionCasa,
             @ComisionServicio,
-            SYSDATETIME(),
+            @FechaTransaccionApuesta,
+            @FechaTransaccionApuesta,
             @IdUsuario,
             CONCAT
             (

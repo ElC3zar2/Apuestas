@@ -11,7 +11,7 @@ import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.*;
 import static com.apuestas.modelo.OperacionLiquidacionAdministrativa.*;
 
-@WebServlet({"/administrador/liquidaciones/listos","/administrador/liquidaciones/liquidar","/administrador/liquidaciones/consultar"})
+@WebServlet({"/administrador/liquidaciones/listos","/administrador/liquidaciones/liquidar","/administrador/liquidaciones/consultar","/administrador/liquidaciones/liquidar-evento"})
 public class LiquidacionAdministrativaServlet extends HttpServlet {
     private LiquidacionAdministrativaServicio servicio;
     @Override public void init() { servicio=new LiquidacionAdministrativaServicio(); }
@@ -40,11 +40,13 @@ public class LiquidacionAdministrativaServlet extends HttpServlet {
                 cuerpo.put("cantidad",boletos.size());cuerpo.put("boletos",boletos);
             } else if(op==LIQUIDAR) {
                 cuerpo.put("resultado",servicio.liquidar(actor,rol,parametro,req.getRemoteAddr()));
+            } else if(op==LIQUIDAR_EVENTO) {
+                cuerpo.put("resultado",servicio.liquidarEvento(actor,rol,parametro,req.getRemoteAddr()));
             } else cuerpo.put("resultado",servicio.consultar(actor,rol,parametro));
             AdministracionUsuarioHttp.escribir(res,200,cuerpo);
         } catch(SecurityException e) { AdministracionUsuarioHttp.error(res,403); }
         catch(IllegalArgumentException e) { AdministracionUsuarioHttp.error(res,400); }
-        catch(SQLException e) { AdministracionUsuarioHttp.error(res,LiquidacionAdministrativaHttp.estadoSql(e.getErrorCode())); }
+        catch(SQLException e) { AdministracionUsuarioHttp.error(res,op==LIQUIDAR_EVENTO&&e instanceof java.sql.SQLTimeoutException?503:LiquidacionAdministrativaHttp.estadoSql(e.getErrorCode())); }
         catch(RuntimeException | LinkageError e) { AdministracionUsuarioHttp.error(res,500); }
     }
 }

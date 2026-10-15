@@ -46,6 +46,70 @@ public class LiquidacionAdministrativaDAO {
             fin(cs);return resultado;
         }
     }
+    public LiquidacionLoteEvento liquidarEvento(int actor,int idEvento,String ip) throws SQLException {
+        try(Connection c=obtenerConexion();CallableStatement cs=c.prepareCall("{call dbo.sp_LiquidarBoletosEvento(?, ?, ?)}")) {
+            cs.setInt(1,actor);cs.setInt(2,idEvento);
+            if(ip==null) cs.setNull(3,Types.VARCHAR);else cs.setString(3,ip);
+            if(!cs.execute()) throw contrato();
+            LiquidacionLoteEvento r=new LiquidacionLoteEvento();
+            try(ResultSet rs=cs.getResultSet()) {
+                contratoLote(rs,true);
+                if(!rs.next()) throw contrato();
+                r.idEvento=entero(rs,"IdEvento",false,1);
+                r.boletosRelacionados=entero(rs,"BoletosRelacionados",false,0);
+                r.boletosElegibles=entero(rs,"BoletosElegibles",false,0);
+                r.boletosLiquidadosNuevos=entero(rs,"BoletosLiquidadosNuevos",false,0);
+                r.boletosYaLiquidados=entero(rs,"BoletosYaLiquidados",false,0);
+                r.boletosOmitidos=entero(rs,"BoletosOmitidos",false,0);
+                r.montoTotalLiquidadoNuevo=decimal(rs,"MontoTotalLiquidadoNuevo",38,2);
+                if(r.idEvento!=idEvento||rs.next()
+                        ||(long)r.boletosRelacionados!=(long)r.boletosElegibles+r.boletosOmitidos
+                        ||(long)r.boletosElegibles!=(long)r.boletosLiquidadosNuevos+r.boletosYaLiquidados) throw contrato();
+            }
+            if(!cs.getMoreResults()) throw contrato();
+            r.detalles=new ArrayList<>();Set<Integer> ids=new HashSet<>();Set<Long> liquidaciones=new HashSet<>();
+            int nuevos=0,repetidos=0,anterior=0;BigDecimal total=BigDecimal.ZERO;
+            try(ResultSet rs=cs.getResultSet()) {
+                contratoLote(rs,false);
+                while(rs.next()) {
+                    DetalleLiquidacionLote d=new DetalleLiquidacionLote();
+                    d.idBoleto=entero(rs,"IdBoleto",false,1);
+                    d.codigoBoleto=texto(rs,"CodigoBoleto",false);
+                    d.resultadoBoleto=texto(rs,"ResultadoBoleto",false);
+                    d.estadoBoleto=texto(rs,"EstadoBoleto",false);
+                    d.idLiquidacion=largo(rs,"IdLiquidacion",false);
+                    d.montoLiquidado=decimal(rs,"MontoLiquidado",12,2);
+                    d.solicitudIdempotente=bit(rs,"SolicitudIdempotente");
+                    if(!ids.add(d.idBoleto)||!liquidaciones.add(d.idLiquidacion)||d.idBoleto<=anterior
+                            ||!Arrays.asList("GANADOR","PERDEDOR","ANULADO").contains(d.resultadoBoleto)
+                            ||!("ANULADO".equals(d.resultadoBoleto)?"ANULADO":"LIQUIDADO").equals(d.estadoBoleto)) throw contrato();
+                    anterior=d.idBoleto;
+                    if(d.solicitudIdempotente) repetidos++;else { nuevos++;total=total.add(d.montoLiquidado); }
+                    r.detalles.add(d);
+                }
+            }
+            // No se permiten update counts antes, entre ni despues de los dos ResultSet.
+            if(cs.getMoreResults()) { try(ResultSet extra=cs.getResultSet()) { throw contrato(); } }
+            if(cs.getUpdateCount()!=-1||r.detalles.size()!=r.boletosElegibles
+                    ||nuevos!=r.boletosLiquidadosNuevos||repetidos!=r.boletosYaLiquidados
+                    ||total.compareTo(r.montoTotalLiquidadoNuevo)!=0) throw contrato();
+            return r;
+        }
+    }
+    private static void contratoLote(ResultSet rs,boolean resumen) throws SQLException {
+        if(rs==null) throw contrato();
+        String[] nombres=resumen?new String[]{"IdEvento","BoletosRelacionados","BoletosElegibles",
+            "BoletosLiquidadosNuevos","BoletosYaLiquidados","BoletosOmitidos","MontoTotalLiquidadoNuevo"}:
+            new String[]{"IdBoleto","CodigoBoleto","ResultadoBoleto","EstadoBoleto","IdLiquidacion","MontoLiquidado","SolicitudIdempotente"};
+        int[] tipos=resumen?new int[]{Types.INTEGER,Types.INTEGER,Types.INTEGER,Types.INTEGER,Types.INTEGER,Types.INTEGER,Types.DECIMAL}:
+            new int[]{Types.INTEGER,Types.VARCHAR,Types.VARCHAR,Types.VARCHAR,Types.BIGINT,Types.DECIMAL,Types.BIT};
+        columnas(rs,nombres);ResultSetMetaData md=rs.getMetaData();
+        if(md.getColumnCount()!=nombres.length) throw contrato();
+        for(int i=0;i<nombres.length;i++) {
+            if(!nombres[i].equals(md.getColumnLabel(i+1))||md.getColumnType(i+1)!=tipos[i]) throw contrato();
+            if(tipos[i]==Types.DECIMAL&&(md.getScale(i+1)!=2||md.getPrecision(i+1)!=(resumen?38:12))) throw contrato();
+        }
+    }
     public Consulta consultar(int actor,int idBoleto) throws SQLException {
         try(Connection c=obtenerConexion();CallableStatement cs=c.prepareCall("{call dbo.sp_ObtenerLiquidacionBoleto(?, ?)}")) {
             cs.setInt(1,actor);cs.setInt(2,idBoleto);Consulta r;

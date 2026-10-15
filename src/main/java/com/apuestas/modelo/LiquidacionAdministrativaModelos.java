@@ -6,6 +6,19 @@ import java.time.LocalDateTime;
 public final class LiquidacionAdministrativaModelos {
     private LiquidacionAdministrativaModelos() { }
     public interface Resultado { }
+    public static final class LiquidacionLoteEvento implements Resultado {
+        public Integer idEvento;
+        public Integer boletosRelacionados,boletosElegibles,boletosLiquidadosNuevos,boletosYaLiquidados,boletosOmitidos;
+        public BigDecimal montoTotalLiquidadoNuevo;
+        public java.util.List<DetalleLiquidacionLote> detalles;
+    }
+    public static final class DetalleLiquidacionLote {
+        public Integer idBoleto;
+        public String codigoBoleto,resultadoBoleto,estadoBoleto;
+        public Long idLiquidacion;
+        public BigDecimal montoLiquidado;
+        public Boolean solicitudIdempotente;
+    }
     public static final class BoletoListo implements Resultado {
         public Integer idBoleto;
         public String codigoBoleto;
