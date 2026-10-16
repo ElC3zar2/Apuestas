@@ -28,11 +28,13 @@ public class PruebaCierreAdministrativo {
             @Override public PaginaUsuarios buscarUsuarios(String b,int p,int t){consultas++;buscar=b;pagina=p;tamano=t;
                 UsuarioBusqueda v=new UsuarioBusqueda();v.idUsuario=9;v.nombre="José";v.apellido="López";v.correo="cliente@example.test";v.estadoUsuario="ACTIVO";v.rol="USUARIO";
                 return new PaginaUsuarios(p,t,vacio?0:1,vacio?Collections.emptyList():Arrays.asList(v));}
-        },new UbicacionDAO(){@Override public List<Pais> listarPaisesActivos(){consultas++;return vacio?Collections.emptyList():Arrays.asList(new Pais(3,"GT","Guatemala"));}});}
+        },new UbicacionDAO(){@Override public List<Pais> listarPaisesActivos(){consultas++;return vacio?Collections.emptyList():Arrays.asList(new Pais(3,"GT","Guatemala"));}},new DetalleEventoAdministrativoDAO(){
+            @Override public ConsultaDetalleEventoAdministrativo.Evento consultar(int id){consultas++;if(vacio)return null;ConsultaDetalleEventoAdministrativo.Evento e=new ConsultaDetalleEventoAdministrativo.Evento();e.idEvento=id;return e;}
+        });}
     }
     static class Api {
         Http h=new Http();Map<String,String[]> params=new LinkedHashMap<>();Fuentes datos=new Fuentes();ConsultasAdministrativasServicio servicio;
-        Api(OperacionConsultaAdministrativa op,String rol){h.ruta=op.ruta;h.method="GET";sesion(h,rol);servicio=datos.servicio();}
+        Api(OperacionConsultaAdministrativa op,String rol){h.ruta=op.ruta;h.method="GET";sesion(h,rol);servicio=datos.servicio();if(op==OperacionConsultaAdministrativa.DETALLE_EVENTO)p("idEvento","19");}
         void p(String k,String... v){params.put(k,v);}
         JsonNode ejecutar(int estado)throws Exception {
             HttpServletRequest req=proxy(HttpServletRequest.class,(p,m,a)->{
@@ -110,10 +112,10 @@ public class PruebaCierreAdministrativo {
         vistas();dao();
         for(OperacionConsultaAdministrativa op:OperacionConsultaAdministrativa.values()){
             for(String rol:new String[]{"ADMINISTRADOR","OPERADOR_EVENTOS","CAJERO","AUDITOR","USUARIO","CASA"}){
-                Api a=new Api(op,rol);boolean permitido=rol.equals("ADMINISTRADOR")||op==OperacionConsultaAdministrativa.EVENTOS&&SesionAdministrativa.rolPermitido(rol)||op==OperacionConsultaAdministrativa.PAISES&&rol.equals("OPERADOR_EVENTOS")||op==OperacionConsultaAdministrativa.USUARIOS&&rol.equals("AUDITOR");
+                Api a=new Api(op,rol);boolean permitido=rol.equals("ADMINISTRADOR")||op==OperacionConsultaAdministrativa.EVENTOS&&SesionAdministrativa.rolPermitido(rol)||op==OperacionConsultaAdministrativa.PAISES&&rol.equals("OPERADOR_EVENTOS")||op==OperacionConsultaAdministrativa.USUARIOS&&rol.equals("AUDITOR")||op==OperacionConsultaAdministrativa.DETALLE_EVENTO&&Arrays.asList("OPERADOR_EVENTOS","AUDITOR").contains(rol);
                 a.ejecutar(permitido?200:403);caso(a.datos.consultas==(permitido?1:0));
             }
-            Api a=new Api(op,"ADMINISTRADOR");a.datos.vacio=true;JsonNode j=a.ejecutar(200);caso(j.path(op==OperacionConsultaAdministrativa.EVENTOS?"eventos":op==OperacionConsultaAdministrativa.PAISES?"paises":"usuarios").size()==0);
+            Api a=new Api(op,"ADMINISTRADOR");a.datos.vacio=true;JsonNode j=a.ejecutar(op==OperacionConsultaAdministrativa.DETALLE_EVENTO?404:200);if(op!=OperacionConsultaAdministrativa.DETALLE_EVENTO)caso(j.path(op==OperacionConsultaAdministrativa.EVENTOS?"eventos":op==OperacionConsultaAdministrativa.PAISES?"paises":"usuarios").size()==0);
             a=new Api(op,"ADMINISTRADOR");a.h.previa=null;a.ejecutar(401);caso(a.datos.consultas==0);
             a=new Api(op,"ADMINISTRADOR");a.h.previa.expirada=true;a.ejecutar(401);
             for(String method:new String[]{"POST","PUT","DELETE","HEAD","OPTIONS"}){a=new Api(op,"ADMINISTRADOR");a.h.method=method;a.ejecutar(405);caso("GET".equals(a.h.headers.get("Allow")));}

@@ -4,9 +4,10 @@ import com.apuestas.seguridad.SesionAdministrativa;
 import com.apuestas.servicio.ConsultasAdministrativasServicio;
 import java.io.IOException;
 import java.sql.*;
+import java.util.NoSuchElementException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.*;
-@WebServlet({"/administrador/eventos/listar","/administrador/catalogos/paises","/administrador/usuarios/buscar"})
+@WebServlet({"/administrador/eventos/listar","/administrador/eventos/detalle","/administrador/catalogos/paises","/administrador/usuarios/buscar"})
 public class ConsultasAdministrativasServlet extends HttpServlet {
     private ConsultasAdministrativasServicio servicio;
     @Override public void init(){servicio=new ConsultasAdministrativasServicio();}
@@ -29,6 +30,7 @@ public class ConsultasAdministrativasServlet extends HttpServlet {
         }
         catch(SecurityException e){AdministracionUsuarioHttp.error(res,403);}
         catch(IllegalArgumentException e){AdministracionUsuarioHttp.error(res,400);}
+        catch(NoSuchElementException e){AdministracionUsuarioHttp.error(res,404);}
         catch(SQLException e){int n=e.getErrorCode();AdministracionUsuarioHttp.error(res,e instanceof SQLTimeoutException||e instanceof SQLTransientConnectionException||n==1205||n==1222||n==76900?503:500);}
         catch(RuntimeException|LinkageError e){AdministracionUsuarioHttp.error(res,500);}
     }
