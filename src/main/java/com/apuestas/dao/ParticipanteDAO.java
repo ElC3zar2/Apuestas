@@ -237,6 +237,17 @@ public class ParticipanteDAO {
 
     public com.apuestas.modelo.PaginaParticipantes listarPaginados(Integer idDeporte,String buscar,
             Boolean activo,int pagina,int tamanoPagina) throws SQLException {
+        return listarCatalogo(null,idDeporte,buscar,activo,pagina,tamanoPagina);
+    }
+
+    public com.apuestas.modelo.PaginaParticipantes listarPaginadosPorLiga(int idLiga,Integer idDeporte,String buscar,
+            Boolean activo,int pagina,int tamanoPagina) throws SQLException {
+        if(idLiga<=0) throw new IllegalArgumentException();
+        return listarCatalogo(idLiga,idDeporte,buscar,activo,pagina,tamanoPagina);
+    }
+
+    private com.apuestas.modelo.PaginaParticipantes listarCatalogo(Integer idLiga,Integer idDeporte,String buscar,
+            Boolean activo,int pagina,int tamanoPagina) throws SQLException {
         long offset=((long)pagina-1)*tamanoPagina;
         if(pagina<1||tamanoPagina<1||tamanoPagina>100||offset>Integer.MAX_VALUE
                 ||(idDeporte!=null&&idDeporte<=0)||buscar==null||buscar.length()>150) {
@@ -244,13 +255,27 @@ public class ParticipanteDAO {
         }
         // Solo fragmentos constantes. Ningun valor recibido se concatena en SQL.
         String where=" WHERE 1=1";
+        if(idLiga!=null) where+=" AND EXISTS(SELECT 1 FROM dbo.LigaParticipante LP JOIN dbo.Liga L ON L.IdLiga=LP.IdLiga"
+                +" WHERE LP.IdLiga = ? AND LP.IdParticipante=Participante.IdParticipante AND LP.Activo=1"
+                +" AND L.Activo=1 AND L.IdDeporte=Participante.IdDeporte)";
         if(idDeporte!=null) where+=" AND IdDeporte = ?";
         if(!buscar.isEmpty()) where+=" AND Nombre LIKE ? ESCAPE '!'";
         if(activo!=null) where+=" AND Activo = ?";
         try(Connection c=obtenerConexionCatalogo()) {
+            if(idLiga!=null) {
+                try(PreparedStatement ps=c.prepareStatement("SELECT IdDeporte FROM dbo.Liga WHERE IdLiga = ?")) {
+                    ps.setInt(1,idLiga);
+                    try(ResultSet rs=ps.executeQuery()) {
+                        if(!rs.next()) throw new SQLException("La liga no existe.","P0001",76601);
+                        int deporte=rs.getInt("IdDeporte");
+                        if(idDeporte!=null && deporte!=idDeporte)
+                            throw new SQLException("Liga y deporte incompatibles.","P0001",76603);
+                    }
+                }
+            }
             long total;
             try(PreparedStatement ps=c.prepareStatement("SELECT COUNT_BIG(*) AS Total FROM dbo.Participante"+where)) {
-                parametrosCatalogo(ps,idDeporte,buscar,activo);
+                parametrosCatalogoLiga(ps,idLiga,idDeporte,buscar,activo);
                 try(ResultSet rs=ps.executeQuery()) {
                     if(!rs.next()||!(rs.getObject("Total") instanceof Long)) throw new SQLException("Conteo de catalogo inconsistente.");
                     total=(Long)rs.getObject("Total");
@@ -260,7 +285,7 @@ public class ParticipanteDAO {
             List<Participante> filas=new ArrayList<>();
             try(PreparedStatement ps=c.prepareStatement("SELECT IdParticipante, IdDeporte, IdPais, Nombre, TipoParticipante, Activo"
                     +" FROM dbo.Participante"+where+" ORDER BY Nombre, IdParticipante OFFSET ? ROWS FETCH NEXT ? ROWS ONLY")) {
-                int siguiente=parametrosCatalogo(ps,idDeporte,buscar,activo);
+                int siguiente=parametrosCatalogoLiga(ps,idLiga,idDeporte,buscar,activo);
                 ps.setLong(siguiente,offset);ps.setInt(siguiente+1,tamanoPagina);
                 try(ResultSet rs=ps.executeQuery()) {
                     while(rs.next()) {
@@ -271,6 +296,18 @@ public class ParticipanteDAO {
             }
             return new com.apuestas.modelo.PaginaParticipantes(pagina,tamanoPagina,total,filas);
         }
+    }
+
+    private static int parametrosCatalogoLiga(PreparedStatement ps,Integer liga,Integer deporte,String buscar,Boolean activo)
+            throws SQLException {
+        if(liga==null) return parametrosCatalogo(ps,deporte,buscar,activo);
+        ps.setInt(1,liga);
+        int pos=2;
+        if(deporte!=null) ps.setInt(pos++,deporte);
+        if(!buscar.isEmpty()) ps.setString(pos++,"%"+buscar.replace("!","!!").replace("%","!%")
+                .replace("_","!_").replace("[","![").replace("]","!]")+"%");
+        if(activo!=null) ps.setBoolean(pos++,activo);
+        return pos;
     }
 
     private static int parametrosCatalogo(PreparedStatement ps,Integer deporte,String buscar,Boolean activo)

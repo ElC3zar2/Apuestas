@@ -930,6 +930,12 @@ BEGIN
         IF @IdDeporteParticipante <> @IdDeporteEvento
             THROW 59043, 'El participante no pertenece al mismo deporte que la liga del evento.', 1;
 
+        IF NOT EXISTS(SELECT 1 FROM dbo.LigaParticipante LP WITH(UPDLOCK,HOLDLOCK)
+          JOIN dbo.Evento EV ON EV.IdLiga=LP.IdLiga
+          WHERE EV.IdEvento=@IdEvento AND LP.IdParticipante=@IdParticipante AND LP.Activo=1)
+            THROW 76606,'El participante no tiene asociacion activa con la liga del evento.',1;
+
+
         IF EXISTS
         (
             SELECT 1
@@ -1229,7 +1235,9 @@ BEGIN
             THROW 76009,'Marcador final utiliza una unica seleccion generica.',1;
         IF (@TipoMercado='PRIMERA_ANOTACION' AND (@IdParticipante IS NULL OR NOT EXISTS
            (SELECT 1 FROM dbo.EventoParticipante WHERE IdEvento=@IdEvento AND IdParticipante=@IdParticipante)))
-           OR (@TipoMercado<>'PRIMERA_ANOTACION' AND @IdParticipante IS NOT NULL)
+           OR (@TipoMercado='MARCADOR_FINAL' AND @IdParticipante IS NOT NULL)
+           OR (@TipoMercado='CONVENCIONAL' AND @IdParticipante IS NOT NULL AND NOT EXISTS
+             (SELECT 1 FROM dbo.EventoParticipante WHERE IdEvento=@IdEvento AND IdParticipante=@IdParticipante))
             THROW 76010,'Participante incompatible con el mercado.',1;
         INSERT INTO dbo.Seleccion
         (
@@ -1901,4 +1909,78 @@ GO
 PRINT '=======================================================';
 PRINT ' PROCEDIMIENTOS DE EVENTOS Y MERCADOS CREADOS / ACTUALIZADOS';
 PRINT '=======================================================';
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_AsociarParticipanteLiga
+ @IdUsuarioProceso INT, @IdLiga INT, @IdParticipante INT, @IpOrigen VARCHAR(45)=NULL
+AS
+BEGIN
+ SET NOCOUNT ON; SET XACT_ABORT ON;
+ EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+ IF @IdLiga IS NULL OR @IdLiga<=0 OR @IdParticipante IS NULL OR @IdParticipante<=0
+   THROW 76600,'Identificadores de asociacion invalidos.',1;
+ BEGIN TRY
+  BEGIN TRANSACTION;
+  DECLARE @Lock INT,@DeporteLiga INT,@DeporteParticipante INT,@LigaActiva BIT,@ParticipanteActivo BIT;
+  EXEC @Lock=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+    @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+  IF @Lock<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+  SELECT @DeporteLiga=IdDeporte,@LigaActiva=Activo FROM dbo.Liga WITH(UPDLOCK,HOLDLOCK) WHERE IdLiga=@IdLiga;
+  IF @DeporteLiga IS NULL THROW 76601,'La liga no existe.',1;
+  SELECT @DeporteParticipante=IdDeporte,@ParticipanteActivo=Activo FROM dbo.Participante WITH(UPDLOCK,HOLDLOCK)
+    WHERE IdParticipante=@IdParticipante;
+  IF @DeporteParticipante IS NULL THROW 76602,'El participante no existe.',1;
+  IF @DeporteLiga<>@DeporteParticipante THROW 76603,'Liga y participante pertenecen a deportes distintos.',1;
+  IF @LigaActiva=0 OR @ParticipanteActivo=0 THROW 76604,'Liga o participante inactivo.',1;
+  IF NOT EXISTS(SELECT 1 FROM dbo.LigaParticipante WHERE IdLiga=@IdLiga AND IdParticipante=@IdParticipante)
+    INSERT dbo.LigaParticipante(IdLiga,IdParticipante,Activo) VALUES(@IdLiga,@IdParticipante,1);
+  ELSE
+    UPDATE dbo.LigaParticipante SET Activo=1 WHERE IdLiga=@IdLiga AND IdParticipante=@IdParticipante;
+  INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
+    VALUES(@IdUsuarioProceso,'LIGA_PARTICIPANTE_ASOCIADO','LigaParticipante',@IdLiga,
+      NULLIF(LTRIM(RTRIM(@IpOrigen)),''),CONCAT('Liga ',@IdLiga,'; participante ',@IdParticipante,'; activo 1.'));
+  COMMIT;
+  SELECT @IdLiga AS IdLiga,@IdParticipante AS IdParticipante,CAST(1 AS BIT) AS Activo;
+ END TRY
+ BEGIN CATCH
+  IF XACT_STATE()<>0 ROLLBACK;
+  THROW;
+ END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_DesasociarParticipanteLiga
+ @IdUsuarioProceso INT, @IdLiga INT, @IdParticipante INT, @IpOrigen VARCHAR(45)=NULL
+AS
+BEGIN
+ SET NOCOUNT ON; SET XACT_ABORT ON;
+ EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+ IF @IdLiga IS NULL OR @IdLiga<=0 OR @IdParticipante IS NULL OR @IdParticipante<=0
+   THROW 76600,'Identificadores de asociacion invalidos.',1;
+ BEGIN TRY
+  BEGIN TRANSACTION;
+  DECLARE @Lock INT,@DeporteLiga INT,@DeporteParticipante INT,@LigaActiva BIT,@ParticipanteActivo BIT;
+  EXEC @Lock=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+    @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+  IF @Lock<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+  SELECT @DeporteLiga=IdDeporte,@LigaActiva=Activo FROM dbo.Liga WITH(UPDLOCK,HOLDLOCK) WHERE IdLiga=@IdLiga;
+  IF @DeporteLiga IS NULL THROW 76601,'La liga no existe.',1;
+  SELECT @DeporteParticipante=IdDeporte,@ParticipanteActivo=Activo FROM dbo.Participante WITH(UPDLOCK,HOLDLOCK)
+    WHERE IdParticipante=@IdParticipante;
+  IF @DeporteParticipante IS NULL THROW 76602,'El participante no existe.',1;
+  IF @DeporteLiga<>@DeporteParticipante THROW 76603,'Liga y participante pertenecen a deportes distintos.',1;
+  IF NOT EXISTS(SELECT 1 FROM dbo.LigaParticipante WHERE IdLiga=@IdLiga AND IdParticipante=@IdParticipante)
+    THROW 76605,'La asociacion no existe.',1;
+  UPDATE dbo.LigaParticipante SET Activo=0 WHERE IdLiga=@IdLiga AND IdParticipante=@IdParticipante;
+  INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
+    VALUES(@IdUsuarioProceso,'LIGA_PARTICIPANTE_DESASOCIADO','LigaParticipante',@IdLiga,
+      NULLIF(LTRIM(RTRIM(@IpOrigen)),''),CONCAT('Liga ',@IdLiga,'; participante ',@IdParticipante,'; activo 0.'));
+  COMMIT;
+  SELECT @IdLiga AS IdLiga,@IdParticipante AS IdParticipante,CAST(0 AS BIT) AS Activo;
+ END TRY
+ BEGIN CATCH
+  IF XACT_STATE()<>0 ROLLBACK;
+  THROW;
+ END CATCH;
+END;
 GO

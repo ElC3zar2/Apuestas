@@ -5,7 +5,10 @@ public final class AdministracionEventosHttp {
     private AdministracionEventosHttp() { }
     public static int estadoSql(int codigo) {
         switch(codigo) {
-            case 76900:return 503;
+            case 76900:case 1205:case 1222:return 503;
+            case 76600:return 400;
+            case 76601:case 76602:case 76605:return 404;
+            case 76603:case 76604:case 76606:return 409;
             case 76001:case 76005:case 76010:case 76204:case 76208:case 76209:case 76210:case 76211:case 76221:return 400;
             case 76212:case 76302:return 404;
             case 76002:case 76003:case 76004:case 76006:case 76007:case 76008:case 76009:

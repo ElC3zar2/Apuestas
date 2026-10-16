@@ -46,6 +46,7 @@ public class DeportesExploracionServlet
                 "application/json;charset=UTF-8"
         );
 
+        response.setHeader("Cache-Control","no-store");
         try {
 
             List<Deporte> deportes =
@@ -153,6 +154,7 @@ public class DeportesExploracionServlet
                         deporte.isActivo()
                 );
 
+        json.append(",\"permiteSimulacion\":").append(deporte.isPermiteSimulacion());
         json.append("}");
     }
 

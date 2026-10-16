@@ -493,12 +493,8 @@ BEGIN
                     THEN 'EN_PROGRESO'
 
 
-                WHEN EE.Codigo IN
-                (
-                    'PENDIENTE_RESULTADO',
-                    'FINALIZADO'
-                )
-                    THEN 'FINALIZADO'
+                WHEN EE.Codigo = 'PENDIENTE_RESULTADO' THEN 'PENDIENTE_RESULTADO'
+                WHEN EE.Codigo = 'FINALIZADO' THEN 'FINALIZADO'
 
 
                 ELSE EE.Codigo
@@ -578,6 +574,7 @@ BEGIN
           OR
           (
               @Vista = 'FINALIZADOS'
+              AND EE.Codigo = 'FINALIZADO'
               AND EVIS.EstadoVisual =
                   'FINALIZADO'
           )
@@ -590,8 +587,8 @@ BEGIN
             WHEN 'EN_PROGRESO' THEN 1
             WHEN 'PREVIA' THEN 2
             WHEN 'PROGRAMADO' THEN 3
-            WHEN 'FINALIZADO' THEN 4
-            ELSE 5
+            WHEN 'PENDIENTE_RESULTADO' THEN 4 WHEN 'FINALIZADO' THEN 5
+            ELSE 6
         END,
 
         CASE
@@ -612,7 +609,7 @@ BEGIN
     /* Ambos conjuntos reutilizan exactamente los eventos filtrados y limitados. */
     SELECT * FROM #EventosExploracion
     ORDER BY CASE EstadoVisual WHEN 'EN_PROGRESO' THEN 1 WHEN 'PREVIA' THEN 2
-      WHEN 'PROGRAMADO' THEN 3 WHEN 'FINALIZADO' THEN 4 ELSE 5 END,
+      WHEN 'PROGRAMADO' THEN 3 WHEN 'PENDIENTE_RESULTADO' THEN 4 WHEN 'FINALIZADO' THEN 5 ELSE 6 END,
       CASE WHEN EstadoVisual='FINALIZADO' THEN NULL ELSE FechaInicio END ASC,
       CASE WHEN EstadoVisual='FINALIZADO' THEN FechaInicio END DESC,IdEvento DESC;
 
@@ -819,12 +816,8 @@ BEGIN
                 THEN 'EN_PROGRESO'
 
 
-            WHEN EE.Codigo IN
-            (
-                'PENDIENTE_RESULTADO',
-                'FINALIZADO'
-            )
-                THEN 'FINALIZADO'
+            WHEN EE.Codigo = 'PENDIENTE_RESULTADO' THEN 'PENDIENTE_RESULTADO'
+                WHEN EE.Codigo = 'FINALIZADO' THEN 'FINALIZADO'
 
 
             ELSE EE.Codigo

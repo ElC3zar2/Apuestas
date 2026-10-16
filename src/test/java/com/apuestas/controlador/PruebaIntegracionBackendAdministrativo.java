@@ -204,6 +204,7 @@ public class PruebaIntegracionBackendAdministrativo {
         if(args.length>0) { tipoJdbcEstricto();return; }
         mappings();navegacion();tipoJdbcEstricto();
         Sesion admin=login("ADMINISTRADOR");
+        CsrfSeguridad.obtener(admin.ref,CsrfSeguridad.Ambito.ADMINISTRADOR);
         Map<String,Object> identidad=new LinkedHashMap<>(admin.datos);
         for(Supplier<Object> f:fabricas()) {
             Api a=new Api(f.get());a.h.previa=admin;a.ejecutar(200);

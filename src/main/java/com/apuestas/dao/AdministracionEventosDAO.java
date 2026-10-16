@@ -39,6 +39,8 @@ public class AdministracionEventosDAO {
                     if(op==OperacionAdministracionEventos.CREAR_EVENTO) {
                         posicionIp=6;cs.setBoolean(7,s.esSimulado);entero(cs,8,s.duracionSimulacionSegundos);
                     }break;
+                case ASOCIAR_PARTICIPANTE_LIGA:case DESASOCIAR_PARTICIPANTE_LIGA:
+                    cs.setInt(2,s.idLiga);cs.setInt(3,s.idParticipante);break;
                 case AGREGAR_PARTICIPANTE:
                     cs.setInt(2,s.idEvento);cs.setInt(3,s.idParticipante);cs.setInt(4,s.ordenParticipante);
                     if(s.esLocal==null) cs.setNull(5,Types.BIT);else cs.setBoolean(5,s.esLocal);break;
@@ -163,6 +165,12 @@ public class AdministracionEventosDAO {
                 if(op==OperacionAdministracionEventos.CREAR_EVENTO) { igual(s.idLiga,r.idLiga);igual("BORRADOR",r.estadoEvento); }
                 else igual(s.idEvento,r.idEvento);
                 return r;
+            }
+            case ASOCIAR_PARTICIPANTE_LIGA:case DESASOCIAR_PARTICIPANTE_LIGA: {
+                LigaParticipante r=new LigaParticipante();
+                r.idLiga=id(rs,"IdLiga",false);r.idParticipante=id(rs,"IdParticipante",false);r.activo=bit(rs,"Activo",false);
+                igual(s.idLiga,r.idLiga);igual(s.idParticipante,r.idParticipante);
+                igual(op==OperacionAdministracionEventos.ASOCIAR_PARTICIPANTE_LIGA,r.activo);return r;
             }
             case AGREGAR_PARTICIPANTE: {
                 AsociacionParticipante r=new AsociacionParticipante();

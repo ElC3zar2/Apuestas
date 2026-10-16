@@ -640,6 +640,22 @@ GO
    15. EVENTO
    ============================================================ */
 
+/* Pertenencia vigente; independiente del historial EventoParticipante.
+   Escrituras oficiales: sp_AsociarParticipanteLiga / sp_DesasociarParticipanteLiga. */
+IF OBJECT_ID('dbo.LigaParticipante', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.LigaParticipante
+    (
+        IdLiga INT NOT NULL,
+        IdParticipante INT NOT NULL,
+        Activo BIT NOT NULL CONSTRAINT DF_LigaParticipante_Activo DEFAULT 1,
+        CONSTRAINT PK_LigaParticipante PRIMARY KEY (IdLiga, IdParticipante),
+        CONSTRAINT FK_LigaParticipante_Liga FOREIGN KEY (IdLiga) REFERENCES dbo.Liga(IdLiga),
+        CONSTRAINT FK_LigaParticipante_Participante FOREIGN KEY (IdParticipante) REFERENCES dbo.Participante(IdParticipante)
+    );
+END;
+GO
+
 IF OBJECT_ID('dbo.Evento', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.Evento

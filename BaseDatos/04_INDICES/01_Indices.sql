@@ -996,3 +996,11 @@ IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.Evento') 
  CREATE INDEX IX_Evento_SimulacionEstado ON dbo.Evento(IdEstado,FechaInicioRealUtc)
  INCLUDE(DuracionSimulacionSegundos,FechaFinRealUtc) WHERE EsSimulado=1;
 GO
+
+/* La PK cubre Liga/Participante; estos indices cubren disponibilidad y FK inversa. */
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.LigaParticipante') AND name='IX_LigaParticipante_Liga_Activo')
+ CREATE INDEX IX_LigaParticipante_Liga_Activo ON dbo.LigaParticipante(IdLiga,Activo,IdParticipante);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.LigaParticipante') AND name='IX_LigaParticipante_Participante')
+ CREATE INDEX IX_LigaParticipante_Participante ON dbo.LigaParticipante(IdParticipante,IdLiga) INCLUDE(Activo);
+GO

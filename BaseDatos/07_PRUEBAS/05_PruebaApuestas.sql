@@ -322,7 +322,9 @@ BEGIN TRY
         AGREGAR PARTICIPANTES AL EVENTO
         ======================================================== */
 
-        EXEC dbo.sp_AgregarParticipanteEvento
+        DECLARE @LigaFixture1 INT=(SELECT IdLiga FROM dbo.Evento WHERE IdEvento=@IdEvento);
+    EXEC dbo.sp_AsociarParticipanteLiga @IdAdministrador,@LigaFixture1,@IdParticipante1,'127.0.0.1';
+    EXEC dbo.sp_AgregarParticipanteEvento
             @IdUsuarioProceso = @IdAdministrador,
             @IdEvento = @IdEvento,
             @IdParticipante = @IdParticipante1,
@@ -331,7 +333,9 @@ BEGIN TRY
             @IpOrigen = '127.0.0.1';
 
 
-        EXEC dbo.sp_AgregarParticipanteEvento
+        DECLARE @LigaFixture2 INT=(SELECT IdLiga FROM dbo.Evento WHERE IdEvento=@IdEvento);
+    EXEC dbo.sp_AsociarParticipanteLiga @IdAdministrador,@LigaFixture2,@IdParticipante2,'127.0.0.1';
+    EXEC dbo.sp_AgregarParticipanteEvento
             @IdUsuarioProceso = @IdAdministrador,
             @IdEvento = @IdEvento,
             @IdParticipante = @IdParticipante2,

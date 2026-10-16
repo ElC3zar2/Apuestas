@@ -17,6 +17,7 @@ INSERT @Objetos VALUES
 ('Deporte','U'),
 ('Liga','U'),
 ('Participante','U'),
+('LigaParticipante','U'),
 ('Evento','U'),
 ('EventoParticipante','U'),
 ('Mercado','U'),
@@ -50,6 +51,8 @@ INSERT @Objetos VALUES
 ('sp_ActualizarLiga','P'),
 ('sp_CrearParticipante','P'),
 ('sp_ActualizarParticipante','P'),
+('sp_AsociarParticipanteLiga','P'),
+('sp_DesasociarParticipanteLiga','P'),
 ('sp_CrearEvento','P'),
 ('sp_ActualizarEvento','P'),
 ('sp_AgregarParticipanteEvento','P'),
@@ -136,6 +139,9 @@ INSERT @Indices VALUES
 ('Municipio','IX_Municipio_Departamento_Activo'),
 ('Liga','IX_Liga_Deporte_Activo'),
 ('Liga','IX_Liga_IdPais'),
+('LigaParticipante','PK_LigaParticipante'),
+('LigaParticipante','IX_LigaParticipante_Liga_Activo'),
+('LigaParticipante','IX_LigaParticipante_Participante'),
 ('Participante','UX_Participante_Deporte_Tipo_Nombre'),
 ('Participante','IX_Participante_Deporte_Activo'),
 ('Evento','IX_Evento_Liga_FechaInicio'),
@@ -171,6 +177,7 @@ IF EXISTS(SELECT 1 FROM @Indices E WHERE NOT EXISTS(SELECT 1 FROM sys.indexes I 
  THROW 77003,'Falta un indice funcional o esta deshabilitado.',1;
 DECLARE @Columnas TABLE(Tabla SYSNAME,Columna SYSNAME);
 INSERT @Columnas VALUES
+('LigaParticipante','IdLiga'),('LigaParticipante','IdParticipante'),('LigaParticipante','Activo'),
 ('Deporte','UnidadMarcador'),('Deporte','PermiteMarcadorFinal'),('Deporte','PermitePrimeraAnotacion'),
 ('Evento','EsSimulado'),('Evento','DuracionSimulacionSegundos'),('Evento','FechaInicioRealUtc'),('Evento','FechaFinRealUtc'),
 ('EventoParticipante','MarcadorActual'),('Mercado','TipoMercado'),('Seleccion','IdEvento'),('Seleccion','IdParticipante'),
@@ -187,6 +194,41 @@ IF EXISTS(SELECT 1 FROM sys.foreign_keys F JOIN @Objetos O ON O.Nombre=OBJECT_NA
  OR EXISTS(SELECT 1 FROM sys.check_constraints C JOIN @Objetos O ON O.Nombre=OBJECT_NAME(C.parent_object_id) AND O.Tipo='U'
  WHERE C.is_disabled=1 OR C.is_not_trusted=1)
  THROW 77005,'Restricciones funcionales deshabilitadas o no confiables.',1;
+IF NOT EXISTS(SELECT 1 FROM sys.key_constraints WHERE parent_object_id=OBJECT_ID('dbo.LigaParticipante')
+ AND name='PK_LigaParticipante' AND type='PK')
+ OR NOT EXISTS(SELECT 1 FROM sys.foreign_keys WHERE parent_object_id=OBJECT_ID('dbo.LigaParticipante')
+ AND name='FK_LigaParticipante_Liga' AND referenced_object_id=OBJECT_ID('dbo.Liga'))
+ OR NOT EXISTS(SELECT 1 FROM sys.foreign_keys WHERE parent_object_id=OBJECT_ID('dbo.LigaParticipante')
+ AND name='FK_LigaParticipante_Participante' AND referenced_object_id=OBJECT_ID('dbo.Participante'))
+ THROW 77015,'Faltan claves de LigaParticipante.',1;
+IF (SELECT COUNT(*) FROM sys.index_columns IC JOIN sys.indexes I
+ ON I.object_id=IC.object_id AND I.index_id=IC.index_id
+ WHERE I.object_id=OBJECT_ID('dbo.LigaParticipante') AND I.name='PK_LigaParticipante'
+ AND IC.key_ordinal>0)<>2
+ OR NOT EXISTS(SELECT 1 FROM sys.index_columns IC JOIN sys.indexes I
+ ON I.object_id=IC.object_id AND I.index_id=IC.index_id
+ WHERE I.object_id=OBJECT_ID('dbo.LigaParticipante') AND I.name='PK_LigaParticipante'
+ AND IC.key_ordinal=1 AND COL_NAME(IC.object_id,IC.column_id)='IdLiga')
+ OR NOT EXISTS(SELECT 1 FROM sys.index_columns IC JOIN sys.indexes I
+ ON I.object_id=IC.object_id AND I.index_id=IC.index_id
+ WHERE I.object_id=OBJECT_ID('dbo.LigaParticipante') AND I.name='PK_LigaParticipante'
+ AND IC.key_ordinal=2 AND COL_NAME(IC.object_id,IC.column_id)='IdParticipante')
+ OR EXISTS(SELECT 1 FROM (VALUES ('IdLiga','int'),('IdParticipante','int'),('Activo','bit')) V(Columna,Tipo)
+ WHERE NOT EXISTS(SELECT 1 FROM sys.columns C WHERE C.object_id=OBJECT_ID('dbo.LigaParticipante')
+   AND C.name=V.Columna AND TYPE_NAME(C.user_type_id)=V.Tipo AND C.is_nullable=0))
+ THROW 77015,'Clave o columnas de LigaParticipante incompatibles.',1;
+IF EXISTS(SELECT 1 FROM (VALUES ('FK_LigaParticipante_Liga','IdLiga','Liga','IdLiga'),
+ ('FK_LigaParticipante_Participante','IdParticipante','Participante','IdParticipante')) V(Clave,Columna,TablaDestino,ColumnaDestino)
+ WHERE NOT EXISTS(SELECT 1 FROM sys.foreign_keys F JOIN sys.foreign_key_columns FC ON FC.constraint_object_id=F.object_id
+ WHERE F.parent_object_id=OBJECT_ID('dbo.LigaParticipante') AND F.name=V.Clave
+ AND F.delete_referential_action=0 AND F.update_referential_action=0
+ AND COL_NAME(FC.parent_object_id,FC.parent_column_id)=V.Columna
+ AND FC.referenced_object_id=OBJECT_ID('dbo.'+V.TablaDestino)
+ AND COL_NAME(FC.referenced_object_id,FC.referenced_column_id)=V.ColumnaDestino))
+ THROW 77015,'FK de LigaParticipante incompatible; se requiere NO ACTION.',1;
+IF EXISTS(SELECT 1 FROM dbo.LigaParticipante LP JOIN dbo.Liga L ON L.IdLiga=LP.IdLiga
+ JOIN dbo.Participante P ON P.IdParticipante=LP.IdParticipante WHERE L.IdDeporte<>P.IdDeporte)
+ THROW 77016,'Hay asociaciones de liga y participante entre deportes distintos.',1;
 DECLARE @Claves TABLE(Clave VARCHAR(100) PRIMARY KEY);
 INSERT @Claves VALUES
 ('SALDO_INICIAL_USUARIO'),('SALDO_INICIAL_CASA'),('EDAD_MINIMA_USUARIO'),('MAX_INTENTOS_LOGIN'),

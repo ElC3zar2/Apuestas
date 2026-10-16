@@ -15,6 +15,10 @@ public class Deporte {
     private String nombre;
     private String descripcion;
     private boolean activo;
+    private boolean permiteSimulacion;
+
+    public boolean isPermiteSimulacion() { return permiteSimulacion; }
+    public void setPermiteSimulacion(boolean valor) { permiteSimulacion=valor; }
 
     public Deporte() {
     }

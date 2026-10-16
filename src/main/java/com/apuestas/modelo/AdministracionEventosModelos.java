@@ -34,6 +34,10 @@ public final class AdministracionEventosModelos {
         public String nombre, estadoEvento;
         public LocalDateTime fechaInicio, fechaFin;
     }
+    public static final class LigaParticipante implements Resultado {
+        public Integer idLiga,idParticipante;
+        public Boolean activo;
+    }
     public static final class AsociacionParticipante implements Resultado {
         public Integer idEventoParticipante, idEvento, idParticipante, ordenParticipante;
         public Boolean esLocal;

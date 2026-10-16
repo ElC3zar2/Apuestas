@@ -313,7 +313,7 @@ public class PruebaAdministracionResultados {
         c=new Caso(CORREGIR);c.j.fila().put("RequiereNuevaResolucion",false);c.ejecutar(500);
         c=new Caso(REGISTRAR);c.p("resultadoTexto","  Texto normalizado  ");c.j.fila().put("ResultadoTexto","Texto normalizado");c.ejecutar(200);
         c=new Caso(CORREGIR);c.p("motivo","  Motivo normalizado  ");c.ejecutar(200);
-        for(int codigo:new int[]{76301,76217,76218,76219,76900,1205,1222}) {
+        for(int codigo:new int[]{76607,76301,76217,76218,76219,76900,1205,1222}) {
             c=new Caso(codigo==76301?RESOLVER:OFICIALIZAR);c.j.codigo=codigo;
             c.ejecutar(codigo==76900||codigo==1205||codigo==1222?503:409);
         }

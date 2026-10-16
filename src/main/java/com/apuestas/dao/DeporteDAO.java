@@ -19,6 +19,8 @@ import java.util.List;
  */
 public class DeporteDAO {
 
+    protected Connection obtenerConexion() throws SQLException { return ConexionBD.obtenerConexion(); }
+
     public List<Deporte> listarDeportesActivos() throws SQLException {
 
         List<Deporte> deportes = new ArrayList<>();
@@ -28,12 +30,12 @@ public class DeporteDAO {
                 + "IdDeporte, "
                 + "Nombre, "
                 + "Descripcion, "
-                + "Activo "
+                + "Activo, CAST(CASE WHEN UnidadMarcador IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS PermiteSimulacion "
                 + "FROM dbo.Deporte "
                 + "WHERE Activo = 1 "
                 + "ORDER BY Nombre";
 
-        try (Connection conexion = ConexionBD.obtenerConexion();
+        try (Connection conexion = obtenerConexion();
              PreparedStatement ps = conexion.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
 
@@ -57,6 +59,7 @@ public class DeporteDAO {
                         rs.getBoolean("Activo")
                 );
 
+                deporte.setPermiteSimulacion(rs.getBoolean("PermiteSimulacion"));
                 deportes.add(deporte);
             }
         }
@@ -71,11 +74,11 @@ public class DeporteDAO {
                 + "IdDeporte, "
                 + "Nombre, "
                 + "Descripcion, "
-                + "Activo "
+                + "Activo, CAST(CASE WHEN UnidadMarcador IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS PermiteSimulacion "
                 + "FROM dbo.Deporte "
                 + "WHERE IdDeporte = ?";
 
-        try (Connection conexion = ConexionBD.obtenerConexion();
+        try (Connection conexion = obtenerConexion();
              PreparedStatement ps = conexion.prepareStatement(sql)) {
 
             ps.setInt(1, idDeporte);
@@ -102,6 +105,7 @@ public class DeporteDAO {
                             rs.getBoolean("Activo")
                     );
 
+                    deporte.setPermiteSimulacion(rs.getBoolean("PermiteSimulacion"));
                     return deporte;
                 }
             }

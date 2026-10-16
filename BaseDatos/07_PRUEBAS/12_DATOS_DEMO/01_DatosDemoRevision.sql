@@ -572,6 +572,20 @@ VALUES
     ('EV_BAL_1', 'LIGA_BAL', 'DEMO IA - Mayas BC vs Altiplano BC',    3, 3, 'BAL_MAYAS',   'BAL_ALTIPLANO'),
     ('EV_TEN_1', 'LIGA_TEN', 'DEMO IA - Andrea Solis vs Mateo Ruiz',  5, 4, 'TEN_ANDREA',  'TEN_MATEO');
 
+/* Asociaciones declaradas por los eventos demo, incluyendo ambas posiciones. */
+DECLARE @DemoLiga INT,@DemoParticipante INT;
+DECLARE curLigaParticipante CURSOR LOCAL FAST_FORWARD FOR
+ SELECT DISTINCT L.IdLiga,P.IdParticipante FROM @EventosDemo E
+ JOIN @LigasDemo L ON L.Codigo=E.CodigoLiga
+ JOIN @ParticipantesDemo P ON P.Codigo IN(E.Participante1,E.Participante2);
+OPEN curLigaParticipante; FETCH NEXT FROM curLigaParticipante INTO @DemoLiga,@DemoParticipante;
+WHILE @@FETCH_STATUS=0
+BEGIN
+ EXEC dbo.sp_AsociarParticipanteLiga @IdAdministrador,@DemoLiga,@DemoParticipante,'127.0.0.1';
+ FETCH NEXT FROM curLigaParticipante INTO @DemoLiga,@DemoParticipante;
+END;
+CLOSE curLigaParticipante; DEALLOCATE curLigaParticipante;
+
 DECLARE
     @ECodigo VARCHAR(40),
     @ECodigoLiga VARCHAR(30),
@@ -803,7 +817,8 @@ DECLARE
     @SNombre VARCHAR(150),
     @SCuota DECIMAL(10,4),
     @SIdMercado INT,
-    @SIdSeleccion INT;
+    @SIdSeleccion INT,
+    @SIdParticipante INT;
 
 DECLARE curSelecciones CURSOR LOCAL FAST_FORWARD FOR
 SELECT CodigoMercado, CodigoSeleccion, Nombre, Cuota
@@ -820,6 +835,14 @@ BEGIN
     WHERE Codigo = @SCodigoMercado;
 
     SET @SIdSeleccion = NULL;
+    SET @SIdParticipante = NULL;
+    /* Codigos de fixtures, no etiquetas deportivas libres. Goles y neutral quedan NULL. */
+    SELECT @SIdParticipante=P.IdParticipante FROM @ParticipantesDemo P
+    JOIN (VALUES ('SEL_FUT1_LOCAL','FUT_QUETZAL'),('SEL_FUT1_VISITA','FUT_VOLCAN'),
+      ('SEL_FUT2_LOCAL','FUT_JAGUAR'),('SEL_FUT2_VISITA','FUT_LAGO'),
+      ('SEL_BAL1_LOCAL','BAL_MAYAS'),('SEL_BAL1_VISITA','BAL_ALTIPLANO'),
+      ('SEL_TEN1_LOCAL','TEN_ANDREA'),('SEL_TEN1_VISITA','TEN_MATEO')) X(Seleccion,Participante)
+      ON X.Participante=P.Codigo WHERE X.Seleccion=@SCodigoSeleccion;
 
     SELECT @SIdSeleccion = IdSeleccion
     FROM dbo.Seleccion
@@ -832,7 +855,8 @@ BEGIN
             @IdUsuarioProceso = @IdAdministrador,
             @IdMercado = @SIdMercado,
             @Nombre = @SNombre,
-            @IpOrigen = '127.0.0.1';
+            @IpOrigen = '127.0.0.1',
+            @IdParticipante = @SIdParticipante;
 
         SELECT @SIdSeleccion = IdSeleccion
         FROM dbo.Seleccion

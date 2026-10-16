@@ -20,7 +20,7 @@ public final class PruebaCatalogoParticipantes {
     }
     static class Jdbc {
         long total=2;int conexiones,statements,rsAbiertos,rsCerrados,psCerrados,conCerradas;
-        int fallo;final List<Map<String,Object>> filas=new ArrayList<>();
+        int fallo;boolean ligaExiste=true;int deporteLiga=1;final List<Map<String,Object>> filas=new ArrayList<>();
         final List<String> sql=new ArrayList<>();final List<Map<Integer,Object>> parametros=new ArrayList<>();
         Jdbc(){filas.add(fila(1001,"Equipo A",null,true));filas.add(fila(1002,"Equipo B",1,false));}
         Connection conexion() throws SQLException {
@@ -30,9 +30,9 @@ public final class PruebaCatalogoParticipantes {
                 if(m.getName().equals("close")){conCerradas++;return null;}
                 if(!m.getName().equals("prepareStatement"))throw new AssertionError("Solo SELECT parametrizado");
                 String consulta=(String)a[0];sql.add(consulta);Map<Integer,Object> params=new LinkedHashMap<>();parametros.add(params);
-                statements++;boolean conteo=consulta.startsWith("SELECT COUNT_BIG(*)");
+                statements++;boolean conteo=consulta.startsWith("SELECT COUNT_BIG(*)"),liga=consulta.startsWith("SELECT IdDeporte FROM dbo.Liga");
                 exigir(consulta.startsWith("SELECT ")&&!consulta.contains(";"));
-                if(!conteo)exigir(consulta.endsWith("ORDER BY Nombre, IdParticipante OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"));
+                if(!conteo&&!liga)exigir(consulta.endsWith("ORDER BY Nombre, IdParticipante OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"));
                 return proxy(PreparedStatement.class,(sp,sm,sa)-> {
                     switch(sm.getName()) {
                         case "setInt":case "setLong":case "setString":case "setBoolean":params.put((Integer)sa[0],sa[1]);return null;
@@ -46,11 +46,11 @@ public final class PruebaCatalogoParticipantes {
                             return proxy(ResultSet.class,(rp,rm,ra)-> {
                                 switch(rm.getName()) {
                                     case "close":rsCerrados++;return null;
-                                    case "next":return ++pos[0]<(conteo?1:filas.size());
+                                    case "next":return ++pos[0]<(liga?(ligaExiste?1:0):conteo?1:filas.size());
                                     case "getObject":return total;
                                     case "wasNull":return nulo[0];
                                     case "getInt":case "getString":case "getBoolean":
-                                        Object v=filas.get(pos[0]).get(ra[0]);nulo[0]=v==null;
+                                        Object v=liga?deporteLiga:filas.get(pos[0]).get(ra[0]);nulo[0]=v==null;
                                         return v==null&&rm.getName().equals("getInt")?0:v;
                                     default:throw new AssertionError(rm.getName());
                                 }
@@ -91,8 +91,9 @@ public final class PruebaCatalogoParticipantes {
             exigir(j.rsAbiertos==j.rsCerrados&&j.statements==j.psCerrados);
             if(j.fallo!=1&&j.fallo!=2)exigir(j.conexiones==j.conCerradas);
             if(esperado==200) {
-                exigir(j.sql.size()==2&&j.parametros.get(1).size()==j.parametros.get(0).size()+2);
-                for(Map.Entry<Integer,Object> e:j.parametros.get(0).entrySet())exigir(Objects.equals(e.getValue(),j.parametros.get(1).get(e.getKey())));
+                int inicio=params.containsKey("idLiga")?1:0;
+                exigir(j.sql.size()==inicio+2&&j.parametros.get(inicio+1).size()==j.parametros.get(inicio).size()+2);
+                for(Map.Entry<Integer,Object> e:j.parametros.get(inicio).entrySet())exigir(Objects.equals(e.getValue(),j.parametros.get(inicio+1).get(e.getKey())));
                 exigir(n.get("total").asLong()==j.total&&n.get("participantes").size()==j.filas.size());
                 for(JsonNode participante:n.get("participantes"))exigir(participante.size()==6&&!participante.has("idLiga"));
             }
@@ -125,18 +126,18 @@ public final class PruebaCatalogoParticipantes {
         c=new Caso();c.j.filas.clear();c.j.total=0;c.ejecutar(200);
         c=new Caso();c.j.filas.get(1).put("Nombre","Equipo A");JsonNode iguales=c.ejecutar(200);
         exigir(iguales.at("/participantes/0/idParticipante").asInt()<iguales.at("/participantes/1/idParticipante").asInt());
-        for(String clave:new String[]{"idDeporte","pagina","tamanoPagina"}) {
+        for(String clave:new String[]{"idLiga","idDeporte","pagina","tamanoPagina"}) {
             for(String valor:new String[]{"","0","-1","abc","1.5","2147483648","1 OR 1=1"}) {
                 c=new Caso();c.p(clave,valor);c.ejecutar(400);exigir(c.j.conexiones==0);
             }
         }
-        for(String clave:new String[]{"idDeporte","buscar","pagina","tamanoPagina","activo"}) {
+        for(String clave:new String[]{"idLiga","idDeporte","buscar","pagina","tamanoPagina","activo"}) {
             for(String[] valores:new String[][]{new String[]{"1","2"},new String[0],null,new String[]{null}}) {
                 c=new Caso();c.p(clave,valores);c.ejecutar(400);exigir(c.j.conexiones==0);
             }
         }
         for(String activo:new String[]{"1","0","TRUE","yes",""}) {c=new Caso();c.p("activo",activo);c.ejecutar(400);}
-        for(String intruso:new String[]{"idLiga","idUsuarioProceso","rol","otro"}) {c=new Caso();c.p(intruso,"99");c.ejecutar(400);}
+        for(String intruso:new String[]{"idUsuarioProceso","rol","otro"}) {c=new Caso();c.p(intruso,"99");c.ejecutar(400);}
         c=new Caso();c.p("buscar","x".repeat(151));c.ejecutar(400);
         c=new Caso();c.p("tamanoPagina","101");c.ejecutar(400);
         c=new Caso();c.p("pagina","2147483647");c.ejecutar(400);
@@ -154,6 +155,13 @@ public final class PruebaCatalogoParticipantes {
         for(String metodo:new String[]{"POST","PUT","PATCH","DELETE","HEAD","OPTIONS"}) {c=new Caso();c.h.method=metodo;c.ejecutar(405);exigir("GET".equals(c.h.headers.get("Allow"))&&c.j.conexiones==0);}
         c=new Caso();c.directo=true;c.h.previa=null;c.ejecutar(401);
         for(int fallo=1;fallo<=6;fallo++){c=new Caso();c.j.fallo=fallo;c.ejecutar(fallo==1||fallo==3||fallo==4?503:500);}
+        c=new Caso();c.p("idLiga","8");c.p("activo","true");c.ejecutar(200);
+        exigir(c.j.sql.get(1).contains("LP.Activo=1") && c.j.sql.get(1).contains("L.IdDeporte=Participante.IdDeporte"));
+        exigir(c.j.parametros.get(0).get(1).equals(8) && c.j.parametros.get(1).get(1).equals(8));
+        c=new Caso();c.p("idLiga","8");c.p("idDeporte","1");c.ejecutar(200);
+        exigir(c.j.parametros.get(1).get(2).equals(1));
+        c=new Caso();c.p("idLiga","8");c.j.ligaExiste=false;c.ejecutar(404);
+        c=new Caso();c.p("idLiga","8");c.p("idDeporte","2");c.ejecutar(409);
         System.out.println("Catalogo participantes: "+pass+" PASS, 0 FAIL; sin SQL real.");
     }
 }

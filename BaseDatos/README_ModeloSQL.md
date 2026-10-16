@@ -2,7 +2,7 @@
 
 ## Alcance y estado de verificación
 
-Implementación local para revisión: 31 tablas funcionales, 62 procedimientos, 12 vistas, 43 índices explícitos y 6 triggers. Los índices de PK/UNIQUE no forman parte del conteo de índices explícitos.
+El modelo funcional se verifica por nombres, claves, columnas e índices. La corrección estructural agrega LigaParticipante, dos procedimientos de asociación y dos índices explícitos. Los objetos auxiliares no invalidan la instalación.
 
 La revisión inicial analizó los archivos con Microsoft ScriptDom (TSql160Parser), sin ejecutar SQL. Esta comprobación valida sintaxis, no resolución de nombres ni comportamiento transaccional. En la continuación local se consultó la restricción financiera y se reprodujo el defecto de fechas exclusivamente en una tabla temporal. No se aplicaron los procedimientos corregidos a la base ni se ejecutó la prueba 15; esa validación queda pendiente de ejecución manual.
 
@@ -13,7 +13,7 @@ La revisión inicial analizó los archivos con Microsoft ScriptDom (TSql160Parse
 3. Ejecutar únicamente cuando el equipo autorice la instalación. Ambos instaladores incluyen los mismos scripts funcionales y la misma validación final por nombre. LOCAL agrega creación/selección de base. AZURE conserva la conexión actual.
 4. No son migraciones: rechazan una instalación existente con dbo.Usuario. Si una instalación falla parcialmente, revisar el error y preparar nuevamente una base vacía; no interpretar estos archivos como reparación automática.
 
-Orden: tablas → configuración 01 a 08 → procedimientos 01 a 12 → índices → vistas → auditoría → 01_DB/03_VerificarModelo.sql. Las referencias a procedimientos/vistas creados después se usan al invocar los procedimientos, tras completar la instalación. Los demos y pruebas no se incluyen.
+Orden: tablas → configuración 01 a 08 → procedimientos 01 a 12 → datos oficiales 09 (incluye pertenencias liga/participante) → índices → vistas → auditoría → 01_DB/03_VerificarModelo.sql. Las referencias a procedimientos/vistas creados después se usan al invocar los procedimientos, tras completar la instalación. Los demos y pruebas no se incluyen.
 
 La validación comprueba nombres de objetos e índices, columnas nuevas, restricciones habilitadas y confiables, 39 estados por tipo/código, roles, configuraciones, tipos de transacción, deportes, geografía, CASA y administradores. No exige que la base carezca de objetos auxiliares.
 
@@ -27,7 +27,7 @@ PRIMERA_ANOTACION usa dos selecciones vinculadas por FK a los participantes del 
 
 Parámetros opcionales añadidos al final de las interfaces existentes: EsSimulado/DuracionSimulacionSegundos en creación de evento; TipoMercado en creación de mercado; IdParticipante en creación de selección; ValorResultado en cuota; PronosticoA/PronosticoB en cotización y aceptación; IdEventoCancelar en anulación. Revisar las firmas SQL exactas al integrar. Los clientes no envían clasificación, ganador, cuota de liquidación, importe de premio ni secuencia.
 
-Las consultas conservan sus conjuntos principales y amplían columnas o añaden conjuntos de resultados para modalidades, incidencias, reservas y conciliación. Cotizar agrega un tercer conjunto con modalidad/pronóstico/retorno menor. ObtenerBoleto amplía cabecera y detalles; ObtenerLiquidacionBoleto agrega detalles; analítica y exploración agregan conjuntos. La futura integración deberá consumir explícitamente estos resultados; no se modificó Java/frontend.
+Las consultas conservan sus conjuntos principales y amplían columnas o añaden conjuntos de resultados para modalidades, incidencias, reservas y conciliación. Cotizar agrega un tercer conjunto con modalidad/pronóstico/retorno menor. ObtenerBoleto amplía cabecera y detalles; ObtenerLiquidacionBoleto agrega detalles; analítica y exploración agregan conjuntos. Los DAO Java consumen explícitamente los conjuntos de resultados de sus contratos. El frontend de usuario se mantiene para una fase posterior.
 
 ## Simulación y resultado
 
@@ -93,3 +93,57 @@ sqlcmd -S 'ML-RefVm-941826\SQLEXPRESS' -d PlataformaApuestas -E -b -f 65001 -i '
 ```
 
 Repetir el ultimo comando para crear otro escenario. Para comprobar repeticion en la misma conexion, abrir SSMS, seleccionar PlataformaApuestas y ejecutar dos veces el archivo completo sin transaccion ambiental. Los datos propios de prueba permanecen auditables. La comparacion de cada resumen emitido con ESPERADO sigue siendo visual; las aserciones automaticas validan el esquema de salida y el estado persistido. La validacion completa de los pagos corregidos queda pendiente de esa ejecucion manual.
+
+
+## Corrección estructural final previa a instalación
+
+Esta revisión modifica archivos y ejecuta validación estática SQL y pruebas Java con JDBC simulado. No conecta a SQL Server, no aplica procedimientos, no instala ni borra bases. La instalación limpia y las pruebas funcionales SQL quedan pendientes del usuario. No se ejecutó ningún comando Git.
+
+### Liga y participantes
+
+`LigaParticipante(IdLiga, IdParticipante, Activo)` tiene PK compuesta, FKs sin cascadas a Liga y Participante, índice de disponibilidad `(IdLiga, Activo, IdParticipante)` e índice inverso `(IdParticipante, IdLiga) INCLUDE(Activo)`. El contrato oficial de escritura exige el mismo deporte. Desasociar desactiva sin borrar EventoParticipante ni selecciones históricas. Asociar es repetible y reactiva; las solicitudes quedan auditadas.
+
+`sp_AsociarParticipanteLiga` y `sp_DesasociarParticipanteLiga` usan la misma autorización y el mismo bloqueo transaccional de eventos. `sp_AgregarParticipanteEvento` exige una pertenencia activa con la liga del evento, además del deporte correcto. Los datos oficiales usan sus grupos declarados ES/GT/NBA/MLB/ATP/WTA; los demos usan sus relaciones explícitas de eventos. No se filtra por país.
+
+### Contratos HTTP
+
+- `GET /administrador/participantes/listar`: agrega `idLiga` opcional; conserva `idDeporte`, `buscar`, `pagina`, `tamanoPagina`, `activo` y el JSON anterior. Con liga se incluyen solo asociaciones activas y liga activa; `activo` sigue filtrando el estado del participante. Para disponibilidad de nuevos eventos usar `activo=true`. Liga inexistente: 404; liga/deporte incompatibles: 409; identificadores/parámetros inválidos, duplicados o extra: 400.
+- `POST /administrador/ligas/participantes/asociar` y `/administrador/ligas/participantes/desasociar`: únicamente `idLiga`, `idParticipante`; actor desde sesión. ADMINISTRADOR y OPERADOR_EVENTOS. Respuesta `200 {ok:true,resultado:{idLiga,idParticipante,activo}}`. Exigen el token obtenido de `GET /administrador/seguridad/csrf`, por `X-CSRF-Token` o `_csrf`, usando FiltroCsrf. El filtro general existente no está registrado; el servlet aplica esa infraestructura directamente en estas dos escrituras. Otros endpoints mantienen su configuración previa.
+- `GET /deportes/exploracion`: agrega el booleano `permiteSimulacion`, calculado en SQL por `UnidadMarcador IS NOT NULL`, exactamente la condición de `sp_CrearEvento`. Java solo mapea y serializa. Se conserva 76002 → 409 para simulaciones incompatibles.
+
+Las APIs administrativas conservan identidad desde sesión, 401/403 JSON, `Cache-Control: no-store`, parámetros cerrados y sentencias preparadas. No hay reintentos financieros ni identidad administrativa enviada por navegador.
+
+### Selecciones y resultados
+
+CONVENCIONAL admite participante del evento o NULL. PRIMERA_ANOTACION exige participante del evento. MARCADOR_FINAL exige NULL y conserva la selección genérica única. La FK compuesta existente permanece. 76010 → 400 sigue representando incompatibilidad de participante/modalidad.
+
+Solo se resuelven automáticamente mercados convencionales cerrados/liquidados con dos participantes en órdenes 1/2, deporte con marcador final habilitado, marcador final estructurado y forma activa exacta A/B o A/B/neutral NULL. A/B empatado sin neutral queda manual; estructuras ambiguas o datos insuficientes quedan manuales. No se comparan nombres de mercados/selecciones. Las resoluciones previas compatibles del mismo ResultadoEvento se conservan; una contradicción falla y revierte la transacción. La oficialización conserva la automatización de PRIMERA_ANOTACION y la clasificación de pronósticos MARCADOR_FINAL.
+
+`PENDIENTE_RESULTADO` se conserva como EstadoVisual en listado y detalle. `FINALIZADOS` exige EstadoEvento y EstadoVisual FINALIZADO. TODOS incluye pendientes, ordenados después de PROGRAMADO y antes de FINALIZADO. No se usa FechaFin para oficializar visualmente.
+
+Se conserva la separación: oficialización deportiva → ResultadoEvento OFICIAL, Evento FINALIZADO y mercados LIQUIDADOS → liquidación financiera posterior con `sp_LiquidarBoletosEvento`. No se modificó 07_Liquidacion.sql.
+
+### Códigos añadidos
+
+Se reservó 76600..76607 para evitar colisiones con los 764xx financieros existentes:
+
+| SQL | Significado | HTTP |
+| --- | --- | --- |
+| 76600 | Identificadores de asociación inválidos | 400 |
+| 76601 | Liga inexistente | 404 |
+| 76602 | Participante inexistente | 404 |
+| 76603 | Deportes incompatibles | 409 |
+| 76604 | Liga/participante inactivo al asociar | 409 |
+| 76605 | Asociación inexistente al desasociar | 404 |
+| 76606 | Participante sin pertenencia activa para el evento | 409 |
+| 76607 | Resolución convencional previa contradictoria | 409 |
+
+77015/77016 son aserciones de instalación para claves/columnas y coherencia deportiva. 61024 conserva el bloqueo de oficialización con resoluciones pendientes. 76900/1205/1222 se mapean a 503 en administración de eventos. No se alteran los códigos financieros anteriores.
+
+### Prueba manual SQL
+
+Después de instalar desde cero, ejecutar completo `07_PRUEBAS/16_PruebaCorreccionEstructural.sql` en SSMS, sin transacción ambiental y sin otras sesiones escribiendo. Requiere los datos oficiales iniciales, incluido un usuario aprobado con saldo para tres boletos de prueba. Crea datos CE16 con GUID, reconstruye fixtures para cada rechazo y revierte cada caso; no usa IDs fijos ni cambia catálogos deportivos.
+
+Resultado esperado: 20 mensajes `PASS CE16 caso ...`, comprobación visual/FINALIZADOS y `CE16: 20 casos funcionales y contrato visual OK. Sin datos persistidos.`. Comprueba asociaciones, PK, deporte, restricciones por modalidad, ganador A/B, empate neutral, ambigüedad, contradicción, repetición, conservación manual, primera anotación, pronóstico exacto, oficialización y ausencia de pagos/cambios de saldos/reservas. El auxiliar de exploración ejecuta el cuerpo del procedimiento oficial con parámetros y agrega aserciones en tablas temporales; no altera el procedimiento permanente. Los IDs identity pueden avanzar aunque las filas se reviertan.
+
+El script no se ejecutó en esta revisión. La prueba 15 tampoco se ejecutó: conserva sus commits deliberados y debe realizarse sobre base descartable. Sus fixtures y los de 04/05/06/08/concurrencia se actualizaron para asociar participantes antes de agregarlos a eventos.

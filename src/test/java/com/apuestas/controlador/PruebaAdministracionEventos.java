@@ -33,6 +33,8 @@ public class PruebaAdministracionEventos {
                 return fila("IdParticipante",12,"IdDeporte",2,"IdPais",null,"Nombre","Nombre","TipoParticipante","ATLETA","Activo",true);
             case CREAR_EVENTO:case ACTUALIZAR_EVENTO:
                 return fila("IdEvento",13,"IdLiga",11,"IdEstado",5,"EstadoEvento","BORRADOR","Nombre","Nombre","FechaInicio",fecha(),"FechaFin",null);
+            case ASOCIAR_PARTICIPANTE_LIGA:case DESASOCIAR_PARTICIPANTE_LIGA:
+                return fila("IdLiga",11,"IdParticipante",12,"Activo",op==ASOCIAR_PARTICIPANTE_LIGA);
             case AGREGAR_PARTICIPANTE:
                 return fila("IdEventoParticipante",14,"IdEvento",13,"IdParticipante",12,"OrdenParticipante",3,"EsLocal",null);
             case CREAR_MERCADO:
@@ -56,6 +58,8 @@ public class PruebaAdministracionEventos {
             case ACTUALIZAR_PARTICIPANTE:return new String[]{"sp_ActualizarParticipante","idParticipante","nombre","idPais","activo","ipOrigen"};
             case CREAR_EVENTO:return new String[]{"sp_CrearEvento","idLiga","nombre","fechaInicio","fechaFin","ipOrigen","esSimulado","duracionSimulacionSegundos"};
             case ACTUALIZAR_EVENTO:return new String[]{"sp_ActualizarEvento","idEvento","nombre","fechaInicio","fechaFin","ipOrigen"};
+            case ASOCIAR_PARTICIPANTE_LIGA:return new String[]{"sp_AsociarParticipanteLiga","idLiga","idParticipante","ipOrigen"};
+            case DESASOCIAR_PARTICIPANTE_LIGA:return new String[]{"sp_DesasociarParticipanteLiga","idLiga","idParticipante","ipOrigen"};
             case AGREGAR_PARTICIPANTE:return new String[]{"sp_AgregarParticipanteEvento","idEvento","idParticipante","ordenParticipante","esLocal","ipOrigen"};
             case CREAR_MERCADO:return new String[]{"sp_CrearMercado","idEvento","nombre","descripcion","ipOrigen","tipoMercado"};
             case CREAR_SELECCION:return new String[]{"sp_CrearSeleccion","idMercado","nombre","ipOrigen","idParticipante"};
@@ -145,7 +149,8 @@ public class PruebaAdministracionEventos {
         final Jdbc j;
         final Map<String,String[]> params=new LinkedHashMap<>();
         final HttpServletRequest req;
-        boolean directo;
+        boolean directo,omitirCsrf;
+        String tokenCsrf;
         String ip="127.0.0.1";
         Caso(OperacionAdministracionEventos op) {
             this.op=op;j=new Jdbc(op);h.ruta=op.ruta;
@@ -171,6 +176,11 @@ public class PruebaAdministracionEventos {
                 }
             }
             req=proxy(HttpServletRequest.class,(p,m,a)->{
+                if(op==ASOCIAR_PARTICIPANTE_LIGA || op==DESASOCIAR_PARTICIPANTE_LIGA) {
+                    if(m.getName().equals("getHeaders")) return Collections.enumeration(tokenCsrf==null?Collections.emptyList():Collections.singletonList(tokenCsrf));
+                    if(m.getName().equals("getHeader") || m.getName().equals("getQueryString")) return null;
+                    if(m.getName().equals("getParameterValues")) return params.get(a[0]);
+                }
                 if(m.getName().equals("getParameterMap")) { exigir("UTF-8".equals(h.encoding));return params; }
                 if(m.getName().equals("getRemoteAddr")) return ip;
                 try { return m.invoke(h.req,a); } catch(InvocationTargetException e) { throw e.getCause(); }
@@ -178,6 +188,10 @@ public class PruebaAdministracionEventos {
         }
         void p(String nombre,String... valores) { params.put(nombre,valores); }
         JsonNode ejecutar(int estado) throws Exception {
+            if((op==ASOCIAR_PARTICIPANTE_LIGA || op==DESASOCIAR_PARTICIPANTE_LIGA) && !omitirCsrf
+                    && h.previa!=null && !h.previa.expirada && !h.previa.falloLectura
+                    && com.apuestas.seguridad.SesionAdministrativa.valida(h.previa.ref))
+                tokenCsrf=com.apuestas.seguridad.CsrfSeguridad.obtener(h.previa.ref,com.apuestas.seguridad.CsrfSeguridad.Ambito.ADMINISTRADOR);
             AdministracionEventosServlet s=new AdministracionEventosServlet();
             Field f=AdministracionEventosServlet.class.getDeclaredField("servicio");f.setAccessible(true);
             f.set(s,new AdministracionEventosServicio(new AdministracionEventosDAO() {
@@ -237,7 +251,7 @@ public class PruebaAdministracionEventos {
             System.out.println("Filtro eventos JSON: OK");return;
         }
         Set<String> rutas=new HashSet<>(Arrays.asList(AdministracionEventosServlet.class.getAnnotation(WebServlet.class).value()));
-        exigir(rutas.size()==15);
+        exigir(rutas.size()==17);
         for(OperacionAdministracionEventos op:base()) {
             exigir(rutas.contains(op.ruta));
             Caso c=new Caso(op);c.ejecutar(200);

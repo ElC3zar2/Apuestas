@@ -9,7 +9,7 @@ import java.util.*;
 public final class CatalogoParticipantesServicio {
     private final ParticipanteDAO dao;
     private static final Set<String> PARAMETROS=Collections.unmodifiableSet(new HashSet<>(
-            Arrays.asList("idDeporte","buscar","pagina","tamanoPagina","activo")));
+            Arrays.asList("idLiga","idDeporte","buscar","pagina","tamanoPagina","activo")));
     public CatalogoParticipantesServicio() {this(new ParticipanteDAO());}
     public CatalogoParticipantesServicio(ParticipanteDAO dao) {this.dao=Objects.requireNonNull(dao);}
     public PaginaParticipantes listar(int actor,String rol,Map<String,String[]> p) throws SQLException {
@@ -31,7 +31,9 @@ public final class CatalogoParticipantesServicio {
             if(!"true".equals(v)&&!"false".equals(v)) throw new IllegalArgumentException();
             activo=Boolean.valueOf(v);
         }
-        return Objects.requireNonNull(dao.listarPaginados(deporte,buscar,activo,pagina,tamano));
+        Integer liga=p.containsKey("idLiga")?numero(p,"idLiga",1):null;
+        return Objects.requireNonNull(liga==null?dao.listarPaginados(deporte,buscar,activo,pagina,tamano):
+                dao.listarPaginadosPorLiga(liga,deporte,buscar,activo,pagina,tamano));
     }
     private static int numero(Map<String,String[]> p,String nombre,int defecto) {
         if(!p.containsKey(nombre)) return defecto;

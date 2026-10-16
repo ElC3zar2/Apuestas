@@ -27,7 +27,11 @@ BEGIN
     SET @Fin=DATEADD(HOUR,2,@Inicio);
     EXEC dbo.sp_CrearEvento @Admin,@Liga,@Nombre,@Inicio,@Fin,'127.0.0.1';
     SELECT @Evento=IdEvento FROM dbo.Evento WHERE IdLiga=@Liga AND Nombre=@Nombre;
+    DECLARE @LigaFixture1 INT=(SELECT IdLiga FROM dbo.Evento WHERE IdEvento=@Evento);
+    EXEC dbo.sp_AsociarParticipanteLiga @Admin,@LigaFixture1,@A,'127.0.0.1';
     EXEC dbo.sp_AgregarParticipanteEvento @Admin,@Evento,@A,1,1,'127.0.0.1';
+    DECLARE @LigaFixture2 INT=(SELECT IdLiga FROM dbo.Evento WHERE IdEvento=@Evento);
+    EXEC dbo.sp_AsociarParticipanteLiga @Admin,@LigaFixture2,@B,'127.0.0.1';
     EXEC dbo.sp_AgregarParticipanteEvento @Admin,@Evento,@B,2,0,'127.0.0.1';
     EXEC dbo.sp_CrearMercado @Admin,@Evento,'Lote convencional','Prueba local','127.0.0.1';
     SELECT @Mercado=IdMercado FROM dbo.Mercado WHERE IdEvento=@Evento;

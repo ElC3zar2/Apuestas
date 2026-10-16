@@ -335,6 +335,23 @@ BEGIN TRY
     CLOSE cP; DEALLOCATE cP;
 
 
+    /* Pertenencia declarada por los grupos oficiales anteriores. No depende del pais. */
+    DECLARE @Asociaciones TABLE(Prefijo VARCHAR(10),CodigoLiga VARCHAR(30));
+    INSERT @Asociaciones VALUES ('ES_','FUT_ES'),('GT_','FUT_GT'),('NBA_','BAL_NBA'),
+      ('MLB_','BEI_MLB'),('ATP_','TEN_ATP'),('WTA_','TEN_WTA');
+    DECLARE @AsLiga INT,@AsParticipante INT;
+    DECLARE cLP CURSOR LOCAL FAST_FORWARD FOR
+      SELECT L.IdLiga,P.IdParticipante FROM @Participantes P
+      JOIN @Asociaciones A ON LEFT(P.Codigo,LEN(A.Prefijo))=A.Prefijo
+      JOIN @Ligas L ON L.Codigo=A.CodigoLiga;
+    OPEN cLP; FETCH NEXT FROM cLP INTO @AsLiga,@AsParticipante;
+    WHILE @@FETCH_STATUS=0
+    BEGIN
+      EXEC dbo.sp_AsociarParticipanteLiga @Admin,@AsLiga,@AsParticipante,'127.0.0.1';
+      FETCH NEXT FROM cLP INTO @AsLiga,@AsParticipante;
+    END;
+    CLOSE cLP; DEALLOCATE cLP;
+
     /* 4. Eventos oficiales para pruebas de USUARIO y ADMIN */
     DECLARE @Eventos TABLE(
         Codigo VARCHAR(40) PRIMARY KEY, CodigoLiga VARCHAR(30) NOT NULL,
@@ -413,13 +430,13 @@ BEGIN TRY
                 WHERE IdEvento=@EID AND Nombre='Ganador del evento';
 
                 EXEC dbo.sp_CrearSeleccion
-                  @IdUsuarioProceso=@Admin,@IdMercado=@MConv,@Nombre=@ANom,@IpOrigen='127.0.0.1';
+                  @IdUsuarioProceso=@Admin,@IdMercado=@MConv,@Nombre=@ANom,@IpOrigen='127.0.0.1',@IdParticipante=@AID;
                 SELECT @SelA=IdSeleccion FROM dbo.Seleccion WHERE IdMercado=@MConv AND Nombre=@ANom;
                 EXEC dbo.sp_RegistrarCuota
                   @IdUsuarioProceso=@Admin,@IdSeleccion=@SelA,@Valor=1.90,@IpOrigen='127.0.0.1';
 
                 EXEC dbo.sp_CrearSeleccion
-                  @IdUsuarioProceso=@Admin,@IdMercado=@MConv,@Nombre=@BNom,@IpOrigen='127.0.0.1';
+                  @IdUsuarioProceso=@Admin,@IdMercado=@MConv,@Nombre=@BNom,@IpOrigen='127.0.0.1',@IdParticipante=@BID;
                 SELECT @SelB=IdSeleccion FROM dbo.Seleccion WHERE IdMercado=@MConv AND Nombre=@BNom;
                 EXEC dbo.sp_RegistrarCuota
                   @IdUsuarioProceso=@Admin,@IdSeleccion=@SelB,@Valor=1.90,@IpOrigen='127.0.0.1';

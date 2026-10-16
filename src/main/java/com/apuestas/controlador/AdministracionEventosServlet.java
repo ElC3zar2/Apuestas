@@ -13,6 +13,7 @@ import javax.servlet.http.*;
 
 @WebServlet({
     "/administrador/ligas/crear", "/administrador/ligas/actualizar",
+    "/administrador/ligas/participantes/asociar", "/administrador/ligas/participantes/desasociar",
     "/administrador/participantes/crear", "/administrador/participantes/actualizar",
     "/administrador/eventos/crear", "/administrador/eventos/actualizar",
     "/administrador/eventos/participantes/agregar",
@@ -26,6 +27,17 @@ public class AdministracionEventosServlet extends HttpServlet {
     private AdministracionEventosServicio servicio;
     @Override public void init() { servicio=new AdministracionEventosServicio(); }
     @Override protected void service(HttpServletRequest req,HttpServletResponse res) throws IOException {
+        OperacionAdministracionEventos op=OperacionAdministracionEventos.deRuta(
+                req.getServletPath()+(req.getPathInfo()==null?"":req.getPathInfo()));
+        if(op==OperacionAdministracionEventos.ASOCIAR_PARTICIPANTE_LIGA
+                || op==OperacionAdministracionEventos.DESASOCIAR_PARTICIPANTE_LIGA) {
+            try {
+                new com.apuestas.seguridad.FiltroCsrf().doFilter(req,res,(r,s)->
+                        atender((HttpServletRequest)r,(HttpServletResponse)s));
+            } catch(javax.servlet.ServletException e) {throw new IOException(e);}
+        } else atender(req,res);
+    }
+    private void atender(HttpServletRequest req,HttpServletResponse res) throws IOException {
         AdministracionUsuarioHttp.preparar(res);
         req.setCharacterEncoding("UTF-8");
         OperacionAdministracionEventos op=OperacionAdministracionEventos.deRuta(

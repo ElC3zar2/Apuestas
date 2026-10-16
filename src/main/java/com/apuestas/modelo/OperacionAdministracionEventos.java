@@ -6,6 +6,8 @@ import java.util.*;
 public enum OperacionAdministracionEventos {
     CREAR_LIGA("ligas/crear","CrearLiga","idDeporte","nombre","idPais"),
     ACTUALIZAR_LIGA("ligas/actualizar","ActualizarLiga","idLiga","nombre","idPais","activo"),
+    ASOCIAR_PARTICIPANTE_LIGA("ligas/participantes/asociar","AsociarParticipanteLiga","idLiga","idParticipante"),
+    DESASOCIAR_PARTICIPANTE_LIGA("ligas/participantes/desasociar","DesasociarParticipanteLiga","idLiga","idParticipante"),
     CREAR_PARTICIPANTE("participantes/crear","CrearParticipante","idDeporte","nombre","tipoParticipante","idPais"),
     ACTUALIZAR_PARTICIPANTE("participantes/actualizar","ActualizarParticipante","idParticipante","nombre","idPais","activo"),
     CREAR_EVENTO("eventos/crear","CrearEvento","idLiga","nombre","fechaInicio","fechaFin","esSimulado","duracionSimulacionSegundos"),

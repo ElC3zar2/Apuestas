@@ -235,6 +235,45 @@ BEGIN
     THROW 76219,'No se recalculan apuestas con liquidaciones existentes.',1;
  SELECT TOP(1) @Primero=IdParticipante FROM dbo.IncidenciaEvento
  WHERE IdEvento=@Evento AND TipoIncidencia='ANOTACION' AND EsAnulada=0 ORDER BY Secuencia;
+ /* Convencional: forma A/B o A/B/neutral, exclusivamente con marcador
+    estructurado y capacidad deportiva. Los nombres nunca deciden resultados. */
+ DECLARE @PA INT,@PB INT;
+ SELECT @PA=IdParticipante FROM dbo.EventoParticipante WHERE IdEvento=@Evento AND OrdenParticipante=1;
+ SELECT @PB=IdParticipante FROM dbo.EventoParticipante WHERE IdEvento=@Evento AND OrdenParticipante=2;
+ DECLARE @Automaticas TABLE(IdSeleccion INT PRIMARY KEY,Resultado VARCHAR(20) NOT NULL);
+ IF @A IS NOT NULL AND @B IS NOT NULL AND @PA IS NOT NULL AND @PB IS NOT NULL AND @PA<>@PB
+    AND (SELECT COUNT(*) FROM dbo.EventoParticipante WHERE IdEvento=@Evento)=2
+    AND EXISTS(SELECT 1 FROM dbo.Evento EV JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga
+      JOIN dbo.Deporte D ON D.IdDeporte=L.IdDeporte WHERE EV.IdEvento=@Evento AND D.PermiteMarcadorFinal=1
+      AND D.UnidadMarcador IS NOT NULL)
+ BEGIN
+  ;WITH Formas AS (
+   SELECT M.IdMercado,COUNT(*) AS Total,
+     SUM(CASE WHEN S.IdParticipante=@PA THEN 1 ELSE 0 END) AS A,
+     SUM(CASE WHEN S.IdParticipante=@PB THEN 1 ELSE 0 END) AS B,
+     SUM(CASE WHEN S.IdParticipante IS NULL THEN 1 ELSE 0 END) AS Neutral
+   FROM dbo.Mercado M JOIN dbo.Estado E ON E.IdEstado=M.IdEstado
+   JOIN dbo.Seleccion S ON S.IdMercado=M.IdMercado AND S.Activo=1
+   WHERE M.IdEvento=@Evento AND M.TipoMercado='CONVENCIONAL' AND E.Codigo IN('CERRADO','LIQUIDADO')
+   GROUP BY M.IdMercado
+  )
+  INSERT @Automaticas(IdSeleccion,Resultado)
+  SELECT S.IdSeleccion,CASE WHEN (@A>@B AND S.IdParticipante=@PA)
+       OR (@B>@A AND S.IdParticipante=@PB)
+       OR (@A=@B AND S.IdParticipante IS NULL) THEN 'GANADA' ELSE 'PERDIDA' END
+  FROM Formas F JOIN dbo.Seleccion S ON S.IdMercado=F.IdMercado AND S.Activo=1
+  WHERE F.A=1 AND F.B=1 AND ((F.Total=2 AND F.Neutral=0 AND @A<>@B) OR (F.Total=3 AND F.Neutral=1))
+    AND NOT EXISTS(SELECT 1 FROM dbo.Seleccion X WHERE X.IdMercado=F.IdMercado AND X.Activo=1
+      AND (X.IdEvento<>@Evento OR (X.IdParticipante IS NOT NULL AND NOT EXISTS
+        (SELECT 1 FROM dbo.EventoParticipante EP WHERE EP.IdEvento=@Evento AND EP.IdParticipante=X.IdParticipante))));
+  IF EXISTS(SELECT 1 FROM @Automaticas A JOIN dbo.ResolucionSeleccion R WITH(UPDLOCK,HOLDLOCK)
+    ON R.IdSeleccion=A.IdSeleccion
+    WHERE R.Resultado<>A.Resultado OR R.IdResultadoEvento<>@IdResultadoEvento)
+    THROW 76607,'Resolucion convencional existente incompatible con el resultado.',1;
+  INSERT dbo.ResolucionSeleccion(IdSeleccion,IdResultadoEvento,IdUsuarioRegistro,Resultado,Observacion)
+  SELECT A.IdSeleccion,@IdResultadoEvento,@IdUsuarioProceso,A.Resultado,'Calculado desde participantes y marcador estructurados.'
+  FROM @Automaticas A WHERE NOT EXISTS(SELECT 1 FROM dbo.ResolucionSeleccion R WHERE R.IdSeleccion=A.IdSeleccion);
+ END;
  /* La resolucion de primera anotacion es comun a la seleccion. */
  UPDATE RS SET Resultado=CASE WHEN E.Codigo='ANULADO' OR @Primero IS NULL THEN 'ANULADA'
               WHEN S.IdParticipante=@Primero THEN 'GANADA' ELSE 'PERDIDA' END,

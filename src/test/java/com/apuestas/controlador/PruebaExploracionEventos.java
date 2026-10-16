@@ -186,6 +186,17 @@ public class PruebaExploracionEventos {
     public static void main(String[] args)throws Exception {
         pass=0;fail=0;ejecutarContratos();
         caso("JSON detalle EN_VIVO",()->{JsonNode n=http(detalle(true,"EN_VIVO"),false,"7",200);exigir(n.path("evento").path("simulacion").path("marcadorA").asInt()==3 && n.path("evento").path("incidencias").size()==2);});
+        for(String estado:Arrays.asList("PENDIENTE_RESULTADO","FINALIZADO")) {
+            caso("JSON conserva EstadoVisual detalle " + estado,()->{
+                JsonNode n=http(detalle(true,estado),false,"7",200).path("evento");
+                exigir(n.path("estadoEvento").asText().equals(estado) && n.path("estadoVisual").asText().equals(estado));
+            });
+            caso("JSON conserva EstadoVisual lista " + estado,()->{
+                Jdbc j=listado(true);j.tablas.get(0).filas.forEach(f->{f.put("EstadoEvento",estado);f.put("EstadoVisual",estado);f.put("ResultadoPendiente",estado.equals("PENDIENTE_RESULTADO"));});
+                JsonNode n=http(j,true,"1",200).path("eventos").get(0);
+                exigir(n.path("estadoVisual").asText().equals(estado));
+            });
+        }
         caso("JSON listado y NULL",()->exigir(http(listado(true),true,"1",200).path("eventos").get(0).path("simulacion").path("marcadorA").isNull()));
         for(String id:Arrays.asList(null,"","abc","0","-1","2147483648")) caso("idEvento invalido "+id,()->http(detalle(true,"EN_VIVO"),false,id,400));
         caso("evento inexistente",()->{Jdbc j=detalle(false,"PROGRAMADO");j.error=new SQLException("SECRETO_INTERNO","X",64014);http(j,false,"7",404);j.cerrado();});
