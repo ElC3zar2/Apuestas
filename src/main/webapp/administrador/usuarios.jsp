@@ -45,7 +45,24 @@
 <p id="users-uncertain" class="warning" role="status" hidden>Hay una operación sin confirmación. Consulta de nuevo el detalle del mismo usuario antes de considerar un reintento. No se reenvía ningún POST automáticamente.</p>
 <section class="panel"><h2>Usuarios pendientes de verificación</h2>
 <form id="pending-form" class="toolbar"><label for="pending-count">Cantidad máxima<input id="pending-count" name="cantidad" type="number" min="1" max="500" step="1" value="100" required></label><button type="submit">Consultar / actualizar pendientes</button></form>
-<p class="muted">Esta consulta incluye verificaciones pendientes o en revisión; no es un listado general de usuarios.</p><div id="pending-results" class="management-results"></div>
+<p class="muted">Esta consulta incluye verificaciones pendientes o en revisión; no es un listado general de usuarios.</p>
+<section id="users-batch" class="users-batch" hidden aria-labelledby="batch-title">
+<h3 id="batch-title">Aprobación de verificaciones por lote</h3>
+<p class="warning">La interfaz por lotes no puede autorizarse para uso real hasta que se instale y valide el procedimiento SQL corregido.</p>
+<p class="muted">Selecciona únicamente identidades que hayas revisado y decidido aprobar. La selección no sustituye la revisión de identidad.</p>
+<div class="toolbar"><label class="batch-choice"><input id="batch-all" type="checkbox"> Seleccionar todos los elegibles visibles (máximo 40)</label><button id="batch-clear" type="button">Limpiar selección</button><strong id="batch-count" role="status">Seleccionados: 0 de 40</strong></div>
+<label for="batch-observation">Observación administrativa común (opcional, máximo 500 caracteres)</label>
+<textarea id="batch-observation" maxlength="500" rows="3"></textarea>
+<button id="batch-approve" type="button" class="primary" disabled>Aprobar seleccionados</button>
+</section>
+<div id="pending-results" class="management-results"></div>
+</section>
+<section id="batch-results" class="panel users-batch" hidden aria-labelledby="batch-results-title">
+<h2 id="batch-results-title">Resultado del lote</h2>
+<p id="batch-progress" role="status" aria-live="polite"></p>
+<div id="batch-summary" class="management-results"></div>
+<div id="batch-rows" class="management-results"></div>
+<button id="batch-dismiss" type="button">Descartar resultados revisados e iniciar otro lote</button>
 </section>
 <section class="panel"><h2>Consultar usuario</h2><p class="muted">Este módulo consulta únicamente cuentas cliente con rol USUARIO. Las cuentas administrativas no están admitidas por este contrato.</p>
 <section class="panel"><h2>Buscar cuentas</h2><form id="user-search" class="toolbar"><label for="user-search-text">Nombre o correo<input id="user-search-text" name="buscar" type="search" maxlength="150"></label><button type="submit">Buscar usuarios</button></form>

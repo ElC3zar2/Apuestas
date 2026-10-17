@@ -817,48 +817,70 @@ BEGIN
 
 
     BEGIN TRY
-        BEGIN TRANSACTION;
-
-
         DECLARE @IdUsuario INT;
+        DECLARE @IdUltimaVerificacion INT;
+        DECLARE @IdEstadoVerificacionActual INT;
+        DECLARE @Rol VARCHAR(50);
         DECLARE @EstadoActual VARCHAR(40);
         DECLARE @CorreoVerificado BIT;
         DECLARE @EstadoCuenta VARCHAR(40);
 
+        /* Descubrimiento provisional, no validacion: READCOMMITTEDLOCK libera
+           sus bloqueos de lectura al terminar la sentencia, incluso con RCSI.
+           No retener primero un UPDLOCK de verificacion y luego pedir usuario.
+           La pertenencia y vigencia se comprueban otra vez bajo bloqueo abajo. */
+        SELECT @IdUsuario = V.IdUsuario
+        FROM dbo.VerificacionUsuario AS V WITH (READCOMMITTEDLOCK)
+        WHERE V.IdVerificacion = @IdVerificacion;
 
+        BEGIN TRANSACTION;
+
+        /* Orden de bloqueos de negocio: usuario, rango de verificaciones,
+           escritura. Compatible con cambiar estado y reabrir verificacion. */
         SELECT
-            @IdUsuario = V.IdUsuario,
-            @EstadoActual = EV.Codigo,
+            @Rol = R.Nombre,
             @CorreoVerificado = U.CorreoVerificado,
             @EstadoCuenta = EU.Codigo
-
-        FROM dbo.VerificacionUsuario AS V WITH (UPDLOCK, HOLDLOCK)
-
-        INNER JOIN dbo.Estado AS EV
-            ON EV.IdEstado = V.IdEstado
-
-        INNER JOIN dbo.TipoEstado AS TEV
-            ON TEV.IdTipoEstado = EV.IdTipoEstado
-           AND TEV.Codigo = 'VERIFICACION'
-
-        INNER JOIN dbo.Usuario AS U WITH (UPDLOCK, HOLDLOCK)
-            ON U.IdUsuario = V.IdUsuario
-
+        FROM dbo.Usuario AS U WITH (UPDLOCK, HOLDLOCK)
         INNER JOIN dbo.Rol AS R
             ON R.IdRol = U.IdRol
            AND R.Nombre = 'USUARIO'
-
         INNER JOIN dbo.Estado AS EU
             ON EU.IdEstado = U.IdEstado
-
         INNER JOIN dbo.TipoEstado AS TEU
             ON TEU.IdTipoEstado = EU.IdTipoEstado
            AND TEU.Codigo = 'USUARIO'
+        WHERE U.IdUsuario = @IdUsuario;
 
-        WHERE V.IdVerificacion = @IdVerificacion;
+        IF @Rol IS NULL
+            THROW 63028, 'La verificación no existe o no pertenece a una cuenta cliente.', 1;
 
+        IF @EstadoCuenta = 'CERRADO'
+            THROW 63064, 'No se puede aprobar la verificación de una cuenta cerrada.', 1;
 
-        IF @IdUsuario IS NULL
+        /* HOLDLOCK aplica semantica SERIALIZABLE a esta lectura indexada.
+           Proteger tambien el extremo superior del rango del usuario para
+           impedir una nueva verificacion mayor hasta COMMIT/ROLLBACK.
+           Leer sin joins evita filtrar la ultima fila por su estado. */
+        SELECT TOP (1)
+            @IdUltimaVerificacion = V.IdVerificacion,
+            @IdEstadoVerificacionActual = V.IdEstado
+        FROM dbo.VerificacionUsuario AS V WITH
+            (UPDLOCK, HOLDLOCK, INDEX(IX_VerificacionUsuario_Usuario_Ultima))
+        WHERE V.IdUsuario = @IdUsuario
+        ORDER BY V.IdVerificacion DESC;
+
+        IF @IdUltimaVerificacion IS NULL OR @IdUltimaVerificacion <> @IdVerificacion
+            THROW 63063, 'La verificación indicada ya no es la vigente.', 1;
+
+        SELECT @EstadoActual = EV.Codigo
+        FROM dbo.Estado AS EV
+        INNER JOIN dbo.TipoEstado AS TEV
+            ON TEV.IdTipoEstado = EV.IdTipoEstado
+           AND TEV.Codigo = 'VERIFICACION'
+        WHERE EV.IdEstado = @IdEstadoVerificacionActual;
+
+        IF @EstadoActual IS NULL
             THROW 63028, 'La verificación no existe o no pertenece a una cuenta cliente.', 1;
 
 

@@ -3,6 +3,7 @@ package com.apuestas.controlador;
 import com.apuestas.modelo.AdministracionUsuarioModelos.*;
 import com.apuestas.modelo.OperacionAdministracionUsuario;
 import com.apuestas.seguridad.SesionAdministrativa;
+import com.apuestas.seguridad.CsrfSeguridad;
 import com.apuestas.servicio.AdministracionUsuarioServicio;
 import java.io.IOException;
 import java.sql.SQLException;
@@ -41,6 +42,9 @@ public class AdministracionUsuarioServlet extends HttpServlet {
         catch(RuntimeException e){AdministracionUsuarioHttp.error(res,500);return;}
         try {
             AdministracionUsuarioServicio.autorizar(actor,rol,op.lectura());
+            if(!op.lectura() && !CsrfSeguridad.validar(req,CsrfSeguridad.Ambito.ADMINISTRADOR)) {
+                AdministracionUsuarioHttp.error(res,403);return;
+            }
             Map<String,String[]> params=req.getParameterMap();
             for(Map.Entry<String,String[]> e:params.entrySet()){
                 if(!op.parametros.contains(e.getKey())||e.getValue()==null||e.getValue().length!=1)

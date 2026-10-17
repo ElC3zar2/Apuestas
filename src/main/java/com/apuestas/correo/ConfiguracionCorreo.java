@@ -46,7 +46,10 @@ public final class ConfiguracionCorreo {
         timeoutConexion = numero(variables, "APUESTAS_MAIL_CONNECT_TIMEOUT_MS", 10000, Integer.MAX_VALUE);
         timeoutLectura = numero(variables, "APUESTAS_MAIL_READ_TIMEOUT_MS", 10000, Integer.MAX_VALUE);
         timeoutEscritura = numero(variables, "APUESTAS_MAIL_WRITE_TIMEOUT_MS", 10000, Integer.MAX_VALUE);
-        urlPublica = url(requerido(variables, "APUESTAS_PUBLIC_BASE_URL"));
+        // El flujo actual envia un codigo y no consume una URL publica.
+        // Si se proporciona, conserva todas las validaciones de seguridad.
+        String basePublica = opcional(variables.get("APUESTAS_PUBLIC_BASE_URL"));
+        urlPublica = basePublica == null ? null : url(basePublica);
     }
 
     private static String opcional(String valor) {
@@ -120,6 +123,7 @@ public final class ConfiguracionCorreo {
     public int getPuerto() { return puerto; }
     public String getRemitente() { return remitente; }
     public String getNombreRemitente() { return nombreRemitente; }
+    /** Null cuando no se configura; el flujo de codigo no necesita enlaces. */
     public String getUrlPublica() { return urlPublica; }
     public Seguridad getSeguridad() { return seguridad; }
     public boolean tieneAutenticacion() { return usuario != null; }

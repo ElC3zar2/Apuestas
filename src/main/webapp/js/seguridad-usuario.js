@@ -70,9 +70,24 @@
         let timedOut = false;
         const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); },15000);
         try {
+            const headers = {"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8",Accept:"application/json"};
+            if (name === "verificar-solicitud") {
+                const csrf = await fetch(contextPath + "/usuario/seguridad/csrf",{
+                    method:"GET",credentials:"same-origin",cache:"no-store",redirect:"error",
+                    headers:{Accept:"application/json"},signal:controller.signal
+                });
+                if (csrf.status === 401) throw fault("La solicitud requiere una sesión válida. Vuelve a iniciar sesión.",true);
+                if (!csrf.ok || !/^application\/json\b/i.test(csrf.headers.get("content-type") || ""))
+                    throw fault("No fue posible preparar la solicitud de verificación. Revisa tu sesión antes de repetir.");
+                const data = await csrf.json();
+                if (!data || data.ok !== true || typeof data.csrfToken !== "string"
+                        || !/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(data.csrfToken))
+                    throw fault("No fue posible preparar la solicitud de verificación. Revisa tu sesión antes de repetir.");
+                headers["X-CSRF-Token"] = data.csrfToken;
+            }
             const response = await fetch(contextPath + "/usuario/seguridad/" + contract.route,{
                 method:"POST",credentials:"same-origin",cache:"no-store",
-                headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8",Accept:"application/json"},
+                headers,
                 body:body.toString(),signal:controller.signal
             });
             if (response.status === 401) throw fault(name === "cambio" ? "No se pudo autenticar la solicitud. Comprueba tu contraseña actual; también es posible que necesites iniciar sesión nuevamente." : "La solicitud requiere una sesión válida. Vuelve a iniciar sesión.",true);

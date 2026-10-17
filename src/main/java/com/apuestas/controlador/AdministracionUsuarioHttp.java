@@ -53,7 +53,7 @@ public final class AdministracionUsuarioHttp {
             case 63010:case 63018:case 63022:case 63028:case 63034:case 63038:
             case 63046:case 63056:case 63062:return 404;
             case 63024:case 63029:case 63035:case 63040:case 63041:case 63048:case 63049:
-            case 63050:case 63051:case 63058:case 63059:return 409;
+            case 63050:case 63051:case 63058:case 63059:case 63063:case 63064:return 409;
             default:return 500;
         }
     }

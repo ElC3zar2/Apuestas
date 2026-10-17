@@ -53,6 +53,15 @@ public class PruebaVerificacionCorreoUsuario {
         final List<Object> resultados=new ArrayList<>();
         int conexiones, ejecuciones, indice, filas=1, codigo;
         String sql, fallo;
+        boolean sincronizando, autoCommit=true;
+        int commits, rollbacks;
+        String estadoCuenta="PENDIENTE", estadoVerificacion="PENDIENTE";
+        boolean falloSync;
+        boolean falloCommit, falloRollback;
+        int filasSync=1;
+        final Map<String,Object> cambiosSync=new HashMap<>();
+        TokenCompartido compartido;
+        boolean bloqueo;
         boolean extra, conteos, sinResultado, runtime;
         Jdbc(boolean solicitar) {
             this.solicitar=solicitar;
@@ -79,24 +88,60 @@ public class PruebaVerificacionCorreoUsuario {
                 switch(m.getName()) {
                     case "prepareCall":
                         if ("preparar".equals(fallo)) throw new SQLException("INTERNO preparar");
+                        sincronizando=((String)a[0]).contains("sp_SincronizarHabilitacionUsuario");
+                        if (sincronizando) {
+                            exigir("{call dbo.sp_SincronizarHabilitacionUsuario(?)}".equals(a[0]),"Contrato SQL exacto de sincronizacion");
+                            exigir(cerrados.contains("statement"),"Cerrar primer procedimiento antes del segundo");
+                            exigir(!autoCommit,"Misma transaccion para sincronizar");
+                            indice=0; resultados.clear();
+                            abiertos.add("sync-statement"); return statement();
+                        }
                         sql=(String)a[0]; abiertos.add("statement"); return statement();
-                    case "close": cerrar("conexion"); return null;
+                    case "getAutoCommit": return autoCommit;
+                    case "setAutoCommit": autoCommit=(Boolean)a[0]; return null;
+                    case "commit":
+                        exigir(!autoCommit && sincronizando,"Commit solo despues de sincronizar");
+                        exigir(cerrados.contains("sync-statement") && abiertos.equals(cerradosConConexion()),"Cerrar ambos resultados antes de commit");
+                        if (falloCommit) throw new SQLException("INTERNO commit");
+                        commits++;
+                        if (compartido!=null) compartido.usado=true;
+                        return null;
+                    case "rollback":
+                        rollbacks++;
+                        if (falloRollback) throw new SQLException("INTERNO rollback");
+                        return null;
+                    case "close":
+                        cerrar("conexion");
+                        if (bloqueo) { bloqueo=false; compartido.lock.unlock(); }
+                        return null;
                     default: throw new AssertionError("Conexion inesperada " + m.getName());
                 }
             });
         }
         void cerrar(String nombre) { exigir(cerrados.add(nombre),"Cierre duplicado"); }
+        Set<String> cerradosConConexion() {
+            Set<String> recursos=new HashSet<>(cerrados);
+            recursos.add("conexion");
+            return recursos;
+        }
         boolean esResultado() {
             return indice<resultados.size() && resultados.get(indice) instanceof String;
         }
         CallableStatement statement() {
             return proxy(CallableStatement.class,(p,m,a)->{
                 switch(m.getName()) {
+                    case "setInt": exigir(sincronizando && (Integer)a[0]==1 && (Integer)a[1]==7,"Id de token para sincronizar"); return null;
                     case "setString":
                         if ("parametro".equals(fallo)) throw new SQLException("INTERNO parametro");
                         parametros.put((Integer)a[0],(String)a[1]); return null;
                     case "execute":
+                        if (!solicitar) exigir(!autoCommit,"Autocommit desactivado antes de consumir token");
                         ejecuciones++;
+                        if (!solicitar && !sincronizando && compartido!=null) {
+                            compartido.lock.lock(); bloqueo=true;
+                            if (compartido.usado) throw new SQLException("INTERNO usado","TEST",57015);
+                        }
+                        if (sincronizando && falloSync) throw new SQLException("INTERNO sincronizacion");
                         if (codigo!=0) throw new SQLException("INTERNO SQL "+parametros,"TEST",codigo);
                         if (conteos) { resultados.add(0); resultados.add(2); }
                         if (!sinResultado) resultados.add("principal");
@@ -110,23 +155,39 @@ public class PruebaVerificacionCorreoUsuario {
                         if ("final".equals(fallo)) throw new SQLException("INTERNO final "+parametros);
                         return esResultado();
                     case "getResultSet": return resultado(indice);
-                    case "close": cerrar("statement"); return null;
+                    case "close": cerrar(sincronizando?"sync-statement":"statement"); return null;
                     default: throw new AssertionError("Statement inesperado " + m.getName());
                 }
             });
         }
         ResultSet resultado(int numero) {
-            String nombre="rs"+numero;
+            String nombre=(sincronizando?"sync-":"")+"rs"+numero;
             abiertos.add(nombre);
             int[] posicion={0}; boolean[] nulo={false};
             return proxy(ResultSet.class,(p,m,a)->{
                 switch(m.getName()) {
                     case "next":
                         if ("lectura".equals(fallo)) throw new SQLException("INTERNO lectura");
-                        return ++posicion[0]<=filas;
+                        return ++posicion[0]<=(sincronizando?filasSync:filas);
                     case "wasNull": return nulo[0];
-                    case "getInt": case "getBoolean": case "getTimestamp":
+                    case "getInt": case "getBoolean": case "getTimestamp": case "getString":
                         String columna=(String)a[0];
+                        if (sincronizando) {
+                            if (cambiosSync.containsKey(columna)) {
+                                Object v=cambiosSync.get(columna); nulo[0]=v==null;
+                                if (v!=null || m.getName().equals("getString")) return v;
+                                return m.getName().equals("getInt") ? Integer.valueOf(0) : Boolean.FALSE;
+                            }
+                            nulo[0]=false;
+                            switch(columna) {
+                                case "IdUsuario": return 7;
+                                case "CorreoVerificado": return true;
+                                case "EstadoVerificacion": nulo[0]=estadoVerificacion==null; return estadoVerificacion;
+                                case "EstadoUsuario": return estadoCuenta;
+                                case "Activado": return "ACTIVO".equals(estadoCuenta);
+                                default: throw new AssertionError("Columna sync desconocida");
+                            }
+                        }
                         exigir(fila.containsKey(columna),"Columna desconocida");
                         leidas.add(columna);
                         Object valor=fila.get(columna); nulo[0]=valor==null;
@@ -140,10 +201,93 @@ public class PruebaVerificacionCorreoUsuario {
             });
         }
     }
+    /** Simula el bloqueo de consumo unico de SQL; no valida el motor SQL real. */
+    private static class TokenCompartido {
+        final java.util.concurrent.locks.ReentrantLock lock=new java.util.concurrent.locks.ReentrantLock();
+        boolean usado;
+    }
+
+    /** Doble de las reglas administrativas; no ejecuta el procedimiento SQL. */
+    private static class CuentaSimulada {
+        boolean correo;
+        String estado="PENDIENTE";
+        void aprobar() {
+            if (correo && "PENDIENTE".equals(estado)) estado="ACTIVO";
+        }
+    }
+
+    private static void transacciones() throws Exception {
+        // A y D: el lado administrativo se representa con un doble de sus reglas.
+        Jdbc primeroCorreo=new Jdbc(false);
+        llamar(new Entrada(),primeroCorreo,200);
+        exigir("PENDIENTE".equals(primeroCorreo.estadoCuenta),"C: correo sin aprobacion permanece pendiente");
+        CuentaSimulada cuenta=new CuentaSimulada();
+        cuenta.aprobar();
+        exigir("PENDIENTE".equals(cuenta.estado),"D: doble sin correo no activa");
+        cuenta.correo=primeroCorreo.commits==1;
+        cuenta.aprobar();
+        exigir("ACTIVO".equals(cuenta.estado),"A: doble administrativo despues del correo");
+        for (String estado:Arrays.asList("ACTIVO","SUSPENDIDO","CERRADO")) {
+            Jdbc d=new Jdbc(false); d.estadoCuenta=estado; d.estadoVerificacion="APROBADA";
+            llamar(new Entrada(),d,200); // B, E, F: respuestas oficiales simuladas.
+        }
+        Jdbc sinRevision=new Jdbc(false); sinRevision.estadoVerificacion=null;
+        llamar(new Entrada(),sinRevision,200);
+        for (String columna:Arrays.asList("IdUsuario","CorreoVerificado","EstadoUsuario","Activado")) {
+            Jdbc d=new Jdbc(false); d.cambiosSync.put(columna,null);
+            llamar(new Entrada(),d,500); exigir(d.rollbacks==1,"Rollback ante columna sync nula");
+        }
+        Jdbc distinto=new Jdbc(false); distinto.cambiosSync.put("IdUsuario",8);
+        llamar(new Entrada(),distinto,500);
+        Jdbc falso=new Jdbc(false); falso.cambiosSync.put("CorreoVerificado",false);
+        llamar(new Entrada(),falso,500);
+        Jdbc incoherente=new Jdbc(false); incoherente.cambiosSync.put("Activado",true);
+        llamar(new Entrada(),incoherente,500);
+        for (int filas:new int[]{0,2}) {
+            Jdbc d=new Jdbc(false); d.filasSync=filas;
+            llamar(new Entrada(),d,500); exigir(d.rollbacks==1,"Rollback ante filas sync invalidas");
+        }
+        TokenCompartido token=new TokenCompartido();
+        Jdbc fallo=new Jdbc(false); fallo.compartido=token; fallo.falloSync=true;
+        llamar(new Entrada(),fallo,500);
+        exigir(fallo.rollbacks==1 && !token.usado,"I: fallo sync conserva token");
+        Jdbc recuperado=new Jdbc(false); recuperado.compartido=token;
+        llamar(new Entrada(),recuperado,200); exigir(token.usado,"Reintento explicito tras rollback");
+        Jdbc commit=new Jdbc(false); commit.falloCommit=true;
+        llamar(new Entrada(),commit,500); exigir(commit.rollbacks==1,"Rollback ante fallo commit");
+        Jdbc rollback=new Jdbc(false); rollback.falloSync=true; rollback.falloRollback=true;
+        try {
+            rollback.verificarCorreoConToken("a".repeat(64));
+            throw new AssertionError("Fallo esperado");
+        } catch (SQLException ex) {
+            exigir(ex.getSuppressed().length==1 && !rollback.autoCommit
+                    && rollback.abiertos.equals(rollback.cerrados),"Preservar error y no activar autocommit tras rollback fallido");
+        }
+        TokenCompartido unico=new TokenCompartido();
+        java.util.concurrent.ExecutorService pool=java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.CountDownLatch inicio=new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Boolean>> resultados=new ArrayList<>();
+        try {
+            for (int i=0;i<2;i++) resultados.add(pool.submit(()->{
+                Jdbc d=new Jdbc(false); d.compartido=unico;
+                inicio.await();
+                try { d.verificarCorreoConToken("b".repeat(64)); return true; }
+                catch (SQLException ex) { exigir(ex.getErrorCode()==57015,"Rechazo de token usado"); return false; }
+                finally { exigir(d.abiertos.equals(d.cerrados),"Cierre concurrente"); }
+            }));
+            inicio.countDown();
+            int exitos=0;
+            for (java.util.concurrent.Future<Boolean> resultado:resultados)
+                if (resultado.get(10,java.util.concurrent.TimeUnit.SECONDS)) exitos++;
+            exigir(exitos==1,"J: un solo commit para token compartido en el doble");
+            casos++;
+        } finally { pool.shutdownNow(); }
+    }
     private static class Entrada {
         boolean get, sesion=true, expirada, errorRequest;
         Object id=7, correo=CORREO, rol="USUARIO";
         String token=TokenVerificacionCorreo.generar();
+        String csrfModo="valido", query, origen, sitio;
     }
     private static class Salida {
         int estado=200, sesiones;
@@ -162,19 +306,39 @@ public class PruebaVerificacionCorreoUsuario {
         Field campo=servlet.getClass().getDeclaredField("verificacionServicio");
         campo.setAccessible(true); campo.set(servlet,new VerificacionCorreoServicio(d,correo));
         Salida s=new Salida();
+        Map<String,Object> atributosCsrf=new HashMap<>();
         HttpSession sesion=proxy(HttpSession.class,(p,m,a)->{
-            exigir(m.getName().equals("getAttribute"),"Nunca mutar ni guardar token en sesion");
+            if(m.getName().equals("setAttribute")) {
+                exigir(((String)a[0]).startsWith(CsrfSeguridad.class.getName()+"."),"Solo atributo CSRF");
+                atributosCsrf.put((String)a[0],a[1]);return null;
+            }
+            exigir(m.getName().equals("getAttribute"),"No mutar identidad de sesion");
             if (e.expirada) throw new IllegalStateException("Expirada");
             switch((String)a[0]) {
                 case "idUsuario": return e.id;
                 case "correo": return e.correo;
                 case "rol": return e.rol;
-                default: throw new AssertionError("Atributo inesperado");
+                case "adminIdUsuario":case "adminRol": return null;
+                default: return atributosCsrf.get(a[0]);
             }
         });
+        String guardado=null;
+        if(d.solicitar && !e.expirada && CsrfSeguridad.autorizada(sesion,CsrfSeguridad.Ambito.USUARIO))
+            guardado=CsrfSeguridad.obtener(sesion,CsrfSeguridad.Ambito.USUARIO);
+        final String csrf="ausente".equals(e.csrfModo)?null:"incorrecto".equals(e.csrfModo)?"invalido":
+                "otra-sesion".equals(e.csrfModo)?TokenSeguridad.generar():guardado;
+        if("sin-token-guardado".equals(e.csrfModo))atributosCsrf.clear();
         HttpServletRequest req=proxy(HttpServletRequest.class,(p,m,a)->{
             switch(m.getName()) {
                 case "setCharacterEncoding": s.encoding=(String)a[0]; return null;
+                case "getHeader": return "Origin".equals(a[0])?e.origen:"Sec-Fetch-Site".equals(a[0])?e.sitio:null;
+                case "getHeaders": return Collections.enumeration(csrf==null?Collections.emptyList():
+                        "duplicado".equals(e.csrfModo)?Arrays.asList(csrf,csrf):Arrays.asList(csrf));
+                case "getParameterValues": exigir("_csrf".equals(a[0]),"Parametro CSRF");return null;
+                case "getQueryString": return e.query;
+                case "getScheme": return "http";
+                case "getServerName": return "localhost";
+                case "getServerPort": return 8084;
                 case "getSession":
                     exigir(d.solicitar && !e.get,"Confirmar/GET nunca consulta sesion");
                     exigir(a!=null && a.length==1 && Boolean.FALSE.equals(a[0]),"Solo getSession(false)");
@@ -208,7 +372,8 @@ public class PruebaVerificacionCorreoUsuario {
         exigir(s.estado==esperado,"HTTP esperado "+esperado+", recibido "+s.estado);
         exigir("application/json;charset=UTF-8".equals(s.tipo),"JSON UTF8");
         exigir("no-store".equals(s.headers.get("Cache-Control")),"No store");
-        exigir(s.sesiones==(d.solicitar && !e.get ? 1:0),"Sesion sin cambios");
+        exigir(d.solicitar && !e.get ? s.sesiones>=1 && s.sesiones<=2 : s.sesiones==0,"Sin creacion de sesiones");
+        exigir(csrf==null || !s.cuerpo.toString().contains(csrf),"No exponer CSRF en respuesta");
         s.json=JSON.readTree(s.cuerpo.toString());
         exigir(s.json.get("ok").asBoolean()==(esperado==200),"ok");
         exigir(s.json.size()==(esperado==200 && d.solicitar ? 1:2),"Campos externos exactos");
@@ -216,7 +381,9 @@ public class PruebaVerificacionCorreoUsuario {
         if (esperado!=200) exigir(s.json.get("mensaje").isTextual(),"Error generico");
         if (e.get) exigir("POST".equals(s.headers.get("Allow")) && d.conexiones==0 && correo.envios==0,"GET no consume");
         exigir(d.abiertos.equals(d.cerrados),"Todos los recursos cerrados");
-        exigir(d.conexiones<=1 && d.ejecuciones<=1 && correo.envios<=1,"Sin consultas adicionales ni reintentos");
+        exigir(d.conexiones<=1 && d.ejecuciones<=(d.solicitar?1:2) && correo.envios<=1,"Sin conexiones adicionales ni reintentos");
+        if (!d.solicitar && esperado==200) exigir(d.commits==1 && d.rollbacks==0 && d.autoCommit,"Commit y restauracion de autocommit");
+        if (!d.solicitar && esperado!=200) exigir(d.commits==0,"No confirmar errores");
         String hash=d.parametros.get(d.solicitar?3:1);
         if (d.sql!=null) {
             exigir((d.solicitar?"{call dbo.sp_CrearTokenSeguridad(?, ?, ?)}"
@@ -256,6 +423,8 @@ public class PruebaVerificacionCorreoUsuario {
     private static void filtro(String ruta, String pathInfo, boolean publica) throws Exception {
         int[] accesos={0}, estado={200};
         Map<String,String> headers=new HashMap<>();
+        StringWriter cuerpo=new StringWriter();
+        String[] tipo={null};
         HttpServletRequest req=proxy(HttpServletRequest.class,(p,m,a)->{
             switch(m.getName()) {
                 case "getServletPath": return ruta;
@@ -270,12 +439,21 @@ public class PruebaVerificacionCorreoUsuario {
         HttpServletResponse res=proxy(HttpServletResponse.class,(p,m,a)->{
             if ("setStatus".equals(m.getName())) { estado[0]=(Integer)a[0]; return null; }
             if ("setHeader".equals(m.getName())) { headers.put((String)a[0],(String)a[1]); return null; }
+            if ("setContentType".equals(m.getName())) { tipo[0]=(String)a[0]; return null; }
+            if ("getWriter".equals(m.getName())) return new PrintWriter(cuerpo);
             throw new AssertionError("Filtro response "+m.getName());
         });
         new ControlAcceso().doFilter(req,res,(r,s)->accesos[0]++);
         exigir(accesos[0]==(publica?1:0),"Exclusion exacta");
-        if (!publica) exigir(estado[0]==303
-                && "/PlataformaApuestasNuevo/usuario/login".equals(headers.get("Location")),"Ruta protegida");
+        String rutaCompleta=ruta+(pathInfo==null?"":pathInfo);
+        if (!publica) {
+            if (Arrays.asList("/usuario/seguridad/verificacion-correo/solicitar",
+                    "/usuario/seguridad/cambiar-contrasena").contains(rutaCompleta)) {
+                exigir(estado[0]==401 && "application/json;charset=UTF-8".equals(tipo[0])
+                        && !JSON.readTree(cuerpo.toString()).get("ok").asBoolean(),"API protegida responde 401 JSON");
+            } else exigir(estado[0]==303
+                    && "/PlataformaApuestasNuevo/usuario/login".equals(headers.get("Location")),"Ruta protegida");
+        }
         casos++;
     }
     public static void main(String[] args) throws Exception {
@@ -289,6 +467,7 @@ public class PruebaVerificacionCorreoUsuario {
         Logger lc=Logger.getLogger(ConfirmarVerificacionCorreoServlet.class.getName());
         ls.addHandler(h); lc.addHandler(h);
         try {
+            transacciones();
             exigir(Arrays.asList(SolicitarVerificacionCorreoServlet.class.getAnnotation(WebServlet.class).value())
                     .contains("/usuario/seguridad/verificacion-correo/solicitar"),"Mapping solicitar");
             exigir(Arrays.asList(ConfirmarVerificacionCorreoServlet.class.getAnnotation(WebServlet.class).value())
@@ -313,8 +492,17 @@ public class PruebaVerificacionCorreoUsuario {
             }
             e=new Entrada(); e.expirada=true; rechazar(e,new Jdbc(true),401);
             for (Object id:new Object[]{"7",7L,new BigDecimal("7.00")}) {
-                e=new Entrada(); e.id=id; e.correo=" CLIENTE@EXAMPLE.INVALID "; llamar(e,new Jdbc(true),200);
+                e=new Entrada(); e.id=id; e.correo=" CLIENTE@EXAMPLE.INVALID "; rechazar(e,new Jdbc(true),403);
             }
+            for(String modo:Arrays.asList("ausente","incorrecto","otra-sesion","duplicado","sin-token-guardado")) {
+                e=new Entrada();e.csrfModo=modo;rechazar(e,new Jdbc(true),403);
+            }
+            for(String query:Arrays.asList("_csrf=token","X-CSRF-Token=token","%5Fcsrf=token")) {
+                e=new Entrada();e.query=query;rechazar(e,new Jdbc(true),403);
+            }
+            e=new Entrada();e.origen="https://otro.example.invalid";rechazar(e,new Jdbc(true),403);
+            e=new Entrada();e.sitio="cross-site";rechazar(e,new Jdbc(true),403);
+            e=new Entrada();e.origen="http://localhost:8084";e.sitio="same-origin";llamar(e,new Jdbc(true),200);
             Jdbc d=new Jdbc(true); CorreoFake correo=new CorreoFake();
             Salida creado=ejecutar(new Entrada(),d,correo,200);
             String primerHash=d.parametros.get(3);

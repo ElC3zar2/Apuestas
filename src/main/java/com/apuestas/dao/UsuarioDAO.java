@@ -229,17 +229,62 @@ public class UsuarioDAO {
 
     public void verificarCorreoConToken(String tokenHash) throws SQLException {
         validarHashVerificacion(tokenHash);
-        try (Connection conexion = obtenerConexion();
-             CallableStatement cs = conexion.prepareCall("{call dbo.sp_VerificarCorreoConToken(?)}")) {
+        try (Connection conexion = obtenerConexion()) {
+            // Conexion exclusiva de esta operacion. No confirmar una transaccion ajena.
+            if (!conexion.getAutoCommit()) {
+                throw new SQLException("Se requiere una conexion sin transaccion previa.");
+            }
+            conexion.setAutoCommit(false);
+            try {
+                verificarYSincronizarCorreo(conexion, tokenHash);
+                conexion.commit();
+            } catch (SQLException | RuntimeException | Error error) {
+                try {
+                    conexion.rollback();
+                } catch (SQLException rollback) {
+                    error.addSuppressed(rollback);
+                }
+                // No restaurar autocommit aqui: podria confirmar una transaccion
+                // cuyo rollback fallo. close devuelve/descarta la conexion del pool.
+                throw error;
+            }
+            conexion.setAutoCommit(true);
+        }
+    }
+
+    private void verificarYSincronizarCorreo(Connection conexion, String tokenHash)
+            throws SQLException {
+        int idUsuario;
+        try (CallableStatement cs = conexion.prepareCall("{call dbo.sp_VerificarCorreoConToken(?)}")) {
             cs.setString(1, tokenHash);
             try (ResultSet rs = ejecutarConsulta(cs)) {
                 if (!rs.next()) throw new SQLException("Falta el resultado de verificacion.");
-                int idUsuario = enteroObligatorio(rs, "IdUsuario");
+                idUsuario = enteroObligatorio(rs, "IdUsuario");
                 boolean verificado = booleanObligatorio(rs, "CorreoVerificado");
                 if (idUsuario <= 0 || !verificado) {
                     throw new SQLException("Resultado de verificacion inconsistente.");
                 }
                 if (rs.next()) throw new SQLException("Resultado de verificacion duplicado.");
+            }
+            comprobarFinVerificacion(cs);
+        }
+        try (CallableStatement cs = conexion.prepareCall(
+                "{call dbo.sp_SincronizarHabilitacionUsuario(?)}")) {
+            cs.setInt(1, idUsuario);
+            try (ResultSet rs = ejecutarConsulta(cs)) {
+                if (!rs.next()) throw new SQLException("Falta el resultado de sincronizacion.");
+                int idRespuesta = enteroObligatorio(rs, "IdUsuario");
+                boolean verificado = booleanObligatorio(rs, "CorreoVerificado");
+                // Puede ser nulo cuando todavia no existe verificacion administrativa.
+                String verificacion = rs.getString("EstadoVerificacion");
+                String estado = textoObligatorio(rs, "EstadoUsuario");
+                boolean activado = booleanObligatorio(rs, "Activado");
+                if (idRespuesta != idUsuario || !verificado
+                        || (activado && (!"ACTIVO".equals(estado)
+                            || !"APROBADA".equals(verificacion)))) {
+                    throw new SQLException("Resultado de sincronizacion inconsistente.");
+                }
+                if (rs.next()) throw new SQLException("Resultado de sincronizacion duplicado.");
             }
             comprobarFinVerificacion(cs);
         }

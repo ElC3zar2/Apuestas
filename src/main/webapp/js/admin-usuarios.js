@@ -21,6 +21,11 @@
     const labels = {idUsuario:'ID de usuario',idVerificacion:'ID de verificación',idRestriccion:'ID de restricción',estadoVerificacion:'Estado de verificación',estadoUsuario:'Estado de cuenta',correoVerificado:'Correo verificado',sinCambios:'Sin cambios',estadoAnterior:'Estado anterior',estadoActual:'Estado actual',tipoRestriccion:'Tipo de restricción',motivo:'Motivo',fechaFin:'Fecha de fin',activa:'Activa'};
     const forms = new Map(), controllers = new Set(), uncertain = new Set();
     const operationPanels = new Map(), operationButtons = new Map();
+    const batchSelection = new Map(), batchChecks = new Map();
+    const batchStates = {activo:'Aprobado y ACTIVO',correo:'Aprobado, pendiente de correo',
+        suspendido:'Aprobado, cuenta SUSPENDIDA (sin reactivación)',omitido:'Omitido por cambio de estado',
+        rechazado:'Rechazado por el backend',incierto:'Resultado incierto',pendiente:'No procesado'};
+    let pendingRows = [], batchResults = null, batchRunning = false, batchStopped = false;
     let detail = null, busy = false, expired = false, stale = false, searchPage=1, searchTotal=0, searchText="";
     const display = value => value == null || value === '' ? '—' : typeof value === 'boolean' ? (value ? 'Sí' : 'No') : String(value);
     const identity = user => [user.nombre,user.apellido].filter(Boolean).join(' ').trim() || user.correo || 'Cuenta consultada';
@@ -55,6 +60,7 @@
         $('users-prev').disabled=busy||expired||!readable||searchPage<=1;
         $('users-next').disabled=busy||expired||!readable||searchPage*50>=searchTotal;
         $('users-forms').setAttribute('aria-busy',String(busy));
+        syncBatch();
     }
     function report(error) {
         const message=error.status?(error.serverMessage||errors[error.status]||'No fue posible procesar la solicitud.')
@@ -149,10 +155,165 @@
         catch(error){report(error);status('No se pudo consultar el usuario #'+Number(id)+'. '+$('users-status').textContent,true);}finally{busy=false;sync();}
     }
     async function readPending() {
+        batchSelection.clear();batchChecks.clear();pendingRows=[];syncBatch();
         $('pending-results').replaceChildren();
         const data=await api(prefix+'pendientes?'+new URLSearchParams({cantidad:$('pending-count').value}));
         if(!Array.isArray(data.usuarios)||data.usuarios.some(user=>!validId(user.idUsuario)||typeof user.correo!=='string'))throw new Error('La respuesta de pendientes no cumple el contrato.');
-        table($('pending-results'),'Usuarios pendientes o en revisión',['Usuario','Correo','Estado de cuenta','Verificación','Correo verificado','Solicitud','Acción'],data.usuarios.map(user=>[identity(user),user.correo,user.estadoUsuario,user.estadoVerificacion,user.correoVerificado,user.fechaSolicitud,button('Consultar usuario',()=>consult(user.idUsuario))]));
+        const userIds=new Set(),verificationIds=new Set();
+        if(data.usuarios.some(user=>!Number.isInteger(user.idUsuario)||!Number.isInteger(user.idVerificacion)
+                ||!validId(user.idVerificacion)||typeof user.correoVerificado!=='boolean'
+                ||userIds.has(user.idUsuario)||verificationIds.has(user.idVerificacion)
+                ||!userIds.add(user.idUsuario)||!verificationIds.add(user.idVerificacion)))
+            throw new Error('El listado contiene referencias duplicadas o inconsistentes.');
+        pendingRows=data.usuarios.map(user=>({idUsuario:user.idUsuario,idVerificacion:user.idVerificacion,
+            nombre:user.nombre,apellido:user.apellido,correo:user.correo,rol:user.rol,
+            estadoUsuario:user.estadoUsuario,estadoVerificacion:user.estadoVerificacion,
+            correoVerificado:user.correoVerificado,fechaSolicitud:user.fechaSolicitud}));
+        table($('pending-results'),'Usuarios pendientes o en revisión',
+            [...(writable?['Seleccionar']:[]),'Usuario','Correo','Estado de cuenta','Verificación','Correo verificado','Solicitud','Acción'],
+            pendingRows.map(user=>[...(writable?[batchCheckbox(user)]:[]),identity(user),user.correo,user.estadoUsuario,user.estadoVerificacion,user.correoVerificado,user.fechaSolicitud,button('Consultar usuario',()=>consult(user.idUsuario))]));
+        syncBatch();
+    }
+    function batchEligible(user) {
+        // El listado oficial solo devuelve cuentas cliente; el detalle vuelve a validar el rol.
+        return writable&&!uncertain.has(user.idUsuario)&&(!user.rol||user.rol==='USUARIO')&&Number.isInteger(user.idUsuario)
+            &&validId(user.idUsuario)&&Number.isInteger(user.idVerificacion)&&validId(user.idVerificacion)
+            &&['PENDIENTE','EN_REVISION'].includes(user.estadoVerificacion)
+            &&['PENDIENTE','ACTIVO','SUSPENDIDO'].includes(user.estadoUsuario);
+    }
+    function batchCheckbox(user) {
+        const input=node('input');input.type='checkbox';input.className='batch-row-choice';
+        input.setAttribute('aria-label','Seleccionar '+identity(user)+' · '+user.correo);
+        input.addEventListener('change',()=>{
+            if(busy||expired||batchResults||!batchEligible(user)){input.checked=false;return;}
+            if(input.checked){
+                if(batchSelection.size>=40){input.checked=false;status('No puedes seleccionar más de 40 verificaciones.',true);}
+                else batchSelection.set(user.idUsuario,{...user});
+            }else batchSelection.delete(user.idUsuario);
+            syncBatch();
+        });
+        batchChecks.set(user.idUsuario,input);return input;
+    }
+    function syncBatch() {
+        const blocked=busy||expired||!writable||batchResults!==null;
+        $('users-batch').hidden=!writable;
+        $('batch-count').textContent='Seleccionados: '+batchSelection.size+' de 40';
+        for(const user of pendingRows){const box=batchChecks.get(user.idUsuario);if(box){box.checked=batchSelection.has(user.idUsuario);box.disabled=blocked||!batchEligible(user);}}
+        const eligible=pendingRows.filter(batchEligible);
+        $('batch-all').disabled=blocked||!eligible.length;
+        $('batch-all').checked=eligible.length>0&&eligible.length<=40&&eligible.every(user=>batchSelection.has(user.idUsuario));
+        $('batch-all').indeterminate=batchSelection.size>0&&!$('batch-all').checked;
+        $('batch-clear').disabled=blocked||!batchSelection.size;
+        $('batch-observation').disabled=blocked;
+        $('batch-approve').disabled=blocked||batchSelection.size===0||batchSelection.size>40;
+        $('batch-dismiss').disabled=busy||batchRunning;
+    }
+    function renderBatch() {
+        if(!batchResults)return;
+        $('batch-results').hidden=false;
+        const counts=Object.fromEntries(Object.keys(batchStates).map(key=>[key,0]));
+        batchResults.forEach(row=>counts[row.state]++);
+        $('batch-summary').replaceChildren();
+        values($('batch-summary'),[['Seleccionados',batchResults.length],...Object.entries(batchStates).map(([key,label])=>[label,counts[key]])]);
+        $('batch-rows').replaceChildren();
+        table($('batch-rows'),'Resultado conservado para revisión administrativa',
+            ['Usuario','Correo','Verificación','Resultado','Detalle','Acción'],
+            batchResults.map(row=>[identity(row.user),row.user.correo,row.user.idVerificacion,batchStates[row.state],row.note,
+                button('Consultar usuario',()=>consult(row.user.idUsuario))]));
+        sync();
+    }
+    async function batchDetail(user) {
+        const data=await api(prefix+'detalle?'+new URLSearchParams({idUsuario:String(user.idUsuario)}));
+        const next=data.detalle;
+        if(!next||next.usuario?.idUsuario!==user.idUsuario||!Array.isArray(next.verificaciones)
+                ||typeof next.usuario.correoVerificado!=='boolean'||typeof next.usuario.estadoUsuario!=='string'
+                ||typeof next.usuario.rol!=='string'||typeof next.usuario.correo!=='string')
+            throw new Error('El detalle no confirma la cuenta solicitada.');
+        const ids=new Set();
+        if(next.verificaciones.some(v=>!Number.isInteger(v.idVerificacion)||!validId(v.idVerificacion)
+                ||typeof v.estadoVerificacion!=='string'||ids.has(v.idVerificacion)||!ids.add(v.idVerificacion)))
+            throw new Error('Historial de verificación inconsistente.');
+        const latest=next.verificaciones.reduce((last,v)=>!last||v.idVerificacion>last.idVerificacion?v:last,null);
+        return {account:next.usuario,latest};
+    }
+    function batchUnchanged(user,current) {
+        return current.account.rol==='USUARIO'&&current.account.estadoUsuario===user.estadoUsuario
+            &&current.account.correo===user.correo&&current.account.correoVerificado===user.correoVerificado
+            &&current.account.estadoUsuario!=='CERRADO'&&current.latest?.idVerificacion===user.idVerificacion
+            &&current.latest.estadoVerificacion===user.estadoVerificacion
+            &&['PENDIENTE','EN_REVISION'].includes(current.latest.estadoVerificacion);
+    }
+    async function reconcileBatch(row) {
+        try {
+            const current=await batchDetail(row.user);
+            row.note+=' Consulta posterior: cuenta '+current.account.estadoUsuario+', última verificación '
+                +(current.latest?current.latest.idVerificacion+' / '+current.latest.estadoVerificacion:'ausente')
+                +'. Esta consulta no demuestra qué solicitud produjo ese estado.';
+        }catch(error){if(error.status===401)report(error);row.note+=' No fue posible reconciliar el detalle oficial.';}
+    }
+    async function approveBatch() {
+        if(busy||expired||!writable||batchResults||!batchSelection.size||batchSelection.size>40)return;
+        const selected=[...batchSelection.values()].map(user=>({...user}));
+        if(selected.some(user=>!batchEligible(user))||new Set(selected.map(u=>u.idVerificacion)).size!==selected.length)return;
+        const observation=$('batch-observation').value.trim();
+        if(observation.length>500){status('La observación no puede superar 500 caracteres.',true);return;}
+        const confirmation='Aprobar '+selected.length+' verificaciones administrativas de identidades ya revisadas:\n\n'
+            +selected.map(u=>identity(u)+' · '+u.correo+' · '+u.estadoVerificacion+' · correo verificado: '+display(u.correoVerificado)).join('\n')
+            +'\n\nAprobar la identidad NO confirma el correo. Sin correo verificado puede continuar PENDIENTE. '
+            +'La activación depende del backend; una cuenta suspendida no se reactiva. ¿Confirmas la aprobación?';
+        if(!window.confirm(confirmation))return;
+        busy=true;batchRunning=true;batchStopped=false;stale=true;sync();
+        batchResults=selected.map(user=>({user,state:'pendiente',note:'No se ha enviado una aprobación.'}));
+        renderBatch();
+        try {
+            for(let index=0;index<batchResults.length;index++){
+                const row=batchResults[index];let sent=false,phase='detalle';
+                $('batch-progress').textContent='Procesando '+(index+1)+' de '+batchResults.length+': '+identity(row.user);
+                try {
+                    const current=await batchDetail(row.user);
+                    if(!batchUnchanged(row.user,current)){row.state='omitido';row.note='El registro cambió o dejó de ser elegible. No se envió POST.';renderBatch();continue;}
+                    phase='csrf';
+                    const csrf=await api('/administrador/seguridad/csrf');
+                    if(typeof csrf.csrfToken!=='string'||!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(csrf.csrfToken))
+                        throw new Error('No se obtuvo autorización CSRF válida.');
+                    const payload=new URLSearchParams({idVerificacion:String(row.user.idVerificacion)});
+                    if(observation)payload.set('observacion',observation);
+                    phase='aprobar';sent=true;
+                    const data=await api(prefix+'verificacion/aprobar',{method:'POST',headers:{'X-CSRF-Token':csrf.csrfToken},body:payload});
+                    const result=data.resultado;
+                    validateOutcome('verificacion/aprobar',result,payload,row.user.idUsuario);
+                    if(result.estadoVerificacion!=='APROBADA'||typeof result.correoVerificado!=='boolean'
+                            ||typeof result.sinCambios!=='boolean'||!['ACTIVO','PENDIENTE','SUSPENDIDO'].includes(result.estadoUsuario)
+                            ||result.estadoUsuario==='ACTIVO'&&!result.correoVerificado
+                            ||result.estadoUsuario==='PENDIENTE'&&result.correoVerificado)
+                        throw new Error('La respuesta no confirma un resultado de aprobación consistente.');
+                    row.state=result.estadoUsuario==='ACTIVO'?'activo':result.estadoUsuario==='SUSPENDIDO'?'suspendido':'correo';
+                    row.note='Respuesta oficial: APROBADA; cuenta '+result.estadoUsuario+'; correo verificado: '
+                        +display(result.correoVerificado)+'. '+(result.sinCambios?'El servidor informó sin cambios; no se atribuye una aprobación nueva.':'Operación confirmada.');
+                }catch(error){
+                    const definite=Number.isInteger(error.status)&&[400,401,403,404,405,409].includes(error.status);
+                    if(sent&&!definite){
+                        row.state='incierto';row.note='POST sin resultado concluyente. Se detuvieron las escrituras; no se reintenta.';
+                        uncertain.add(row.user.idUsuario);await reconcileBatch(row);
+                    }else if(sent){row.state='rechazado';row.note='HTTP '+error.status+': '+(errors[error.status]||'Solicitud rechazada.');}
+                    else if(error.status===404&&phase==='detalle'){row.state='omitido';row.note='El registro ya no está disponible. No se envió POST.';}
+                    else row.note='No se envió POST: no se pudo validar '+(phase==='csrf'?'CSRF':'el detalle')+'.';
+                    if(error.status===401)report(error);
+                    // 409/400/404 oficiales de un POST permiten seguir; un 403 detiene
+                    // el lote para revisar permisos/CSRF. Cualquier ambigüedad detiene.
+                    if(!definite||[401,403,405].includes(error.status)||phase==='csrf'){
+                        batchStopped=true;renderBatch();break;
+                    }
+                }
+                renderBatch();
+            }
+        }finally{
+            if(!expired){try{await readPending();}catch(error){report(error);batchStopped=true;}}
+            batchRunning=false;busy=false;
+            $('batch-progress').textContent=(batchStopped?'Lote detenido. Revisión manual obligatoria antes de otro lote.':'Lote finalizado.')
+                +' Los resultados se conservan; no se reenvía ninguna aprobación.';
+            renderBatch();
+        }
     }
     function validateOutcome(route,result,payload,userId) {
         if(!result||Array.isArray(result)||result.idUsuario!==userId)throw new Error('Respuesta sin confirmación para la cuenta seleccionada.');
@@ -221,6 +382,24 @@
             status(data.usuarios.length?'Selecciona una cuenta para consultar su detalle.':'No se encontraron usuarios con esos datos.');
         }catch(e){report(e);}finally{busy=false;sync();}
     }
+    $('batch-all').addEventListener('change',()=>{
+        if(busy||expired||!writable||batchResults)return;
+        batchSelection.clear();
+        if($('batch-all').checked){
+            const eligible=pendingRows.filter(batchEligible);
+            eligible.slice(0,40).forEach(user=>batchSelection.set(user.idUsuario,{...user}));
+            if(eligible.length>40)status('Se seleccionaron los primeros 40 elegibles visibles. Revisa las identidades antes de confirmar.');
+        }
+        syncBatch();
+    });
+    $('batch-clear').addEventListener('click',()=>{if(busy||expired||!writable||batchResults)return;batchSelection.clear();syncBatch();});
+    $('batch-approve').addEventListener('click',approveBatch);
+    $('batch-dismiss').addEventListener('click',()=>{
+        if(busy||batchRunning||!batchResults)return;
+        if(!window.confirm('¿Ya revisaste los resultados y los registros no procesados? Descartarlos no reenvía solicitudes. Los resultados inciertos requieren consultar manualmente la cuenta antes de volver a seleccionarla.'))return;
+        batchResults=null;batchSelection.clear();$('batch-results').hidden=true;
+        $('batch-summary').replaceChildren();$('batch-rows').replaceChildren();syncBatch();
+    });
     $('user-search').addEventListener('submit',event=>{event.preventDefault();searchText=$('user-search-text').value.trim();searchUsers(1);});
     $('users-prev').addEventListener('click',()=>{if(searchPage>1)searchUsers(searchPage-1);});
     $('users-next').addEventListener('click',()=>{if(searchPage*50<searchTotal)searchUsers(searchPage+1);});

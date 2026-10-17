@@ -34,6 +34,28 @@ public class PruebaIntegracionBackendAdministrativo {
         @SuppressWarnings("unchecked") Api(Object caso) throws Exception {
             this.caso=caso;h=(Http)campo(caso,"h");
             params=(Map<String,String[]>)campo(caso,caso instanceof PruebaAdministracionUsuario.Caso?"parametros":"params");
+            prepararCsrf();
+        }
+        Api usarSesion(Sesion sesion) throws Exception {
+            h.previa=sesion;
+            prepararCsrf();
+            return this;
+        }
+        /** Preparacion explicita: ejecutar no regenera tokens ni oculta casos negativos. */
+        void prepararCsrf() throws Exception {
+            String atributo=null;
+            if(caso instanceof PruebaAdministracionUsuario.Caso
+                    && !((PruebaAdministracionUsuario.Caso)caso).op.lectura()) atributo="csrf";
+            if(caso instanceof PruebaAdministracionEventos.Caso) {
+                OperacionAdministracionEventos op=((PruebaAdministracionEventos.Caso)caso).op;
+                if(op==OperacionAdministracionEventos.ASOCIAR_PARTICIPANTE_LIGA
+                        ||op==OperacionAdministracionEventos.DESASOCIAR_PARTICIPANTE_LIGA) atributo="tokenCsrf";
+            }
+            if(atributo==null)return;
+            Sesion sesion=h.previa;
+            String token=sesion!=null&&!sesion.expirada&&!sesion.invalidada
+                    &&SesionAdministrativa.valida(sesion.ref)?obtenerToken(sesion):null;
+            asignar(caso,atributo,token);
         }
         JsonNode ejecutar(int estado) throws Exception {
             Method m=caso.getClass().getDeclaredMethod("ejecutar",int.class);m.setAccessible(true);
@@ -45,6 +67,31 @@ public class PruebaIntegracionBackendAdministrativo {
                 throw (Error)causa;
             }
         }
+    }
+    /** GET oficial con la sesion efectiva; sin sesiones nuevas, SQL ni tokens en URL. */
+    private static String obtenerToken(Sesion sesion) throws Exception {
+        Http h=new Http();h.method="GET";h.ruta=CsrfSeguridad.RUTA_ADMIN;h.previa=sesion;
+        javax.servlet.http.HttpServletRequest req=proxy(javax.servlet.http.HttpServletRequest.class,(p,m,a)->{
+            switch(m.getName()) {
+                case "getParameterMap":return Collections.emptyMap();
+                case "getQueryString":return null;
+                case "getHeader":return "Origin".equals(a[0])?"http://localhost:8084":
+                        "Sec-Fetch-Site".equals(a[0])?"same-origin":null;
+                case "getScheme":return "http";
+                case "getServerName":return "localhost";
+                case "getServerPort":return 8084;
+                default:try{return m.invoke(h.req,a);}catch(InvocationTargetException e){throw e.getCause();}
+            }
+        });
+        new ControlAccesoAdministrativo().doFilter(req,h.res,(r,s)->
+                new TokenCsrfServlet().service((javax.servlet.http.HttpServletRequest)r,(javax.servlet.http.HttpServletResponse)s));
+        exigir(h.status==200&&h.creaciones==0&&"application/json;charset=UTF-8".equals(h.tipo));
+        exigir("no-store".equals(h.headers.get("Cache-Control"))&&"nosniff".equals(h.headers.get("X-Content-Type-Options")));
+        JsonNode json=JSON.readTree(h.body.toString());
+        String token=json.path("csrfToken").asText();
+        exigir(json.size()==2&&json.path("ok").asBoolean()&&TokenSeguridad.esValido(token));
+        casos++;
+        return token;
     }
     private static Sesion login(String rol) throws Exception {
         Dao d=new Dao();d.u=usuario(7,3,rol,"ACTIVO",HASH,false);
@@ -153,6 +200,46 @@ public class PruebaIntegracionBackendAdministrativo {
         if(!rechazo) throw new AssertionError("IdUsuario DECIMAL fue aceptado como INT por conversion JDBC");
         exigir(j.conexionCerrada&&j.statementCerrado&&j.abiertos==j.cerrados);casos++;
     }
+    private static void csrfIntegrado() throws Exception {
+        Sesion autentica=login("ADMINISTRADOR");
+        PruebaAdministracionUsuario.Caso despuesLogin=new PruebaAdministracionUsuario.Caso(OperacionAdministracionUsuario.APROBAR);
+        String anterior=despuesLogin.csrf;
+        Api valida=new Api(despuesLogin).usarSesion(autentica);
+        exigir(!anterior.equals(despuesLogin.csrf));
+        valida.ejecutar(200);exigir(despuesLogin.j.llamadas==1);
+
+        Sesion otra=new PruebaAdministracionUsuario.Caso(OperacionAdministracionUsuario.APROBAR).h.previa;
+        String tokenAjeno=obtenerToken(otra);
+        for(OperacionAdministracionUsuario op:OperacionAdministracionUsuario.values()) {
+            if(op.lectura())continue;
+            for(String modo:new String[]{"correcto","ajeno","ausente","incorrecto","origen","url","expirada","auditor","usuario"}) {
+                PruebaAdministracionUsuario.Caso c=new PruebaAdministracionUsuario.Caso(op);
+                Api a=new Api(c);int esperado=403;
+                switch(modo) {
+                    case "correcto":c.origen="http://localhost:8084";c.sitio="same-origin";esperado=200;break;
+                    case "ajeno":exigir(!c.csrf.equals(tokenAjeno));c.csrf=tokenAjeno;break;
+                    case "ausente":c.csrf=null;break;
+                    case "incorrecto":c.csrf="invalido";break;
+                    case "origen":c.origen="https://otro.example.invalid";break;
+                    case "url":c.query="X-CSRF-Token="+c.csrf;c.csrf=null;break;
+                    case "expirada":c.h.previa.expirada=true;esperado=401;break;
+                    case "auditor":c.h.previa.datos.put("adminRol","AUDITOR");a.prepararCsrf();break;
+                    case "usuario":c.h.previa.datos.clear();c.h.previa.datos.put("idUsuario",7);c.h.previa.datos.put("rol","USUARIO");break;
+                    default:throw new AssertionError(modo);
+                }
+                a.ejecutar(esperado);
+                exigir(c.j.llamadas==(esperado==200?1:0));
+                exigir(c.j.ejecuciones==(esperado==200?1:0));
+            }
+        }
+        PruebaAdministracionUsuario.Caso despuesLogout=new PruebaAdministracionUsuario.Caso(OperacionAdministracionUsuario.APROBAR);
+        Api rechazada=new Api(despuesLogout).usarSesion(autentica);
+        logout(autentica);
+        // El contenedor deja de entregar la sesion invalidada; conservar el
+        // header anterior no autoriza una nueva operacion tras el logout.
+        rechazada.h.previa=null;rechazada.ejecutar(401);
+        exigir(despuesLogout.j.llamadas==0&&despuesLogout.j.ejecuciones==0);
+    }
     public static void main(String[] args) throws Exception {
         if(args.length>0 && "seguridad".equals(args[0])) {
             for(Supplier<Object> fabrica:fabricas()) {
@@ -173,8 +260,9 @@ public class PruebaIntegracionBackendAdministrativo {
                     else if(a.caso instanceof PruebaLiquidacionAdministrativa.Caso)
                         permitido|=rol.equals("CAJERO")||(rol.equals("AUDITOR")&&a.h.ruta.endsWith("/consultar"));
                     else permitido|=rol.equals("AUDITOR");
+                    a.prepararCsrf();
                     Map<String,Object> identidad=new HashMap<>(a.h.previa.datos);a.ejecutar(permitido?200:403);
-                    exigir(a.h.previa.datos.equals(identidad)); // POST sin token compatible: filtro CSRF no registrado.
+                    exigir(a.h.previa.datos.equals(identidad)); // CSRF de la sesion efectiva antes de capturar identidad.
                 }
             }
             System.out.println("Integracion seguridad administrativa: "+casos+" casos, 0 fallos; sin SQL/login real.");return;
@@ -202,12 +290,12 @@ public class PruebaIntegracionBackendAdministrativo {
             System.out.println("Integracion administrativa eventos: " + casos + " casos, 0 fallos; sin SQL.");return;
         }
         if(args.length>0) { tipoJdbcEstricto();return; }
-        mappings();navegacion();tipoJdbcEstricto();
+        csrfIntegrado();mappings();navegacion();tipoJdbcEstricto();
         Sesion admin=login("ADMINISTRADOR");
-        CsrfSeguridad.obtener(admin.ref,CsrfSeguridad.Ambito.ADMINISTRADOR);
+        obtenerToken(admin);
         Map<String,Object> identidad=new LinkedHashMap<>(admin.datos);
         for(Supplier<Object> f:fabricas()) {
-            Api a=new Api(f.get());a.h.previa=admin;a.ejecutar(200);
+            Api a=new Api(f.get());a.usarSesion(admin);a.ejecutar(200);
             exigir(admin.datos.equals(identidad));
             a=new Api(f.get());a.h.previa=null;a.ejecutar(401);
             a=new Api(f.get());a.h.previa.expirada=true;a.ejecutar(401);
@@ -230,7 +318,7 @@ public class PruebaIntegracionBackendAdministrativo {
         for(String rol:new String[]{"AUDITOR","CAJERO","OPERADOR_EVENTOS"}) {
             Sesion sesion=login(rol);
             for(Supplier<Object> f:fabricas()) {
-                Api a=new Api(f.get());a.h.previa=sesion;boolean permitido=false;
+                Api a=new Api(f.get());a.usarSesion(sesion);boolean permitido=false;
                 if(a.caso instanceof PruebaAdministracionUsuario.Caso)
                     permitido=rol.equals("AUDITOR")&&((PruebaAdministracionUsuario.Caso)a.caso).op.lectura();
                 else if(a.caso instanceof PruebaAdministracionEventos.Caso) permitido=rol.equals("OPERADOR_EVENTOS");
@@ -288,7 +376,7 @@ public class PruebaIntegracionBackendAdministrativo {
         exigir(leido.get("texto").asText().equals(texto)&&leido.get("nulo").isNull()&&leido.get("booleano").isBoolean());
         exigir(leido.get("importe").decimalValue().equals(json.get("importe"))&&leido.get("fecha").asText().equals("2026-10-06T12:34:56"));casos++;
         logout(admin);admin.expirada=true;
-        for(Supplier<Object> f:fabricas()) { Api a=new Api(f.get());a.h.previa=admin;a.ejecutar(401); }
+        for(Supplier<Object> f:fabricas()) { Api a=new Api(f.get());a.usarSesion(admin);a.ejecutar(401); }
         System.out.println("Integracion backend administrativo: "+casos+" casos, 0 fallos.");
     }
 }

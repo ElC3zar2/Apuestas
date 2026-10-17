@@ -19,7 +19,6 @@ public class PruebaCorreoSmtp {
         v.put("APUESTAS_MAIL_FROM", "seguridad@example.invalid");
         v.put("APUESTAS_MAIL_FROM_NAME", "Plataforma áñ");
         v.put("APUESTAS_MAIL_SECURITY", "STARTTLS");
-        v.put("APUESTAS_PUBLIC_BASE_URL", "https://example.invalid/apuestas/");
         return v;
     }
     private static void invalida(String clave, String valor) {
@@ -69,7 +68,7 @@ public class PruebaCorreoSmtp {
     }
     private static void configuracion() {
         for (String clave : Arrays.asList("APUESTAS_MAIL_HOST","APUESTAS_MAIL_PORT",
-                "APUESTAS_MAIL_FROM","APUESTAS_MAIL_SECURITY","APUESTAS_PUBLIC_BASE_URL")) {
+                "APUESTAS_MAIL_FROM","APUESTAS_MAIL_SECURITY")) {
             invalida(clave,null); invalida(clave,""); invalida(clave," ");
         }
         for (String host : Arrays.asList("smtp host","host\r\n","https://smtp.example.invalid","host:25")) {
@@ -86,13 +85,21 @@ public class PruebaCorreoSmtp {
         }
         invalida("APUESTAS_MAIL_FROM_NAME","Nombre\r\nBcc: x@y.test");
         invalida("APUESTAS_MAIL_FROM_NAME","Nombre\0");
-        for (String url : Arrays.asList("/relativa","http://example.invalid","ftp://example.invalid",
+        for (String url : Arrays.asList("/relativa","http://example.invalid","http://192.168.1.55:8084/app/","ftp://example.invalid",
                 "https://user:clave@example.invalid","https://example.invalid/?q=1",
                 "https://example.invalid/#fragmento","https://example.invalid:0",
                 "https://example.invalid:65536","https://example.invalid/a/../b",
                 "https://example.invalid/a//b","https://","http://localhost.example.invalid",
                 "http://127.0.0.1.example.invalid","https://example.invalid\r\n")) {
             invalida("APUESTAS_PUBLIC_BASE_URL",url);
+        }
+        for (String url : Arrays.asList(null,""," ")) {
+            Map<String,String> sinUrl=base();
+            if (url!=null) sinUrl.put("APUESTAS_PUBLIC_BASE_URL",url);
+            ConfiguracionCorreo c=ConfiguracionCorreo.desdeVariables(sinUrl);
+            exigir(c.getUrlPublica()==null,"URL ausente o vacia opcional para codigo");
+            exigir(c.getHost().equals("smtp.example.invalid"),"SMTP valido sin URL");
+            casos++;
         }
         for (String clave : Arrays.asList("APUESTAS_MAIL_CONNECT_TIMEOUT_MS",
                 "APUESTAS_MAIL_READ_TIMEOUT_MS","APUESTAS_MAIL_WRITE_TIMEOUT_MS")) {
@@ -101,6 +108,14 @@ public class PruebaCorreoSmtp {
         Map<String,String> v=base(); v.put("APUESTAS_MAIL_USERNAME","usuario-prueba");
         try { ConfiguracionCorreo.desdeVariables(v); throw new AssertionError("Falta password"); }
         catch (IllegalArgumentException esperado) { casos++; }
+        String secretoConfiguracion=UUID.randomUUID().toString();
+        v=base(); v.put("APUESTAS_MAIL_PASSWORD",secretoConfiguracion);
+        try { ConfiguracionCorreo.desdeVariables(v); throw new AssertionError("Autenticacion incompleta"); }
+        catch (IllegalArgumentException esperado) {
+            StringWriter traza=new StringWriter(); esperado.printStackTrace(new PrintWriter(traza));
+            exigir(!traza.toString().contains(secretoConfiguracion) && esperado.getCause()==null,"Error de configuracion sin secretos");
+            casos++;
+        }
         v=base(); v.put("APUESTAS_MAIL_PASSWORD",UUID.randomUUID().toString());
         try { ConfiguracionCorreo.desdeVariables(v); throw new AssertionError("Falta username"); }
         catch (IllegalArgumentException esperado) { casos++; }

@@ -3,6 +3,7 @@ package com.apuestas.controlador;
 import com.apuestas.dao.AdministracionUsuarioDAO;
 import com.apuestas.modelo.OperacionAdministracionUsuario;
 import com.apuestas.seguridad.ControlAccesoAdministrativo;
+import com.apuestas.seguridad.CsrfSeguridad;
 import com.apuestas.servicio.AdministracionUsuarioServicio;
 import com.fasterxml.jackson.databind.*;
 import java.lang.reflect.*;
@@ -67,6 +68,8 @@ public class PruebaAdministracionUsuario {
         List<List<Map<String,Object>>> resultados=new ArrayList<>();
         Map<Integer,Object> parametros=new LinkedHashMap<>();
         int llamadas,abiertos,cerrados,indice,codigo;boolean conexionCerrada,statementCerrado,runtime,conteo;
+        int ejecuciones;
+        Runnable antesDeEjecutar;
         Jdbc(OperacionAdministracionUsuario op){
             this.op=op;
             if(op==OperacionAdministracionUsuario.PENDIENTES)resultados.add(new ArrayList<>(Arrays.asList(pendiente())));
@@ -94,6 +97,8 @@ public class PruebaAdministracionUsuario {
                     case "setInt":case "setString":case "setTimestamp":parametros.put((Integer)a[0],a[1]);return null;
                     case "setNull":parametros.put((Integer)a[0],null);return null;
                     case "execute":
+                        ejecuciones++;
+                        if(antesDeEjecutar!=null)antesDeEjecutar.run();
                         if(runtime)throw new IllegalStateException(PRIVADO);
                         if(codigo!=0)throw new SQLException(PRIVADO,"TEST",codigo);
                         indice=conteo?-1:0;return indice>=0&&!resultados.isEmpty();
@@ -135,11 +140,14 @@ public class PruebaAdministracionUsuario {
         final OperacionAdministracionUsuario op;
         final HttpServletRequest req;
         boolean directo;
+        String csrf, query, origen, sitio;
+        boolean duplicado;
         Caso(OperacionAdministracionUsuario op){
             this.op=op;j=new Jdbc(op);h.method=op.metodo;h.ruta=op.ruta;
             h.previa=new Sesion();h.previa.datos.put("adminIdUsuario",7);h.previa.datos.put("adminIdRol",3);
             h.previa.datos.put("adminCorreo","admin@example.test");h.previa.datos.put("adminRol","ADMINISTRADOR");
             h.previa.datos.put("adminEstadoUsuario","ACTIVO");
+            csrf=CsrfSeguridad.obtener(h.previa.ref,CsrfSeguridad.Ambito.ADMINISTRADOR);
             if(op==OperacionAdministracionUsuario.DETALLE||op==OperacionAdministracionUsuario.REABRIR
                     ||op==OperacionAdministracionUsuario.ESTADO||op==OperacionAdministracionUsuario.AGREGAR)p("idUsuario","19");
             if(op==OperacionAdministracionUsuario.INICIAR||op==OperacionAdministracionUsuario.APROBAR||op==OperacionAdministracionUsuario.RECHAZAR)p("idVerificacion","23");
@@ -149,6 +157,13 @@ public class PruebaAdministracionUsuario {
             if(op==OperacionAdministracionUsuario.AGREGAR)p("tipoRestriccion","APOSTAR");
             req=proxy(HttpServletRequest.class,(p,m,a)->{
                 if(m.getName().equals("getParameterMap"))return parametros;
+                if(m.getName().equals("getParameterValues"))return parametros.get(a[0]);
+                if(m.getName().equals("getQueryString"))return query;
+                if(m.getName().equals("getHeader"))return "Origin".equals(a[0])?origen:"Sec-Fetch-Site".equals(a[0])?sitio:null;
+                if(m.getName().equals("getHeaders"))return Collections.enumeration(csrf==null?Collections.emptyList():duplicado?Arrays.asList(csrf,csrf):Arrays.asList(csrf));
+                if(m.getName().equals("getScheme"))return "http";
+                if(m.getName().equals("getServerName"))return "localhost";
+                if(m.getName().equals("getServerPort"))return 8084;
                 if(m.getName().equals("getRemoteAddr"))return "127.0.0.1";
                 try{return m.invoke(h.req,a);}catch(InvocationTargetException e){throw e.getCause();}
             });
@@ -165,6 +180,7 @@ public class PruebaAdministracionUsuario {
             exigir("application/json;charset=UTF-8".equals(h.tipo));
             exigir("no-store".equals(h.headers.get("Cache-Control")));
             String cuerpo=h.body.toString();exigir(!cuerpo.contains(PRIVADO)&&!cuerpo.contains("SQLException")&&!cuerpo.contains("dbo."));
+            exigir(csrf==null||!cuerpo.contains(csrf));
             JsonNode json=JSON.readTree(cuerpo);exigir(json.get("ok").asBoolean()==(esperado==200));
             if(esperado!=200)exigir(json.size()==2&&json.has("mensaje"));
             if(j.llamadas>0){
@@ -180,14 +196,94 @@ public class PruebaAdministracionUsuario {
             {400,63001,63005,63006,63012,63016,63020,63025,63030,63031,63036,63042,63043,63044,63052,63053,63054,63055,63060,63061},
             {403,63002,63003,63004,63007,63008,63009,63011,63013,63014,63015,63019,63023,63039,63047,63057},
             {404,63010,63018,63022,63028,63034,63038,63046,63056,63062},
-            {409,63024,63029,63035,63040,63041,63048,63049,63050,63051,63058,63059}
+            {409,63024,63029,63035,63040,63041,63048,63049,63050,63051,63058,63059,63063,63064}
         };
         for(int[] g:grupos)for(int i=1;i<g.length;i++)if(g[i]==codigo)return g[0];return 500;
+    }
+    private static void conflictosAprobacion()throws Exception {
+        for(int codigo:new int[]{63063,63064,63029}){
+            Caso c=new Caso(OperacionAdministracionUsuario.APROBAR);c.j.codigo=codigo;
+            JsonNode json=c.ejecutar(409);
+            exigir(json.size()==2&&!json.has("resultado")&&json.get("mensaje").asText().equals("La operación no es compatible con el estado actual."));
+            exigir(c.j.ejecuciones==1&&c.j.abiertos==0&&c.j.conexionCerrada&&c.j.statementCerrado);
+        }
+        // Solo contrato Java: se inyectan respuestas SQL, no se prueba la transicion SQL.
+        for(String estado:new String[]{"PENDIENTE","ACTIVO","SUSPENDIDO"}){
+            for(boolean sinCambios:new boolean[]{false,true}){
+                Caso c=new Caso(OperacionAdministracionUsuario.APROBAR);
+                Map<String,Object> r=c.j.resultados.get(0).get(0);
+                r.put("EstadoUsuario",estado);r.put("SinCambios",sinCambios);
+                r.put("CorreoVerificado",!estado.equals("PENDIENTE"));
+                JsonNode json=c.ejecutar(200),resultado=json.get("resultado");
+                Set<String> campos=new HashSet<>();resultado.fieldNames().forEachRemaining(campos::add);
+                exigir(json.size()==2&&campos.equals(new HashSet<>(Arrays.asList("idVerificacion","idUsuario",
+                        "estadoVerificacion","estadoUsuario","correoVerificado","sinCambios"))));
+                exigir(resultado.get("idUsuario").asInt()==19&&resultado.get("idVerificacion").asInt()==23
+                        &&resultado.get("estadoVerificacion").asText().equals("APROBADA")
+                        &&resultado.get("estadoUsuario").asText().equals(estado)
+                        &&resultado.get("sinCambios").asBoolean()==sinCambios);
+                exigir(c.j.ejecuciones==1);
+            }
+        }
+        for(String estado:new String[]{"PENDIENTE","EN_REVISION","RECHAZADA"}){
+            Caso c=new Caso(OperacionAdministracionUsuario.APROBAR);
+            c.j.resultados.get(0).get(0).put("EstadoVerificacion",estado);
+            c.ejecutar(500);exigir(c.j.ejecuciones==1); // DAO no acepta falso exito.
+        }
+        // Carrera simulada: el servidor devuelve conflicto tras cambiar el estado
+        // entre el inicio del POST y execute. No modela bloqueos/rangos de SQL Server.
+        for(int codigo:new int[]{63063,63064}){
+            Caso c=new Caso(OperacionAdministracionUsuario.APROBAR);
+            java.util.concurrent.CountDownLatch inicio=new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch cambiado=new java.util.concurrent.CountDownLatch(1);
+            Thread concurrente=new Thread(()->{
+                try {
+                    if(!inicio.await(5,java.util.concurrent.TimeUnit.SECONDS))return;
+                    c.j.codigo=codigo;
+                }catch(InterruptedException e){Thread.currentThread().interrupt();}
+                finally{cambiado.countDown();}
+            });
+            c.j.antesDeEjecutar=()->{
+                inicio.countDown();
+                try{exigir(cambiado.await(5,java.util.concurrent.TimeUnit.SECONDS));}
+                catch(InterruptedException e){Thread.currentThread().interrupt();throw new AssertionError(e);}
+            };
+            concurrente.start();
+            try{c.ejecutar(409);exigir(c.j.ejecuciones==1&&c.j.abiertos==0);}
+            finally{inicio.countDown();concurrente.join(6000);exigir(!concurrente.isAlive());}
+        }
     }
     public static void main(String[] args)throws Exception {
         if(args.length>0){
             Caso c=new Caso(OperacionAdministracionUsuario.PENDIENTES);c.h.previa=null;c.ejecutar(401);
             System.out.println("Filtro APIs JSON: OK");return;
+        }
+        conflictosAprobacion();
+        for(OperacionAdministracionUsuario op:OperacionAdministracionUsuario.values()){
+            if(op.lectura())continue;
+            for(String modo:Arrays.asList("ausente","incorrecto","otra-sesion","url","url-header",
+                    "duplicado","origen","sitio","sin-token-guardado")){
+                Caso c=new Caso(op);
+                switch(modo){
+                    case "ausente":c.csrf=null;break;
+                    case "incorrecto":c.csrf="invalido";break;
+                    case "otra-sesion":c.csrf=new Caso(op).csrf;break;
+                    case "url":c.query="X-CSRF-Token="+c.csrf;c.csrf=null;break;
+                    case "url-header":c.query="%5Fcsrf="+c.csrf;break;
+                    case "duplicado":c.duplicado=true;break;
+                    case "origen":c.origen="https://otro.example.invalid";break;
+                    case "sitio":c.sitio="cross-site";break;
+                    case "sin-token-guardado":c.h.previa.datos.keySet().removeIf(k->k.startsWith(CsrfSeguridad.class.getName()+"."));break;
+                }
+                c.directo=true;c.ejecutar(403);exigir(c.j.llamadas==0);
+            }
+            Caso c=new Caso(op);c.origen="http://localhost:8084";c.sitio="same-origin";
+            c.ejecutar(200);
+            c=new Caso(op);c.directo=true;c.h.previa.expirada=true;c.ejecutar(401);exigir(c.j.llamadas==0);
+            c=new Caso(op);c.directo=true;c.h.previa.datos.put("adminRol","AUDITOR");c.ejecutar(403);exigir(c.j.llamadas==0);
+            c=new Caso(op);c.directo=true;c.h.previa.datos.clear();
+            c.h.previa.datos.put("idUsuario",7);c.h.previa.datos.put("rol","USUARIO");
+            c.ejecutar(403);exigir(c.j.llamadas==0);
         }
         for(OperacionAdministracionUsuario op:OperacionAdministracionUsuario.values()){
             Caso c=new Caso(op);JsonNode json=c.ejecutar(200);
@@ -235,8 +331,11 @@ public class PruebaAdministracionUsuario {
                 }
             }
         }
-        for(int codigo=63001;codigo<=63062;codigo++){
+        for(int codigo=63001;codigo<=63064;codigo++){
             Caso c=new Caso(OperacionAdministracionUsuario.INICIAR);c.j.codigo=codigo;c.ejecutar(esperadoSql(codigo));
+        }
+        for(int codigo:new int[]{0,57015,62999,63065,99999}) {
+            exigir(AdministracionUsuarioHttp.estadoSql(codigo)==500);casos++;
         }
         for(OperacionAdministracionUsuario op:OperacionAdministracionUsuario.values()){
             if(op==OperacionAdministracionUsuario.PENDIENTES)continue;

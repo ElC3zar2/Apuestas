@@ -1,6 +1,7 @@
 package com.apuestas.controlador;
 
 import com.apuestas.correo.EnvioCorreoException;
+import com.apuestas.seguridad.CsrfSeguridad;
 import com.apuestas.servicio.*;
 import java.io.IOException;
 import java.sql.SQLException;
@@ -37,6 +38,9 @@ public class SolicitarVerificacionCorreoServlet extends HttpServlet {
                 VerificacionCorreoHttp.error(res, 401); return;
             }
             if (!"USUARIO".equals(rol)) { VerificacionCorreoHttp.error(res, 403); return; }
+            if (!CsrfSeguridad.validar(req, CsrfSeguridad.Ambito.USUARIO)) {
+                VerificacionCorreoHttp.error(res, 403); return;
+            }
             verificacionServicio.solicitar(id, (String)correo);
             VerificacionCorreoHttp.exito(res, false);
         } catch (SQLException | EnvioCorreoException | RuntimeException e) {
