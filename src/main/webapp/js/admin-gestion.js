@@ -108,6 +108,7 @@
         document.querySelectorAll('.management-form [name="idMercado"]').forEach(input=>{input.value=String(market.idMercado);});
         const quota = document.querySelector('[data-operation="cuotas/registrar"] [name="idSeleccion"]'); if(quota)quota.value='';
         selectionMessage();
+        sync();
     }
     function participantPicker(event) {
         const select=document.querySelector('[data-operation="selecciones/crear"] [name="idParticipante"]');
@@ -140,6 +141,9 @@
         if(page === 'mercados' && connectedEvent?.idEvento !== Number(eventId)) {
             document.querySelectorAll('.management-form').forEach(form=>form.reset());
             connectedEvent=null;selectedMarket=null;selectedSelection=null;
+            manualReferences=false;
+            for(const name of ['idMercado','idSeleccion','idParticipante'])populate(name,[],name,'nombre');
+            selectionMessage();
             const picker=$('selection-participant-picker');if(picker)picker.replaceChildren();
         }
         if (page === 'resultados' && resultEventContext !== String(eventId)) {
@@ -336,6 +340,7 @@
     }
     function detail(eventId) {
         if (!$('detail-results') || busy || sessionBlocked) return;
+        if(page==='mercados')selectEvent(eventId);
         if(connected && connectedEvent && connectedEvent.idEvento!==Number(eventId)){
             connectedEvent=null;selectedMarket=null;selectedSelection=null;selectionMessage();
             if(page==='mercados')selectEvent(eventId);
@@ -348,7 +353,7 @@
         }
         $('detail-results').replaceChildren();
         $('selected-live').hidden = true; $('selected-markets').hidden = true;
-        query('/eventos/exploracion/detalle?idEvento='+encodeURIComponent(eventId),async data=> {
+        query('/administrador/eventos/detalle?idEvento='+encodeURIComponent(eventId),async data=> {
             if (data.evento?.idEvento !== Number(eventId)) throw new Error('El ID devuelto no coincide con la consulta.');
             renderDetail(data.evento);
             if(page==='resultados'){
@@ -370,12 +375,43 @@
     function bindEventFields(event){
         populate('idMercado',event.mercados,'idMercado','mercado');
         populate('idSeleccion',event.mercados.flatMap(m=>m.selecciones),'idSeleccion','seleccion');
+        if(page==='mercados'){
+            // Restaura sólo referencias confirmadas por esta consulta administrativa.
+            const market=event.mercados.find(m=>m.idMercado===selectedMarket?.id)
+                || (event.mercados.length===1?event.mercados[0]:null);
+            selectedMarket=null;selectedSelection=null;
+            if(market)useMarket(market);
+            else {
+                document.querySelectorAll('.management-form [name="idMercado"]').forEach(select=>{select.value='';});
+                document.querySelectorAll('.management-form [name="idSeleccion"]').forEach(select=>{select.value='';});
+                selectionMessage();
+            }
+        }
         if(page==='eventos'){
             populate('idParticipante',[], 'idParticipante','nombre');
             window.BetZoneAdmin.participants(event.idDeporte).then(rows=>{if(Number($('detail-id').value)===event.idEvento){catalogParticipants=rows;populate('idParticipante',rows,'idParticipante','nombre');sync();}}).catch(report);
         }
         document.querySelectorAll('.management-form [name="idMercado"]').forEach(select=>{
-            select.onchange=()=>{const market=event.mercados.find(m=>String(m.idMercado)===select.value);if(market){useMarket(market);populate('idSeleccion',market.selecciones,'idSeleccion','seleccion');}};
+            select.onchange=()=>{
+                const market=event.mercados.find(m=>String(m.idMercado)===select.value);
+                if(market)useMarket(market);
+                else if(page==='mercados'){
+                    selectedMarket=null;selectedSelection=null;manualReferences=false;
+                    document.querySelectorAll('.management-form [name="idMercado"]').forEach(input=>{input.value='';});
+                    populate('idSeleccion',event.mercados.flatMap(m=>m.selecciones),'idSeleccion','seleccion');
+                    selectionMessage();sync();
+                }
+            };
+        });
+        if(page==='mercados')document.querySelectorAll('.management-form [name="idSeleccion"]').forEach(select=>{
+            select.onchange=()=>{
+                const market=event.mercados.find(m=>(!selectedMarket||m.idMercado===selectedMarket.id)
+                    &&m.selecciones.some(s=>String(s.idSeleccion)===select.value));
+                const selection=market?.selecciones.find(s=>String(s.idSeleccion)===select.value);
+                selectedSelection=null;
+                if(selection){useMarket(market);select.value=String(selection.idSeleccion);selectedSelection={id:selection.idSeleccion,nombre:selection.seleccion};}
+                selectionMessage();
+            };
         });
     }
     async function catalogContext(){
