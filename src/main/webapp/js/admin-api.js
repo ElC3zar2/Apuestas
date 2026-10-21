@@ -26,7 +26,7 @@
             document.body.append(notice);
         }
     }
-    async function request(path, options = {}) {
+    async function request(path, options = {}, parseJson = JSON.parse) {
         if(expired){const e=new Error(messages[401]);e.status=401;throw e;}
         const controller=new AbortController();controllers.add(controller);
         const timer=setTimeout(()=>controller.abort(),options.method==='POST'?120000:20000);
@@ -45,7 +45,8 @@
             try {
                 // BIGINT permanece exacto aunque exceda Number.MAX_SAFE_INTEGER.
                 const exact=raw.replace(/("(?:idLiquidacion|idTransaccion\w*|idIncidencia\w*)"\s*:\s*)([0-9]+)(?=\s*[,}])/g,(_,prefix,id)=>prefix+(Number.isSafeInteger(Number(id))?id:JSON.stringify(id)));
-                data=JSON.parse(exact);
+                // El dashboard puede preservar los decimales del JSON original sin cambiar otros consumidores.
+                data=parseJson(exact);
             } catch {throw new Error('El servidor devolvió JSON inválido.');}
             if(!data||data.ok!==true)throw new Error('La respuesta no confirma la operación.');
             if(expired){const e=new Error(messages[401]);e.status=401;throw e;}
