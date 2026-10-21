@@ -1,12 +1,14 @@
 <%@page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" session="false"%>
 <%
     String adminRoleForView = "";
+    Object adminCorreoForView = null;
     try {
         javax.servlet.http.HttpSession adminViewSession = request.getSession(false);
         Object adminViewRole = adminViewSession == null ? null : adminViewSession.getAttribute("adminRol");
+        adminCorreoForView = adminViewSession == null ? null : adminViewSession.getAttribute("adminCorreo");
         for (String allowedRole : new String[]{"ADMINISTRADOR","OPERADOR_EVENTOS","CAJERO","AUDITOR"})
             if (allowedRole.equals(adminViewRole)) adminRoleForView = allowedRole;
-    } catch (IllegalStateException expiredSession) { }
+    } catch (IllegalStateException expiredSession) { adminRoleForView = ""; adminCorreoForView = null; }
 %>
 
 <%!
@@ -33,7 +35,7 @@ private String seguro(Object v) {
 <a href="${pageContext.request.contextPath}/administrador/eventos">Administrar eventos</a>
 <a href="${pageContext.request.contextPath}/administrador/mercados">Mercados y cuotas</a><a href="${pageContext.request.contextPath}/administrador/resultados" data-nav="resultados">Resultados</a>
 <a href="${pageContext.request.contextPath}/administrador/liquidaciones" data-nav="liquidaciones">Liquidaciones</a><a href="${pageContext.request.contextPath}/administrador/usuarios">Administración de usuarios</a></nav>
-<div class="identity"><p><%= seguro(request.getSession(false).getAttribute("adminCorreo")) %></p><small><%= seguro(request.getSession(false).getAttribute("adminRol")) %></small></div>
+<div class="identity"><p><%= seguro(adminCorreoForView) %></p><small><%= seguro(adminRoleForView) %></small></div>
 <form id="admin-logout" action="${pageContext.request.contextPath}/administrador/logout" method="post"><button type="submit">Cerrar sesión</button></form>
 <p id="logout-status" role="status"></p>
 </aside>

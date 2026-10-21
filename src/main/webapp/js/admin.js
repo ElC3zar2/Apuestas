@@ -3,6 +3,14 @@
     const base = document.body.dataset.contextPath || '';
     const loginUrl = base + '/administrador/login';
     const landingPaths = ['inicio', 'eventos', 'liquidaciones'].map(view => base + '/administrador/' + view);
+    let leaving = false;
+    const pending = new Set();
+    window.addEventListener('pagehide', () => { leaving = true; pending.forEach(controller => controller.abort()); });
+    document.querySelectorAll('.table-scroll').forEach(element => {
+        element.tabIndex = 0;
+        element.setAttribute('role', 'region');
+        element.setAttribute('aria-label', element.querySelector('caption')?.textContent || 'Tabla con desplazamiento horizontal');
+    });
     const message = (id, text, error = false) => {
         const element = document.getElementById(id);
         element.textContent = text;
@@ -12,17 +20,22 @@
         400: 'Los parámetros no son válidos. Revisa los datos e inténtalo de nuevo.',
         401: 'Tu sesión venció o no está disponible. Vuelve a iniciar sesión.',
         403: 'Tu cuenta no tiene permiso para realizar esta consulta.',
+        404: 'No se encontró el recurso solicitado.',
+        405: 'El servidor no admite este método.',
+        409: 'La operación no corresponde al estado actual.',
+        500: 'El servidor no pudo confirmar la operación. Verifica el estado antes de repetirla.',
         503: 'El servicio no está disponible temporalmente. Inténtalo de nuevo.'
     };
     async function request(path, options = {}) {
         const controller = new AbortController();
+        pending.add(controller);
         const timer = setTimeout(() => controller.abort(), 20000);
         try {
             return await fetch(base + path, {
                 credentials: 'same-origin', cache: 'no-store', ...options,
                 signal: controller.signal
             });
-        } finally { clearTimeout(timer); }
+        } finally { clearTimeout(timer); pending.delete(controller); }
     }
     function failure(response) {
         const error = new Error(errors[response.status] || 'No fue posible procesar la solicitud. Inténtalo de nuevo.');
@@ -38,6 +51,7 @@
             event.preventDefault();
             const button = login.querySelector('button');
             if (button.disabled) return;
+            if (!login.reportValidity()) return;
             button.disabled = true;
             message('login-status', 'Validando acceso…');
             try {
@@ -45,7 +59,7 @@
                     method: 'POST', body: new URLSearchParams(new FormData(login))
                 });
                 // El servlet responde 303 a la vista permitida; fetch sigue esa redirección.
-                const destination = new URL(response.url);
+                const destination = new URL(response.url, location.href);
                 if (response.ok && response.redirected && destination.origin === location.origin && landingPaths.includes(destination.pathname)) {
                     location.replace(destination.pathname);
                     return;
@@ -55,7 +69,7 @@
                     ? 'No fue posible iniciar sesión con los datos proporcionados.'
                     : 'No fue posible iniciar sesión. Inténtalo de nuevo.', true);
                 login.elements.contrasena.focus();
-            } catch (error) { message('login-status', networkError(error), true); }
+            } catch (error) { if (!leaving) message('login-status', networkError(error), true); }
             finally { button.disabled = false; }
         });
     }
@@ -67,21 +81,29 @@
             if (button.disabled) return;
             button.disabled = true;
             message('logout-status', 'Cerrando sesión…');
+            let sent = false;
             try {
-                const tokenResponse = await request('/administrador/seguridad/csrf', { headers: { Accept: 'application/json' } });
-                if (tokenResponse.status === 401) { location.replace(loginUrl); return; }
-                if (!tokenResponse.ok) throw failure(tokenResponse);
-                const token = await tokenResponse.json();
-                if (token.ok !== true || typeof token.csrfToken !== 'string' || !token.csrfToken) throw new Error('token');
+                const token = await window.BetZoneAdmin.csrf();
+                sent = true;
                 const response = await request('/administrador/logout', {
-                    method: 'POST', headers: { 'X-CSRF-Token': token.csrfToken }
+                    method: 'POST', headers: { 'X-CSRF-Token': token }
                 });
-                if (response.status === 401 || (response.ok && response.redirected && new URL(response.url).pathname === loginUrl)) {
+                const destination = new URL(response.url, location.href);
+                if (response.status === 401 || (response.ok && response.redirected
+                        && destination.origin === location.origin && destination.pathname === loginUrl)) {
                     location.replace(loginUrl);
                     return;
                 }
+                if (response.ok) throw new Error('El servidor no confirmó el cierre de sesión. Verifica el estado antes de repetirlo.');
                 throw failure(response);
-            } catch (error) { message('logout-status', error.status ? error.message : networkError(error), true); }
+            } catch (error) {
+                if (leaving) return;
+                if (error.status === 401) { location.replace(loginUrl); return; }
+                message('logout-status', error.status ? error.message
+                    : error.name === 'AbortError' || error instanceof TypeError
+                        ? sent ? 'No se pudo confirmar el cierre de sesión. Verifica el estado antes de repetirlo.' : networkError(error)
+                        : error.message, true);
+            }
             finally { button.disabled = false; }
         });
     }
@@ -124,10 +146,7 @@
         message('dashboard-status', 'Cargando resumen…');
         try {
             const query = new URLSearchParams(new FormData(filters));
-            const response = await request('/administrador/dashboard/resumen?' + query, { headers: { Accept: 'application/json' } });
-            if (!response.ok) throw failure(response);
-            if (response.redirected) { const error = new Error(errors[401]); error.status = 401; throw error; }
-            const data = await response.json();
+            const data = await window.BetZoneAdmin.request('/administrador/dashboard/resumen?' + query);
             if (data.ok !== true || !data.resumen || !Array.isArray(data.deportes) || !Array.isArray(data.auditoriaReciente)) {
                 throw new Error('invalid-response');
             }
@@ -138,6 +157,7 @@
             table('audit-body', data.auditoriaReciente, [r => text(r.fechaAccion).replace('T', ' '), r => text(r.correo), r => text(r.accion), r => text(r.tablaAfectada), r => text(r.idRegistro)], 'No hay acciones de auditoría recientes.');
             message('dashboard-status', 'Actualizado a las ' + new Date().toLocaleTimeString('es-GT') + '. Importes en GTQ.');
         } catch (error) {
+            if (leaving) return;
             clear();
             sessionLink.hidden = error.status !== 401;
             message('dashboard-status', error.status ? error.message : error.name === 'AbortError' || error instanceof TypeError
@@ -148,6 +168,5 @@
         }
     }
     filters.addEventListener('submit', event => { event.preventDefault(); load(); });
-    window.addEventListener('pageshow', event => { if (event.persisted) load(); });
     load();
 })();
