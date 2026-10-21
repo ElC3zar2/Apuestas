@@ -5,6 +5,9 @@
     const role = (document.body.dataset.adminRole || '').trim();
     const writable = role === 'ADMINISTRADOR';
     const readable = writable || role === 'AUDITOR';
+    // Bloqueo de integración: solo una futura revisión de código podrá habilitar aprobaciones reales.
+    // Las pruebas aisladas sirven una copia en memoria; no hay bypass por URL, DOM o almacenamiento.
+    const approvalsEnabled = false;
     const prefix = '/administrador/usuarios/';
     const field = (name, label, type = 'textarea', required = false) => ({name,label,type,required});
     const target = (name, label) => field(name,label,'target',true);
@@ -27,13 +30,17 @@
         rechazado:'Rechazado por el backend',incierto:'Resultado incierto',pendiente:'No procesado'};
     let pendingRows = [], batchResults = null, batchRunning = false, batchStopped = false;
     let detail = null, busy = false, expired = false, stale = false, searchPage=1, searchTotal=0, searchText="";
-    const display = value => value == null || value === '' ? '—' : typeof value === 'boolean' ? (value ? 'Sí' : 'No') : String(value);
+    let leaving = false, searchRevision = 0, searchValid = false;
+    const live = () => !leaving && !expired && !$('contenido').hidden;
+    const display = value => value == null ? 'No disponible' : value === '' ? 'Vacío' : typeof value === 'boolean' ? (value ? 'Sí' : 'No')
+        : typeof value === 'string' ? value.replace(/^(\d{4}-\d{2}-\d{2})T/, '$1 ') : typeof value === 'number' && Number.isFinite(value) ? String(value) : 'No disponible';
     const identity = user => [user.nombre,user.apellido].filter(Boolean).join(' ').trim() || user.correo || 'Cuenta consultada';
     const validId = value => /^[0-9]+$/.test(String(value)) && Number(value)>0 && Number(value)<=2147483647;
     function node(tag,text,className) {const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el;}
-    function status(text,error=false) {$('users-status').textContent=text;$('users-status').dataset.error=String(error);}
+    function status(text,error=false) {if(leaving)return;$('users-status').textContent=text;$('users-status').dataset.error=String(error);}
     function recordId(form,name) {return Number(form.elements.namedItem(name)?.value);}
     function latestVerification() {
+        // El procedimiento oficial selecciona TOP(1) ORDER BY IdVerificacion DESC.
         return detail?.verificaciones.reduce((latest,item)=>!latest||item.idVerificacion>latest.idVerificacion?item:latest,null);
     }
     function available(route,form) {
@@ -42,7 +49,8 @@
         const verification=detail.verificaciones.find(item=>item.idVerificacion===recordId(form,'idVerificacion'));
         switch(route){
             case 'verificacion/iniciar':return verification?.estadoVerificacion==='PENDIENTE';
-            case 'verificacion/aprobar':case 'verificacion/rechazar':return ['PENDIENTE','EN_REVISION'].includes(verification?.estadoVerificacion);
+            case 'verificacion/aprobar':return approvalsEnabled&&['PENDIENTE','EN_REVISION'].includes(verification?.estadoVerificacion)&&account.estadoUsuario!=='CERRADO';
+            case 'verificacion/rechazar':return ['PENDIENTE','EN_REVISION'].includes(verification?.estadoVerificacion);
             case 'verificacion/reabrir':return ['PENDIENTE','SUSPENDIDO'].includes(account.estadoUsuario)&&latestVerification()?.estadoVerificacion==='RECHAZADA';
             case 'estado/cambiar':return account.estadoUsuario!=='CERRADO';
             case 'restricciones/agregar':return account.estadoUsuario!=='CERRADO';
@@ -51,26 +59,31 @@
         }
     }
     function sync() {
+        if(leaving)return;
         for(const id of ['pending-form','user-query','user-search'])$(id).querySelectorAll('input,button').forEach(el=>{el.disabled=busy||expired||!readable;});
         document.querySelectorAll('[data-user-action]').forEach(el=>{el.disabled=busy||expired;});
         for(const [route,form] of forms)form.querySelector('fieldset').disabled=busy||expired||!available(route,form);
         for(const [route,button] of operationButtons)button.disabled=busy||expired||!available(route,forms.get(route));
         $('users-operation-panel').hidden=!detail||!writable||stale;
         $('users-uncertain').hidden=!uncertain.size;
-        $('users-prev').disabled=busy||expired||!readable||searchPage<=1;
-        $('users-next').disabled=busy||expired||!readable||searchPage*50>=searchTotal;
+        $('users-prev').disabled=busy||expired||!readable||!searchValid||searchPage<=1;
+        $('users-next').disabled=busy||expired||!readable||!searchValid||searchPage*50>=searchTotal;
         $('users-forms').setAttribute('aria-busy',String(busy));
         syncBatch();
     }
     function report(error) {
-        const message=error.status?(error.serverMessage||errors[error.status]||'No fue posible procesar la solicitud.')
+        if(leaving)return;
+        const message=error.status?(errors[error.status]||'No fue posible procesar la solicitud.')
             :error.name==='AbortError'?'La solicitud tardó demasiado o fue interrumpida. Reintenta la consulta manualmente.'
             :error instanceof TypeError?'No fue posible conectar con el servidor.':error.message;
-        status((error.status===401||error.status===403?'Servidor HTTP '+error.status+' en '+(error.endpoint||'la operación solicitada')+': ':'')+message,true);
+        status(message,true);
         if(error.status===401){expired=true;$('users-login').hidden=false;}
     }
     async function api(path, options = {}) {
-        return window.BetZoneAdmin.request(path, options);
+        if(!live())throw new DOMException('Consulta interrumpida.','AbortError');
+        const data=await window.BetZoneAdmin.request(path, options);
+        if(!live())throw new DOMException('Consulta interrumpida.','AbortError');
+        return data;
     }
     function values(target,rows) {
         const dl=node('dl',undefined,'operation-values');
@@ -82,14 +95,14 @@
         table.append(node('caption',caption));headings.forEach(text=>{const th=node('th',text);th.scope='col';header.append(th);});thead.append(header);table.append(thead);
         if(!rows.length){const row=node('tr'),cell=node('td','No hay registros disponibles.');cell.colSpan=headings.length;row.append(cell);body.append(row);}
         rows.forEach(cells=>{const row=node('tr');cells.forEach(value=>{const cell=node('td');if(value instanceof Node)cell.append(value);else cell.textContent=display(value);row.append(cell);});body.append(row);});
-        table.append(body);wrap.append(table);target.append(wrap);
+        table.append(body);wrap.append(table);wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label',caption);target.append(wrap);
     }
     function pickVerification(id) {
         if(!detail?.verificaciones.some(item=>item.idVerificacion===id))return;
         for(const form of forms.values()){const control=form.elements.namedItem('idVerificacion');if(control)control.value=String(id);}
         const verification=detail.verificaciones.find(item=>item.idVerificacion===id);
         if(verification.estadoVerificacion==='PENDIENTE')openUserOperation('verificacion/iniciar',true);
-        else if(verification.estadoVerificacion==='EN_REVISION')openUserOperation('verificacion/aprobar',true);
+        else if(verification.estadoVerificacion==='EN_REVISION')openUserOperation(approvalsEnabled?'verificacion/aprobar':'verificacion/rechazar',true);
         else {const next=[...forms].find(([route,form])=>available(route,form));if(next)openUserOperation(next[0]);}
         status('Verificación seleccionada para '+identity(detail.usuario)+'. Revisa el estado y las observaciones antes de confirmar.');sync();
     }
@@ -137,28 +150,34 @@
         const data=await api(prefix+'detalle?'+new URLSearchParams({idUsuario:String(id)}));
         const next=data.detalle;
         if(!next||next.usuario?.idUsuario!==Number(id)||next.usuario.rol!=='USUARIO'||typeof next.usuario.correo!=='string'||!Array.isArray(next.verificaciones)||!Array.isArray(next.restricciones)
-            ||next.verificaciones.some(item=>!validId(item.idVerificacion))||next.restricciones.some(item=>!validId(item.idRestriccion)))throw new Error('El detalle recibido no cumple el contrato del usuario solicitado.');
+            ||typeof next.usuario.correoVerificado!=='boolean'||!['PENDIENTE','ACTIVO','SUSPENDIDO','CERRADO'].includes(next.usuario.estadoUsuario)
+            ||next.verificaciones.some(item=>!item||!Number.isInteger(item.idVerificacion)||!validId(item.idVerificacion)||!['PENDIENTE','EN_REVISION','APROBADA','RECHAZADA'].includes(item.estadoVerificacion))
+            ||new Set(next.verificaciones.map(item=>item.idVerificacion)).size!==next.verificaciones.length
+            ||next.restricciones.some(item=>!item||!Number.isInteger(item.idRestriccion)||!validId(item.idRestriccion)||typeof item.activa!=='boolean'||typeof item.vigente!=='boolean'||!['APOSTAR','TODAS_OPERACIONES'].includes(item.tipoRestriccion))
+            ||new Set(next.restricciones.map(item=>item.idRestriccion)).size!==next.restricciones.length)throw new Error('El detalle recibido no cumple el contrato del usuario solicitado.');
         renderDetail(next);
     }
     async function consult(id) {
         if(busy||expired||!readable||!validId(id))return;
         const changed=detail&&detail.usuario.idUsuario!==Number(id);
         const drafted=[...document.querySelectorAll('#users-forms textarea, #users-forms input[type="datetime-local"], #users-forms select')].some(el=>el.value.trim());
-        if(changed&&drafted&&!window.confirm('Consultar otra cuenta descartará los borradores actuales. ¿Continuar?')){status('Consulta cancelada. Actualiza el detalle de la cuenta antes de operar.',true);return;}
+        if(changed&&drafted&&!window.confirm('Consultar otra cuenta descartará los borradores actuales. ¿Continuar?')){status('Consulta cancelada. Se conserva la cuenta seleccionada y sus borradores.');return;}
         $('user-id').value=String(Number(id));
         $('users-operation-result').hidden=true;
         $('users-operation-values').replaceChildren();
         clearUserDisplay();
         if(changed){for(const form of forms.values())form.reset();detail=null;}
         busy=true;stale=true;sync();status('Consultando detalle del usuario…');
-        try{await readDetail(Number(id));status('Detalle actualizado. Las operaciones usan los registros oficiales mostrados.');}
-        catch(error){report(error);status('No se pudo consultar el usuario #'+Number(id)+'. '+$('users-status').textContent,true);}finally{busy=false;sync();}
+        try{await readDetail(Number(id));if(live())status('Detalle actualizado. Las operaciones usan los registros oficiales mostrados.');}
+        catch(error){report(error);}finally{busy=false;if(live())sync();}
     }
     async function readPending() {
         batchSelection.clear();batchChecks.clear();pendingRows=[];syncBatch();
         $('pending-results').replaceChildren();
-        const data=await api(prefix+'pendientes?'+new URLSearchParams({cantidad:$('pending-count').value}));
-        if(!Array.isArray(data.usuarios)||data.usuarios.some(user=>!validId(user.idUsuario)||typeof user.correo!=='string'))throw new Error('La respuesta de pendientes no cumple el contrato.');
+        const amount=$('pending-count').value;
+        if(!/^\d{1,3}$/.test(amount)||Number(amount)<1||Number(amount)>500)throw new Error('Selecciona una cantidad entre 1 y 500.');
+        const data=await api(prefix+'pendientes?'+new URLSearchParams({cantidad:amount}));
+        if(!Array.isArray(data.usuarios)||data.cantidad!==data.usuarios.length||data.usuarios.length>Number(amount)||data.usuarios.some(user=>!user||!validId(user.idUsuario)||typeof user.correo!=='string'))throw new Error('La respuesta de pendientes no cumple el contrato.');
         const userIds=new Set(),verificationIds=new Set();
         if(data.usuarios.some(user=>!Number.isInteger(user.idUsuario)||!Number.isInteger(user.idVerificacion)
                 ||!validId(user.idVerificacion)||typeof user.correoVerificado!=='boolean'
@@ -205,11 +224,11 @@
         $('batch-all').indeterminate=batchSelection.size>0&&!$('batch-all').checked;
         $('batch-clear').disabled=blocked||!batchSelection.size;
         $('batch-observation').disabled=blocked;
-        $('batch-approve').disabled=blocked||batchSelection.size===0||batchSelection.size>40;
+        $('batch-approve').disabled=!approvalsEnabled||blocked||batchSelection.size===0||batchSelection.size>40;
         $('batch-dismiss').disabled=busy||batchRunning;
     }
     function renderBatch() {
-        if(!batchResults)return;
+        if(!batchResults||!live())return;
         $('batch-results').hidden=false;
         const counts=Object.fromEntries(Object.keys(batchStates).map(key=>[key,0]));
         batchResults.forEach(row=>counts[row.state]++);
@@ -238,6 +257,7 @@
     }
     function batchUnchanged(user,current) {
         return current.account.rol==='USUARIO'&&current.account.estadoUsuario===user.estadoUsuario
+            &&current.account.nombre===user.nombre&&current.account.apellido===user.apellido
             &&current.account.correo===user.correo&&current.account.correoVerificado===user.correoVerificado
             &&current.account.estadoUsuario!=='CERRADO'&&current.latest?.idVerificacion===user.idVerificacion
             &&current.latest.estadoVerificacion===user.estadoVerificacion
@@ -252,6 +272,7 @@
         }catch(error){if(error.status===401)report(error);row.note+=' No fue posible reconciliar el detalle oficial.';}
     }
     async function approveBatch() {
+        if(!approvalsEnabled){status('Aprobaciones bloqueadas hasta la validación SQL por Fernando.',true);return;}
         if(busy||expired||!writable||batchResults||!batchSelection.size||batchSelection.size>40)return;
         const selected=[...batchSelection.values()].map(user=>({...user}));
         if(selected.some(user=>!batchEligible(user))||new Set(selected.map(u=>u.idVerificacion)).size!==selected.length)return;
@@ -267,6 +288,7 @@
         renderBatch();
         try {
             for(let index=0;index<batchResults.length;index++){
+                if(!live()){batchStopped=true;break;}
                 const row=batchResults[index];let sent=false,phase='detalle';
                 $('batch-progress').textContent='Procesando '+(index+1)+' de '+batchResults.length+': '+identity(row.user);
                 try {
@@ -281,7 +303,7 @@
                     phase='aprobar';sent=true;
                     const data=await api(prefix+'verificacion/aprobar',{method:'POST',headers:{'X-CSRF-Token':csrf.csrfToken},body:payload});
                     const result=data.resultado;
-                    validateOutcome('verificacion/aprobar',result,payload,row.user.idUsuario);
+                    validateOutcome('verificacion/aprobar',result,payload,row.user.idUsuario,current.account);
                     if(result.estadoVerificacion!=='APROBADA'||typeof result.correoVerificado!=='boolean'
                             ||typeof result.sinCambios!=='boolean'||!['ACTIVO','PENDIENTE','SUSPENDIDO'].includes(result.estadoUsuario)
                             ||result.estadoUsuario==='ACTIVO'&&!result.correoVerificado
@@ -308,21 +330,44 @@
                 renderBatch();
             }
         }finally{
-            if(!expired){try{await readPending();}catch(error){report(error);batchStopped=true;}}
+            if(live()){try{await readPending();}catch(error){report(error);batchStopped=true;}}
             batchRunning=false;busy=false;
-            $('batch-progress').textContent=(batchStopped?'Lote detenido. Revisión manual obligatoria antes de otro lote.':'Lote finalizado.')
+            if(live())$('batch-progress').textContent=(batchStopped?'Lote detenido. Revisión manual obligatoria antes de otro lote.':'Lote finalizado.')
                 +' Los resultados se conservan; no se reenvía ninguna aprobación.';
             renderBatch();
         }
     }
-    function validateOutcome(route,result,payload,userId) {
+    function localDate(value) {
+        const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,7}))?)?$/.exec(value);
+        if(!m)return null;
+        const y=Number(m[1]),month=Number(m[2]),day=Number(m[3]),days=[31,y%4===0&&(y%100!==0||y%400===0)?29:28,31,30,31,30,31,31,30,31,30,31];
+        if(y<1||month<1||month>12||day<1||day>days[month-1]||Number(m[4])>23||Number(m[5])>59||Number(m[6]||0)>59)return null;
+        const fraction=(m[7]||'').replace(/0+$/,'');
+        return m[1]+'-'+m[2]+'-'+m[3]+'T'+m[4]+':'+m[5]+':'+(m[6]||'00')+(fraction?'.'+fraction:'');
+    }
+    function validateOutcome(route,result,payload,userId,account=detail?.usuario) {
         if(!result||Array.isArray(result)||result.idUsuario!==userId)throw new Error('Respuesta sin confirmación para la cuenta seleccionada.');
         if(route.startsWith('verificacion/')){
-            if(!validId(result.idVerificacion)||typeof result.estadoVerificacion!=='string')throw new Error('Respuesta de verificación inesperada.');
+            if(!Number.isInteger(result.idVerificacion)||!validId(result.idVerificacion)||typeof result.estadoVerificacion!=='string')throw new Error('Respuesta de verificación inesperada.');
             if(payload.has('idVerificacion')&&result.idVerificacion!==Number(payload.get('idVerificacion')))throw new Error('La verificación devuelta no coincide con la operación.');
+            const expected={'verificacion/iniciar':'EN_REVISION','verificacion/aprobar':'APROBADA','verificacion/rechazar':'RECHAZADA','verificacion/reabrir':'PENDIENTE'}[route];
+            if(result.estadoVerificacion!==expected||(route!=='verificacion/reabrir'&&typeof result.sinCambios!=='boolean'))throw new Error('La respuesta no confirma el estado oficial de verificación.');
+            if(route==='verificacion/aprobar'&&(!['ACTIVO','PENDIENTE','SUSPENDIDO'].includes(result.estadoUsuario)||typeof result.correoVerificado!=='boolean'
+                    ||(result.estadoUsuario==='ACTIVO'&&!result.correoVerificado)||(account?.estadoUsuario==='SUSPENDIDO'&&result.estadoUsuario!=='SUSPENDIDO')))
+                throw new Error('La respuesta de aprobación no confirma un estado de cuenta consistente.');
+            if(route==='verificacion/rechazar'&&!['PENDIENTE','ACTIVO','SUSPENDIDO','CERRADO'].includes(result.estadoUsuario))throw new Error('Respuesta de rechazo incompleta.');
+            if(route==='verificacion/reabrir'&&detail?.usuario.idUsuario===userId&&detail.verificaciones.some(v=>v.idVerificacion===result.idVerificacion))throw new Error('La reapertura no confirma una nueva solicitud.');
         }else if(route==='estado/cambiar'){
-            if(result.estadoActual!==payload.get('nuevoEstado')||typeof result.sinCambios!=='boolean')throw new Error('Respuesta de estado inesperada.');
-        }else if(!validId(result.idRestriccion)||typeof result.activa!=='boolean'||(route==='restricciones/levantar'&&result.idRestriccion!==Number(payload.get('idRestriccion'))))throw new Error('Respuesta de restricción inesperada.');
+            if(result.estadoActual!==payload.get('nuevoEstado')||result.estadoAnterior!==account?.estadoUsuario||typeof result.sinCambios!=='boolean'
+                    ||result.sinCambios!==(result.estadoAnterior===result.estadoActual))throw new Error('Respuesta de estado inesperada.');
+        }else{
+            if(!Number.isInteger(result.idRestriccion)||!validId(result.idRestriccion)||typeof result.activa!=='boolean'||!['APOSTAR','TODAS_OPERACIONES'].includes(result.tipoRestriccion))throw new Error('Respuesta de restricción inesperada.');
+            if(route==='restricciones/levantar'){
+                const selected=detail?.restricciones.find(r=>r.idRestriccion===Number(payload.get('idRestriccion')));
+                if(result.idRestriccion!==Number(payload.get('idRestriccion'))||result.activa!==false||typeof result.sinCambios!=='boolean'||result.tipoRestriccion!==selected?.tipoRestriccion)throw new Error('El servidor no confirmó el levantamiento seleccionado.');
+            }else if(result.activa!==true||result.tipoRestriccion!==payload.get('tipoRestriccion')||result.motivo!==payload.get('motivo')
+                    ||(payload.has('fechaFin')?localDate(result.fechaFin||'')!==payload.get('fechaFin'):result.fechaFin!==null))throw new Error('El servidor no confirmó la restricción solicitada.');
+        }
     }
     function renderForms() {
         for(const [route,title,fields] of operations){
@@ -343,18 +388,26 @@
             if(route==='estado/cambiar')fieldset.append(node('small','El backend exige correo verificado y última verificación aprobada para activar; no permite cambiar una cuenta cerrada ni cerrarla con saldo comprometido.'));
             if(route==='verificacion/reabrir')fieldset.append(node('small','Requiere última verificación rechazada y cuenta pendiente o suspendida. Se crea una nueva solicitud; no se modifica el historial.'));
             if(route==='restricciones/agregar')fieldset.append(node('small','Fecha opcional sin conversión de zona horaria. La vigencia y los conflictos los valida el servidor.'));
+            if(route==='verificacion/aprobar')section.append(node('p','Aprobación bloqueada para uso real hasta validación SQL por Fernando.','warning'));
             const submit=node('button',title,'primary');submit.type='submit';fieldset.append(submit);form.append(fieldset);section.append(form);$('users-forms').append(section);forms.set(route,form);
             if(route==='estado/cambiar')form.elements.nuevoEstado.addEventListener('change',()=>{form.elements.motivo.required=['SUSPENDIDO','CERRADO'].includes(form.elements.nuevoEstado.value);});
             form.addEventListener('submit',async event=>{
                 event.preventDefault();if(busy||expired||!available(route,form))return;
                 const userId=detail.usuario.idUsuario,payload=new URLSearchParams();
-                for(const schema of fields){let value=form.elements.namedItem(schema.name).value.trim();if(schema.required&&!value){status('Completa: '+schema.label,true);return;}if(schema.type==='datetime-local'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value))value+=':00';if(value)payload.set(schema.name,value);}
+                for(const schema of fields){let value=form.elements.namedItem(schema.name).value.trim();if(schema.required&&!value){status('Completa: '+schema.label,true);return;}
+                    if(schema.type==='textarea'&&value.length>500){status('El texto no puede superar 500 caracteres.',true);return;}
+                    if(schema.type==='datetime-local'&&value){value=localDate(value);if(!value){status('La fecha de fin no es válida. Conserva la hora local del servidor.',true);return;}}
+                    if(value)payload.set(schema.name,value);}
+                if(payload.has('idUsuario')&&payload.get('idUsuario')!==String(userId)){status('La cuenta de la operación no corresponde al detalle seleccionado.',true);return;}
+                if(route==='estado/cambiar'&&!['PENDIENTE','ACTIVO','SUSPENDIDO','CERRADO'].includes(payload.get('nuevoEstado'))){status('Selecciona un estado oficial.',true);return;}
+                if(route==='restricciones/agregar'&&!['APOSTAR','TODAS_OPERACIONES'].includes(payload.get('tipoRestriccion'))){status('Selecciona un tipo de restricción oficial.',true);return;}
                 if(route==='estado/cambiar'&&['SUSPENDIDO','CERRADO'].includes(payload.get('nuevoEstado'))&&!payload.get('motivo')){status('El motivo es obligatorio para suspender o cerrar.',true);return;}
-                if(!window.confirm(title+' para '+identity(detail.usuario)+' ('+detail.usuario.correo+'). ¿Confirmar?'))return;
+                const consequences=route==='estado/cambiar'&&payload.get('nuevoEstado')==='CERRADO'?' Cerrar la cuenta impide reactivarla desde este módulo.':route==='restricciones/levantar'?' Se levantará la restricción '+detail.restricciones.find(r=>r.idRestriccion===Number(payload.get('idRestriccion')))?.tipoRestriccion+'.':'';
+                if(!window.confirm(title+' para '+identity(detail.usuario)+' ('+detail.usuario.correo+').'+consequences+' ¿Confirmar?'))return;
                 busy=true;sync();status('Procesando operación…');let sent=false;
                 $('users-operation-result').hidden=true;
                 try{
-                    const csrf=await api('/administrador/seguridad/csrf');if(typeof csrf.csrfToken!=='string'||!csrf.csrfToken)throw new Error('El servidor no devolvió un token CSRF válido.');
+                    const csrf=await api('/administrador/seguridad/csrf');if(typeof csrf.csrfToken!=='string'||!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(csrf.csrfToken))throw new Error('El servidor no devolvió un token CSRF válido.');
                     sent=true;const data=await api(prefix+route,{method:'POST',headers:{'X-CSRF-Token':csrf.csrfToken},body:payload});validateOutcome(route,data.resultado,payload,userId);
                     $('users-operation-values').replaceChildren();values($('users-operation-values'),Object.entries(data.resultado).filter(([key])=>Object.hasOwn(labels,key)).map(([key,value])=>[labels[key],value]));$('users-operation-result').hidden=false;
                     for(const schema of fields)if(schema.type!=='target')form.elements.namedItem(schema.name).value='';
@@ -362,9 +415,10 @@
                     stale=true;let refreshed=true;
                     try{await readDetail(userId);if(data.resultado.idVerificacion)pickVerification(data.resultado.idVerificacion);}catch(error){refreshed=false;report(error);}
                     if(!expired){try{await readPending();}catch(error){refreshed=false;report(error);}}
-                    status(title+': confirmado por el servidor.'+(refreshed?' Detalle y pendientes actualizados.':' La respuesta se conserva; no se pudo completar la actualización. Reintenta las consultas manualmente.'),!refreshed);
+                    status(title+(data.resultado.sinCambios===true?': confirmado sin cambios.':': confirmado por el servidor.')+(refreshed?' Detalle y pendientes actualizados.':' La respuesta se conserva; no se pudo completar la actualización. Reintenta las consultas manualmente.'),!refreshed);
                 }catch(error){
                     report(error);
+                    if(!live())return;
                     if(sent&&(!error.status||error.status>=500||error.status===408)){uncertain.add(userId);stale=true;status('Operación sin confirmación. Conservamos tus campos. Consulta el detalle del mismo usuario antes de considerar un reintento.',true);}
                     else if(sent&&error.status===409)stale=true;
                 }finally{busy=false;sync();}
@@ -373,14 +427,20 @@
     }
     async function searchUsers(page){
         if(busy||expired||!readable)return;
-        busy=true;sync();status('Buscando usuarios…');$('user-search-results').replaceChildren();
+        const requestedText=$('user-search-text').value.trim(),revision=++searchRevision;
+        if($('user-search-text').value.length>150||!Number.isInteger(page)||page<1||((page-1)*50)>2147483647){status('La búsqueda admite hasta 150 caracteres y una página válida.',true);return;}
+        searchText=requestedText;searchValid=false;busy=true;sync();status('Buscando usuarios…');$('user-search-results').replaceChildren();$('users-page').textContent='Consultando página '+page+'…';
         try {
-            const data=await api('/administrador/usuarios/buscar?'+new URLSearchParams({buscar:searchText,pagina:page,tamanoPagina:50}));
-            if(!Array.isArray(data.usuarios)||data.pagina!==page||data.tamanoPagina!==50||!Number.isSafeInteger(data.total)||data.total<0)throw new Error('Respuesta de busqueda invalida.');
-            searchPage=page;searchTotal=data.total;$('users-page').textContent='Página '+page+' · '+data.total+' cuentas';
+            const data=await api('/administrador/usuarios/buscar?'+new URLSearchParams({buscar:requestedText,pagina:page,tamanoPagina:50}));
+            if(revision!==searchRevision||requestedText!==$('user-search-text').value.trim())return;
+            if(!Array.isArray(data.usuarios)||data.pagina!==page||data.tamanoPagina!==50||!Number.isSafeInteger(data.total)||data.total<0
+                    ||(page>1&&(page-1)*50>=data.total)||data.usuarios.length!==Math.min(50,Math.max(0,data.total-(page-1)*50))
+                    ||data.usuarios.some(user=>!user||!Number.isInteger(user.idUsuario)||!validId(user.idUsuario)||typeof user.correo!=='string'||!user.correo.trim()||typeof user.rol!=='string'||typeof user.estadoUsuario!=='string')
+                    ||new Set(data.usuarios.map(user=>user.idUsuario)).size!==data.usuarios.length)throw new Error('La página recibida es inconsistente. Vuelve a buscar desde la primera página.');
+            searchPage=page;searchTotal=data.total;searchValid=true;$('users-page').textContent='Página '+page+' · '+data.total+' cuentas';
             table($('user-search-results'),'Cuentas encontradas',['Nombre','Correo','Estado','Rol','Acción'],data.usuarios.map(user=>[identity(user),user.correo,user.estadoUsuario,user.rol,user.rol==='USUARIO'?button('Seleccionar cuenta',()=>consult(user.idUsuario)):'Datos básicos disponibles en esta fila']));
             status(data.usuarios.length?'Selecciona una cuenta para consultar su detalle.':'No se encontraron usuarios con esos datos.');
-        }catch(e){report(e);}finally{busy=false;sync();}
+        }catch(e){if(revision!==searchRevision)return;if(live()){searchTotal=0;searchValid=false;$('users-page').textContent='Consulta sin confirmar. Vuelve a buscar.';}report(e);}finally{busy=false;sync();}
     }
     $('batch-all').addEventListener('change',()=>{
         if(busy||expired||!writable||batchResults)return;
@@ -400,7 +460,8 @@
         batchResults=null;batchSelection.clear();$('batch-results').hidden=true;
         $('batch-summary').replaceChildren();$('batch-rows').replaceChildren();syncBatch();
     });
-    $('user-search').addEventListener('submit',event=>{event.preventDefault();searchText=$('user-search-text').value.trim();searchUsers(1);});
+    $('user-search-text').addEventListener('input',()=>{++searchRevision;searchPage=1;searchTotal=0;searchValid=false;$('user-search-results').replaceChildren();$('users-page').textContent='Búsqueda modificada. Consulta nuevamente.';sync();});
+    $('user-search').addEventListener('submit',event=>{event.preventDefault();searchUsers(1);});
     $('users-prev').addEventListener('click',()=>{if(searchPage>1)searchUsers(searchPage-1);});
     $('users-next').addEventListener('click',()=>{if(searchPage*50<searchTotal)searchUsers(searchPage+1);});
     $('pending-form').addEventListener('submit',async event=>{event.preventDefault();if(busy||expired||!readable)return;busy=true;sync();status('Consultando usuarios pendientes…');try{await readPending();status('Pendientes actualizados.');}catch(error){report(error);}finally{busy=false;sync();}});
@@ -408,7 +469,7 @@
     $('user-id').addEventListener('input',()=>{
         if(detail&&Number($('user-id').value)!==detail.usuario.idUsuario){stale=true;clearUserDisplay();$('users-operation-result').hidden=true;sync();}
     });
-    window.addEventListener('pagehide',()=>{controllers.forEach(controller=>controller.abort());});
+    window.addEventListener('pagehide',()=>{leaving=true;++searchRevision;controllers.forEach(controller=>controller.abort());});
     renderForms();openUserOperation(operations[0][0]);sync();
     if(!['ADMINISTRADOR','OPERADOR_EVENTOS','CAJERO','AUDITOR'].includes(role)){
         status('No se pudo obtener el rol de la sesión administrativa. Vuelve a iniciar sesión. No se ha consultado el backend de usuarios.',true);

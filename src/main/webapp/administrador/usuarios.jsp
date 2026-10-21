@@ -43,6 +43,7 @@
 <p id="users-status" class="live-status" role="status" aria-live="polite">Selecciona una cuenta del listado de verificaciones pendientes.</p>
 <a id="users-login" href="${pageContext.request.contextPath}/administrador/login" hidden>Volver a iniciar sesión</a>
 <p id="users-uncertain" class="warning" role="status" hidden>Hay una operación sin confirmación. Consulta de nuevo el detalle del mismo usuario antes de considerar un reintento. No se reenvía ningún POST automáticamente.</p>
+<p id="users-approval-block" class="warning" role="status">La aprobación individual y por lotes está bloqueada para uso real hasta completar la validación SQL autorizada. Las demás operaciones conservan sus permisos.</p>
 <section class="panel"><h2>Usuarios pendientes de verificación</h2>
 <form id="pending-form" class="toolbar"><label for="pending-count">Cantidad máxima<input id="pending-count" name="cantidad" type="number" min="1" max="500" step="1" value="100" required></label><button type="submit">Consultar / actualizar pendientes</button></form>
 <p class="muted">Esta consulta incluye verificaciones pendientes o en revisión; no es un listado general de usuarios.</p>
@@ -53,7 +54,7 @@
 <div class="toolbar"><label class="batch-choice"><input id="batch-all" type="checkbox"> Seleccionar todos los elegibles visibles (máximo 40)</label><button id="batch-clear" type="button">Limpiar selección</button><strong id="batch-count" role="status">Seleccionados: 0 de 40</strong></div>
 <label for="batch-observation">Observación administrativa común (opcional, máximo 500 caracteres)</label>
 <textarea id="batch-observation" maxlength="500" rows="3"></textarea>
-<button id="batch-approve" type="button" class="primary" disabled>Aprobar seleccionados</button>
+<button id="batch-approve" type="button" class="primary" aria-describedby="users-approval-block" disabled>Aprobación bloqueada: validación SQL pendiente</button>
 </section>
 <div id="pending-results" class="management-results"></div>
 </section>
