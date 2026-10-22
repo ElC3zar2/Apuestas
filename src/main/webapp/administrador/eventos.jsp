@@ -52,7 +52,8 @@
 <div data-wizard-step="1"><h3>Deporte y liga</h3><div class="toolbar"><button id="wizard-load-sports" type="button">Cargar / actualizar deportes</button></div>
 <div class="wizard-fields"><label for="wizard-sport">Deporte<select id="wizard-sport" required><option value="">Carga los deportes disponibles</option></select></label><label for="wizard-league">Liga<select id="wizard-league" required disabled><option value="">Primero selecciona un deporte</option></select></label></div><button id="wizard-load-leagues" type="button">Consultar / actualizar ligas</button></div>
 <div data-wizard-step="2" hidden><h3>Participantes</h3>
-<p class="muted">Se ofrecen participantes activos del deporte de la liga seleccionada. El modelo no define pertenencia exclusiva de participantes a una liga.</p>
+<p class="muted">Se ofrecen participantes activos del deporte con asociación activa a la liga seleccionada, como exige el backend. Si falta uno, asócialo primero en Ligas y participantes. Esto no implica pertenencia exclusiva a una liga.</p>
+<div class="toolbar"><label for="wizard-participant-search">Buscar participante<input id="wizard-participant-search" type="search" maxlength="150"></label><button id="wizard-participant-query" type="button">Buscar</button><button id="wizard-participant-prev" type="button">Anteriores</button><span id="wizard-participant-page" role="status"></span><button id="wizard-participant-next" type="button">Siguientes</button></div>
 <div class="wizard-fields"><label for="wizard-first"><span id="wizard-first-label">Participante 1</span><select id="wizard-first" required disabled><option value="">Primero selecciona una liga</option></select></label>
 <label for="wizard-second"><span id="wizard-second-label">Participante 2</span><select id="wizard-second" required disabled><option value="">Primero selecciona una liga</option></select></label></div>
 <div id="wizard-participants" class="wizard-participants"></div></div>
@@ -69,11 +70,13 @@
 </form></section>
 <details class="panel" id="advanced-event-management"><summary>Administración avanzada: consultar, actualizar y cambiar estados</summary><section class="panel" aria-labelledby="query-title"><h2 id="query-title">Consultar información disponible</h2>
 <form id="browse-form" class="toolbar"><label for="browse-sport">Deporte<select id="browse-sport" name="idDeporte" required><option value="">Carga los deportes disponibles</option></select></label><button type="submit">Consultar eventos</button></form>
+<label for="event-state-filter">Estado<select id="event-state-filter"><option value="">Todos</option><option>BORRADOR</option><option>PROGRAMADO</option><option>EN_VIVO</option><option>SUSPENDIDO</option><option>PENDIENTE_RESULTADO</option><option>FINALIZADO</option><option>CANCELADO</option></select></label>
 <button id="load-sports" type="button">Consultar deportes activos</button>
 <div id="browse-results" class="management-results"></div>
 <form id="detail-form" class="toolbar"><label for="detail-id">Evento<select id="detail-id" name="idEvento" required disabled><option value="">Primero consulta eventos por deporte</option></select></label><button type="submit">Consultar / actualizar evento</button></form>
 <div class="toolbar"><a id="selected-live" hidden>Control en vivo del evento</a><a id="selected-markets" hidden>Mercados del evento</a></div>
-<p class="muted">La exploración puede omitir datos no publicados. Un listado vacío no confirma que no existan registros administrativos.</p>
+<p class="muted">Este listado y el detalle son administrativos e incluyen borradores. Consulta el detalle antes de actualizar o cambiar estados. Las transiciones las decide el backend.</p>
+<form id="event-participant-query" class="toolbar"><label for="event-participant-search">Buscar participante activo de la liga<input id="event-participant-search" type="search" maxlength="150"></label><button type="submit">Consultar candidatos</button><button id="event-participant-prev" type="button" disabled>Anteriores</button><span id="event-participant-page" role="status"></span><button id="event-participant-next" type="button" disabled>Siguientes</button></form>
 <div id="detail-results" class="management-results"></div>
 </section>
 <section id="operation-result" class="panel" hidden aria-labelledby="result-title"><h2 id="result-title">Respuesta oficial de la operación</h2><div id="operation-values"></div></section>

@@ -41,7 +41,10 @@
 <form id="browse-form" class="toolbar"><label for="browse-sport">Deporte<select id="browse-sport" name="idDeporte" required><option value="">Carga los deportes disponibles</option></select></label><button type="submit">Consultar ligas</button></form>
 <button id="load-sports" type="button">Consultar deportes activos</button>
 <div id="browse-results" class="management-results"></div>
-<p class="muted">Los participantes se consultan por deporte y los países se cargan desde el catálogo. País vacío elimina la asociación.</p>
+<p class="muted">La consulta de ligas ofrece únicamente ligas activas. El backend no expone aquí un listado de ligas inactivas. La pertenencia al deporte, a una liga y a un evento son relaciones distintas.</p>
+<form id="participant-query" class="toolbar"><label for="participant-search">Buscar participante<input id="participant-search" maxlength="150" type="search"></label><label for="participant-active">Activo<select id="participant-active"><option value="">Todos</option><option value="true">Sí</option><option value="false">No</option></select></label><label for="participant-league">Asociados a liga<select id="participant-league"><option value="">Todo el deporte</option></select></label><label for="participant-size">Por página<select id="participant-size"><option>20</option><option>50</option><option>100</option></select></label><button type="submit">Consultar participantes</button></form>
+<div class="toolbar"><button id="participant-prev" type="button" disabled>Participantes anteriores</button><span id="participant-page" role="status"></span><button id="participant-next" type="button" disabled>Participantes siguientes</button></div><div id="participant-results" class="management-results"></div>
+<p class="muted">País vacío elimina la asociación. Para modificar un registro debes cargarlo desde su tabla. Si su país actual no está disponible, se bloqueará la actualización para evitar borrarlo por omisión.</p>
 </section>
 <section id="operation-result" class="panel" hidden aria-labelledby="result-title"><h2 id="result-title">Respuesta oficial de la operación</h2><div id="operation-values"></div></section>
 <div id="management-forms" class="management-grid"></div>
