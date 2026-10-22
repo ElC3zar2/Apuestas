@@ -3,6 +3,12 @@
     const $ = id => document.getElementById(id);
     const page = document.body.dataset.management;
     if (!page) return;
+    // ADMIN-05 dispone de un controlador propio; evita registrar dos flujos de mercados.
+    if (page === 'mercados') {
+        if (window.BetZoneMarkets) window.BetZoneMarkets.init();
+        else { const status=document.getElementById('management-status');if(status)status.textContent='No se pudo cargar la administración de mercados. Recarga la página.'; }
+        return;
+    }
     const base = document.body.dataset.contextPath || '';
     const role = (document.body.dataset.adminRole || '').trim();
     const phase4 = page === 'catalogos' || page === 'eventos';
