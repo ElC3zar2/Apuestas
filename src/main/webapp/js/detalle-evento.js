@@ -113,10 +113,14 @@
         const available = item.puedeSeleccionar === true && event.puedeApostar === true
                 && item.seleccionActiva === true && item.cuotaActiva === true
                 && validId(item.idSeleccion) && validId(item.idCuota) && decimal(item.cuota) && item.cuota > 0;
-        // Esta limitacion pertenece al formulario actual, no a la disponibilidad
-        // ni a la autorizacion del servidor. Otras modalidades no se bloquean.
         const needsForecast = market.tipoMercado === "MARCADOR_FINAL";
-        const canNavigate = available && !needsForecast;
+        const knownType = ["CONVENCIONAL", "PRIMERA_ANOTACION", "MARCADOR_FINAL"].includes(market.tipoMercado);
+        const ordered = [1,2].map(order => event.participantes.filter(p => p.ordenParticipante === order));
+        const verifiedOrder = event.participantes.length === 2 && ordered.every(matches => matches.length === 1
+                && validId(matches[0].idParticipante) && text(matches[0].participante))
+                && ordered[0][0].idParticipante !== ordered[1][0].idParticipante;
+        const occurrences = event.mercados.reduce((total, m) => total + m.selecciones.filter(s => s.idSeleccion === item.idSeleccion).length, 0);
+        const canNavigate = available && knownType && (!needsForecast || (verifiedOrder && validId(event.idEvento) && occurrences === 1));
         const card = node("article", "selection" + (available ? "" : " is-unavailable"));
         card.append(node("h4", "", text(item.seleccion) || "Selección sin nombre disponible"), node("p", "odd-label", "CUOTA"),
                 node("p", "odd", decimal(item.cuota) ? String(item.cuota) : "No disponible"),
@@ -132,9 +136,10 @@
         if (text(item.resultadoSeleccion)) fact(facts, "Resultado", label(item.resultadoSeleccion));
         if (text(item.fechaResolucion)) fact(facts, "Resolución", fecha(item.fechaResolucion));
         card.append(facts);
-        const action = node(canNavigate ? "a" : "button", "selection-action", canNavigate ? "Seleccionar cuota ↗" : available && needsForecast ? "Requiere pronóstico" : "No disponible");
+        const action = node(canNavigate ? "a" : "button", "selection-action", canNavigate ? "Seleccionar cuota ↗" : available ? "Información insuficiente para continuar" : "No disponible");
         if (canNavigate) {
             action.href = contextPath + "/apuestas/realizar-apuesta.jsp?idSeleccion=" + encodeURIComponent(item.idSeleccion);
+            if (needsForecast) action.href += "&idEvento=" + encodeURIComponent(event.idEvento) + "&idMercado=" + encodeURIComponent(market.idMercado);
             action.setAttribute("aria-label", "Seleccionar cuota: " + (text(item.seleccion) || "selección disponible"));
         } else { action.type = "button"; action.disabled = true; }
         if (needsForecast) action.setAttribute("aria-describedby", "aviso-modalidad-" + market.idMercado);
@@ -154,7 +159,7 @@
         heading.append(title, node("span", "status-badge", label(item.estadoMercado)));
         card.append(heading);
         if (type === "MARCADOR_FINAL") {
-            const notice = node("p", "notice modality-notice", "Esta modalidad requiere indicar un marcador. El formulario actual todavía no permite introducir ese pronóstico; la selección desde esta pantalla queda pendiente de esa adaptación.");
+            const notice = node("p", "notice modality-notice", "Esta modalidad requiere un marcador para ambos participantes. El formulario verificará el evento, la selección y el orden oficial antes de permitir cotizar. Si ese orden no puede verificarse aquí, no se habilita la navegación.");
             notice.id = "aviso-modalidad-" + item.idMercado;
             card.append(notice);
         } else if (type === "CONVENCIONAL" || type === "PRIMERA_ANOTACION") {

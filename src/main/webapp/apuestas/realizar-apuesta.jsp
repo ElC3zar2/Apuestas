@@ -38,6 +38,14 @@
                     <input id="monto" name="monto" type="text" inputmode="decimal" autocomplete="off" maxlength="20" required aria-describedby="ayuda-monto error-monto" disabled>
                     <p id="ayuda-monto" class="muted field-help">Usa punto decimal y hasta dos decimales. El servidor determina los límites permitidos.</p>
                     <p id="error-monto" class="field-error" role="status"></p>
+                    <fieldset id="pronosticos" class="forecast-fields" hidden>
+                        <legend>Tu pronóstico de marcador final</legend>
+                        <p id="ayuda-pronosticos" class="muted field-help">Introduce un entero de 0 a 2147483647 por participante. El orden corresponde a la información oficial del evento, no a local y visitante.</p>
+                        <div class="forecast-grid">
+                            <div><label id="nombre-participante-a" for="pronostico-a">Participante A</label><input id="pronostico-a" name="pronosticoA" type="text" inputmode="numeric" autocomplete="off" maxlength="10" aria-describedby="ayuda-pronosticos error-pronostico-a" disabled><p id="error-pronostico-a" class="field-error" role="status"></p></div>
+                            <div><label id="nombre-participante-b" for="pronostico-b">Participante B</label><input id="pronostico-b" name="pronosticoB" type="text" inputmode="numeric" autocomplete="off" maxlength="10" aria-describedby="ayuda-pronosticos error-pronostico-b" disabled><p id="error-pronostico-b" class="field-error" role="status"></p></div>
+                        </div>
+                    </fieldset>
                     <button id="cotizar" class="button button-primary bet-button" type="submit" disabled>Cotizar apuesta</button>
                 </form>
                 <p class="muted field-help">Cotizar no registra una apuesta ni reserva saldo. La cuota puede cambiar al confirmar.</p>
@@ -53,6 +61,7 @@
         </div>
         <section id="estado-apuesta" class="panel operation-status" aria-busy="false" aria-label="Estado de la operación">
             <p id="mensaje-apuesta" role="status">Esperando selección y monto.</p>
+            <button id="reintentar-contexto" class="retry" type="button" hidden>Reintentar información del evento</button>
             <a id="login-apuesta" class="text-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
         </section>
         <section id="resultado-apuesta" class="panel result-panel" hidden aria-labelledby="titulo-resultado">

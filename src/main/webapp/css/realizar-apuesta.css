@@ -12,6 +12,16 @@
 #monto:disabled { color: var(--muted); }
 .field-help { font-size: 11px; line-height: 1.8; margin: 14px 0; }
 .field-error { color: #FFBDCF; min-height: 20px; font-size: 12px; line-height: 1.7; margin: 12px 0; }
+.forecast-fields { min-width: 0; margin: 22px 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+.forecast-fields legend { color: var(--cyan); font-size: 13px; padding: 0 6px; }
+.forecast-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.forecast-grid > div { min-width: 0; }
+.forecast-grid label { line-height: 1.7; overflow-wrap: anywhere; }
+.forecast-grid input { width: 100%; min-width: 0; min-height: 48px; padding: 12px; font: 500 22px var(--display); color: var(--text); background: rgba(0,0,0,.2); border: 1px solid var(--border); border-radius: 10px; }
+.forecast-grid input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.forecast-grid input[aria-invalid="true"] { border-color: #FFBDCF; }
+.forecast-grid input:disabled { color: var(--muted); }
+@media (max-width: 600px) { .forecast-grid { grid-template-columns: minmax(0,1fr); } }
 .bet-button { width: 100%; border: 0; min-height: 48px; white-space: normal; line-height: 1.6; }
 .bet-button:disabled { cursor: not-allowed; background: rgba(255,255,255,.05); box-shadow: none; color: var(--muted); filter: none; }
 .empty-quote { border: 1px dashed var(--border); padding: 26px; border-radius: 12px; color: var(--muted); font-size: 13px; line-height: 1.8; margin: 24px 0; }
