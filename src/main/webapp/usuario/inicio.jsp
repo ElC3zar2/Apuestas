@@ -58,6 +58,23 @@
                 <div class="metric"><dt>Perdedores</dt><dd data-field="boletosPerdedores">—</dd></div>
                 <div class="metric"><dt>Anulados</dt><dd data-field="boletosAnulados">—</dd></div>
             </dl>
+            <details class="activity-analytics">
+                <summary>Ver analítica histórica e importes</summary>
+                <p class="muted analytics-note">Valores oficiales del backend. Los decimales se muestran tal como se reciben, sin redondeo ni símbolos monetarios. Esta información no constituye un estado de cuenta.</p>
+                <dl class="analytics-grid is-loading">
+                    <div><dt>Total apostado</dt><dd data-field="totalApostado">—</dd><dd class="analytics-help">Valor histórico informado.</dd></div>
+                    <div><dt>Comisiones históricas</dt><dd data-field="totalComisionesHistoricas">—</dd><dd class="analytics-help">Comisiones históricas registradas.</dd></div>
+                    <div><dt>Cargo histórico total</dt><dd data-field="totalCargoHistorico">—</dd><dd class="analytics-help">Importe informado bajo este concepto.</dd></div>
+                    <div><dt>Premio potencial pendiente</dt><dd data-field="premioPotencialPendiente">—</dd><dd class="analytics-help">Es potencial; no significa dinero ya ganado.</dd></div>
+                    <div><dt>Ganancia neta potencial pendiente</dt><dd data-field="gananciaNetaPotencialPendiente">—</dd><dd class="analytics-help">Es potencial; no es saldo disponible ni resultado realizado.</dd></div>
+                    <div><dt>Premios de boletos ganadores</dt><dd data-field="totalPremiosGanadores">—</dd><dd class="analytics-help">Información oficial de boletos ganadores.</dd></div>
+                    <div><dt>Total devuelto por anulación</dt><dd data-field="totalDevueltoPorAnulacion">—</dd><dd class="analytics-help">Devoluciones, distintas de los premios ganados.</dd></div>
+                    <div><dt>Resultado neto realizado</dt><dd data-field="resultadoNetoRealizado">—</dd><dd class="analytics-help">Resultado registrado por el backend.</dd></div>
+                    <div><dt>Porcentaje de efectividad</dt><dd data-field="porcentajeEfectividad">—</dd></div>
+                    <div><dt>Cuota promedio</dt><dd data-field="cuotaPromedio">—</dd></div>
+                    <div><dt>Probabilidad implícita promedio (%)</dt><dd data-field="probabilidadImplicitaPromedio">—</dd></div>
+                </dl>
+            </details>
             <button class="retry" type="button" hidden>Volver a intentar</button>
         </section>
         <div class="bottom-grid">
