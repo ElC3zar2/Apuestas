@@ -124,7 +124,7 @@ function cambiarTipoDocumento() {
 
 /*
  * =====================================================
- * CAMBIO DE PAÍS (lógica original, sin cambios)
+ * CAMBIO DE PAÍS
  * =====================================================
  */
 function cambiarPais() {
@@ -140,6 +140,11 @@ function cambiarPais() {
     const municipio = document.getElementById("idMunicipio");
     const ciudadExterior = document.getElementById("ciudadExterior");
 
+    if (codigo !== "GT") {
+        invalidarConsultaMunicipios();
+        mostrarEstadoMunicipios("Seleccione primero un departamento");
+    }
+
     /*
      * GUATEMALA
      * Departamento obligatorio. Municipio obligatorio. Ciudad exterior bloqueada.
@@ -152,13 +157,13 @@ function cambiarPais() {
         departamento.disabled = false;
         departamento.required = true;
 
-        municipio.disabled = false;
         municipio.required = true;
 
         ciudadExterior.disabled = true;
         ciudadExterior.required = false;
         ciudadExterior.value = "";
         ciudadExterior.classList.remove("has-value");
+        cargarMunicipios();
     }
     /*
      * PAÍS EXTRANJERO
@@ -175,7 +180,6 @@ function cambiarPais() {
 
         municipio.disabled = true;
         municipio.required = false;
-        municipio.innerHTML = '<option value="">Seleccione primero un departamento</option>';
 
         ciudadExterior.disabled = false;
         ciudadExterior.required = true;
@@ -204,21 +208,63 @@ function cambiarPais() {
 
 /*
  * =====================================================
- * CARGAR MUNICIPIOS (lógica original, sin cambios)
+ * CARGAR MUNICIPIOS
  * =====================================================
  */
-function cargarMunicipios() {
+let solicitudMunicipios = 0;
+let controladorMunicipios = null;
+
+function invalidarConsultaMunicipios() {
+    solicitudMunicipios += 1;
+    if (controladorMunicipios) controladorMunicipios.abort();
+    controladorMunicipios = null;
+    return solicitudMunicipios;
+}
+
+function esGuatemala() {
+    const pais = document.getElementById("idPais");
+    const opcion = pais.options[pais.selectedIndex];
+    return Boolean(opcion && opcion.getAttribute("data-codigo") === "GT");
+}
+
+function mostrarEstadoMunicipios(mensaje, cargando = false) {
+    const municipio = document.getElementById("idMunicipio");
+    const opcion = document.createElement("option");
+    opcion.value = "";
+    opcion.textContent = mensaje;
+    municipio.replaceChildren(opcion);
+    municipio.value = "";
+    municipio.disabled = true;
+    municipio.setAttribute("aria-busy", String(cargando));
+}
+
+function falloMunicipios(mensaje) {
+    const error = new Error(mensaje);
+    error.controlado = true;
+    return error;
+}
+
+async function cargarMunicipios() {
 
     const idDepartamento = document.getElementById("idDepartamento").value;
     const municipio = document.getElementById("idMunicipio");
 
-    /* No se seleccionó departamento. */
-    if (!idDepartamento) {
-        municipio.innerHTML = '<option value="">Seleccione primero un departamento</option>';
+    const solicitud = invalidarConsultaMunicipios();
+    if (!esGuatemala() || !idDepartamento) {
+        mostrarEstadoMunicipios("Seleccione primero un departamento");
+        return;
+    }
+    if (!/^\d+$/.test(idDepartamento) || !Number.isSafeInteger(Number(idDepartamento))
+            || Number(idDepartamento) < 1 || Number(idDepartamento) > 2147483647) {
+        mostrarEstadoMunicipios("Seleccione un departamento válido");
         return;
     }
 
-    municipio.innerHTML = '<option value="">Cargando municipios...</option>';
+    const controller = new AbortController();
+    controladorMunicipios = controller;
+    const vigente = () => solicitud === solicitudMunicipios && esGuatemala()
+        && document.getElementById("idDepartamento").value === idDepartamento;
+    mostrarEstadoMunicipios("Cargando municipios...", true);
 
     /* URL AL MUNICIPIO SERVLET. */
     const contextPath = window.APP_CONTEXT_PATH || "";
@@ -226,27 +272,71 @@ function cargarMunicipios() {
         + '/municipios?idDepartamento='
         + encodeURIComponent(idDepartamento);
 
-    fetch(url)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error("No fue posible cargar los municipios.");
-            }
-            return response.json();
-        })
-        .then(datos => {
-            municipio.innerHTML = '<option value="">Seleccione un municipio</option>';
-
-            datos.forEach(item => {
-                const opcion = document.createElement("option");
-                opcion.value = item.idMunicipio;
-                opcion.textContent = item.nombre;
-                municipio.appendChild(opcion);
+    let timeout;
+    try {
+        const consulta = async () => {
+            const response = await fetch(url, {
+                method: "GET", credentials: "same-origin", cache: "no-store",
+                headers: { Accept: "application/json" }, signal: controller.signal
             });
-        })
-        .catch(error => {
-            municipio.innerHTML = '<option value="">Error al cargar municipios</option>';
-            console.error(error);
+            if (!response.ok) {
+                const mensajes = {
+                    400: "El departamento no es válido.",
+                    401: "La consulta requiere una sesión válida.",
+                    403: "No tiene permiso para consultar municipios.",
+                    404: "La consulta de municipios no está disponible.",
+                    500: "El servidor no pudo consultar los municipios.",
+                    503: "La consulta no está disponible temporalmente."
+                };
+                throw falloMunicipios(mensajes[response.status] || "No fue posible consultar los municipios.");
+            }
+            if (response.redirected || !/^application\/json\s*(?:;|$)/i.test(response.headers.get("content-type") || "")) {
+                throw falloMunicipios("El servidor devolvió una respuesta inesperada.");
+            }
+            let datos;
+            try { datos = await response.json(); }
+            catch (error) { throw falloMunicipios("La respuesta de municipios no contiene JSON válido."); }
+            const ids = new Set();
+            if (!Array.isArray(datos) || datos.some(item => {
+                if (!item || typeof item !== "object" || !Number.isInteger(item.idMunicipio)
+                        || item.idMunicipio < 1 || item.idMunicipio > 2147483647
+                        || typeof item.nombre !== "string" || !item.nombre.trim() || ids.has(item.idMunicipio)) return true;
+                ids.add(item.idMunicipio);
+                return false;
+            })) throw falloMunicipios("El catálogo de municipios tiene un formato inválido.");
+            return datos;
+        };
+        const espera = new Promise((_, reject) => {
+            timeout = window.setTimeout(() => {
+                reject(falloMunicipios("La consulta de municipios superó el tiempo de espera."));
+                controller.abort();
+            }, 10000);
         });
+        const datos = await Promise.race([consulta(), espera]);
+        if (!vigente()) return;
+        if (!datos.length) {
+            mostrarEstadoMunicipios("No hay municipios disponibles para este departamento");
+            return;
+        }
+        mostrarEstadoMunicipios("Seleccione un municipio");
+        datos.forEach(item => {
+            const opcion = document.createElement("option");
+            opcion.value = String(item.idMunicipio);
+            opcion.textContent = item.nombre;
+            municipio.appendChild(opcion);
+        });
+        municipio.disabled = false;
+    } catch (error) {
+        if (!vigente()) return;
+        const mensaje = error && error.controlado ? error.message : "No se pudo conectar con el servidor.";
+        mostrarEstadoMunicipios(mensaje + " Cambie de departamento para reintentar.");
+    } finally {
+        window.clearTimeout(timeout);
+        if (vigente()) {
+            municipio.setAttribute("aria-busy", "false");
+            controladorMunicipios = null;
+        }
+    }
 }
 
 

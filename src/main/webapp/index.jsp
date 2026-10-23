@@ -5,52 +5,6 @@
 --%>
 
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ page import="java.util.*" %>
-<%
-    // Datos simulados para la cinta de resultados en vivo.
-    
-    List<Map<String, String>> partidosSimulados = new ArrayList<>();
-
-    Map<String, String> p1 = new LinkedHashMap<>();
-    p1.put("local", "Real Madrid");
-    p1.put("golesLocal", "2");
-    p1.put("visitante", "Barcelona");
-    p1.put("golesVisitante", "1");
-    p1.put("minuto", "88'");
-    p1.put("cuota", "1.45");
-    p1.put("tendencia", "up");
-    partidosSimulados.add(p1);
-
-    Map<String, String> p2 = new LinkedHashMap<>();
-    p2.put("local", "Boca Juniors");
-    p2.put("golesLocal", "0");
-    p2.put("visitante", "River Plate");
-    p2.put("golesVisitante", "0");
-    p2.put("minuto", "63'");
-    p2.put("cuota", "2.10");
-    p2.put("tendencia", "down");
-    partidosSimulados.add(p2);
-
-    Map<String, String> p3 = new LinkedHashMap<>();
-    p3.put("local", "Lakers");
-    p3.put("golesLocal", "97");
-    p3.put("visitante", "Warriors");
-    p3.put("golesVisitante", "101");
-    p3.put("minuto", "Q4 04:12");
-    p3.put("cuota", "1.80");
-    p3.put("tendencia", "up");
-    partidosSimulados.add(p3);
-
-    Map<String, String> p4 = new LinkedHashMap<>();
-    p4.put("local", "Djokovic");
-    p4.put("golesLocal", "2");
-    p4.put("visitante", "Alcaraz");
-    p4.put("golesVisitante", "1");
-    p4.put("minuto", "Set 4");
-    p4.put("cuota", "1.62");
-    p4.put("tendencia", "up");
-    partidosSimulados.add(p4);
-%>
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -64,19 +18,18 @@
 </head>
 <body>
 
-    <!-- ===================== TICKER DE RESULTADOS EN VIVO ===================== -->
-    <div class="ticker" role="marquee" aria-label="Resultados en vivo">
+    <!-- ===================== INFORMACIÓN DE LA PLATAFORMA ===================== -->
+    <div class="ticker" role="region" aria-label="Información de BetZone">
         <div class="ticker__track">
-            <% for (int rep = 0; rep < 2; rep++) { // duplicado para loop visual continuo
-                for (Map<String, String> p : partidosSimulados) { %>
-            <span class="ticker__item">
-                <%= p.get("local") %> <%= p.get("golesLocal") %> - <%= p.get("golesVisitante") %> <%= p.get("visitante") %>
-                <span class="minute">[<%= p.get("minuto") %>]</span>
-                <span class="<%= "up".equals(p.get("tendencia")) ? "odd-up" : "odd-down" %>">
-                    <%= "up".equals(p.get("tendencia")) ? "▲" : "▼" %> <%= p.get("cuota") %>
-                </span>
-            </span>
-            <% } } %>
+            <span class="ticker__item">Explorá eventos desde tu cuenta</span>
+            <span class="ticker__item">Revisá la cotización antes de confirmar</span>
+            <span class="ticker__item">Consultá tus boletos y movimientos</span>
+            <span class="ticker__item">Jugá con responsabilidad. +18.</span>
+            <!-- Repetición visual para la cinta continua; se anuncia una sola vez. -->
+            <span class="ticker__item" aria-hidden="true">Explorá eventos desde tu cuenta</span>
+            <span class="ticker__item" aria-hidden="true">Revisá la cotización antes de confirmar</span>
+            <span class="ticker__item" aria-hidden="true">Consultá tus boletos y movimientos</span>
+            <span class="ticker__item" aria-hidden="true">Jugá con responsabilidad. +18.</span>
         </div>
     </div>
 
@@ -88,7 +41,7 @@
         <div class="navbar__actions">
             <a href="${pageContext.request.contextPath}/usuario/login" class="btn btn--login">Iniciar sesión</a>
             <a href="${pageContext.request.contextPath}/registro" class="btn btn--signup">Crear cuenta</a>
-            <a href="${pageContext.request.contextPath}/administrador/login.jsp" class="btn btn--admin" aria-label="Acceso administrador" title="Acceso administrador">
+            <a href="${pageContext.request.contextPath}/administrador/login" class="btn btn--admin" aria-label="Acceso administrador" title="Acceso administrador">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -114,15 +67,15 @@
             <circle cx="50" cy="50" r="28" fill="none" stroke="#00FF66" stroke-width="2"/>
         </svg>
 
-        <p class="hero__eyebrow">Cuotas en vivo · Fútbol, básquet, tenis y más</p>
+        <p class="hero__eyebrow">Eventos · Boletos · Billetera</p>
         <h1>La nueva era de las apuestas deportivas</h1>
         <p class="hero__sub">
-            Seguí el partido minuto a minuto y apostá con las mejores cuotas del mercado,
-            desde tu teléfono o tu computadora.
+            Explorá eventos, revisá tus selecciones y consultá tus boletos y tu billetera
+            desde tu cuenta BetZone.
         </p>
         <div class="hero__cta">
             <a href="${pageContext.request.contextPath}/registro" class="btn btn--signup">Crear cuenta gratis</a>
-            <a href="#catalogo" class="btn btn--ghost">Ver cuotas de hoy</a>
+            <a href="#catalogo" class="btn btn--ghost">Conocé BetZone</a>
         </div>
     </header>
 
@@ -139,7 +92,7 @@
                 </svg>
                 <h3 class="card__title">La acción</h3>
                 <p class="card__reveal">
-                    Llevamos el estadio a tu pantalla: las mejores cuotas globales, actualizadas en tiempo real.
+                    Explorá los eventos y consultá los mercados y las cuotas disponibles desde tu cuenta.
                 </p>
             </article>
 
@@ -154,7 +107,7 @@
                 <div class="card__steps">
                     <div><span>1.</span> Elegí tu deporte ⚽</div>
                     <div><span>2.</span> Analizá tu pronóstico 📊</div>
-                    <div><span>3.</span> Celebrá tu victoria 🏆</div>
+                    <div><span>3.</span> Revisá antes de confirmar ✓</div>
                 </div>
             </article>
 
@@ -167,7 +120,7 @@
                 </svg>
                 <h3 class="card__title">El catálogo</h3>
                 <p class="card__reveal">
-                    Apuestas simples, combinadas, pronósticos en vivo y estadísticas minuto a minuto.
+                    Consultá tus boletos, sus comprobantes y los movimientos de tu billetera en un solo lugar.
                 </p>
             </article>
 
