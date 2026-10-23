@@ -43,50 +43,58 @@
         retry.hidden = !canRetry;
         login.hidden = !needsLogin;
     }
-    function fallo(message, needsLogin = false) { const error = new Error(message); error.needsLogin = needsLogin; return error; }
+    function fallo(message, needsLogin = false) { const error = new Error(message); error.needsLogin = needsLogin; error.controlled = true; return error; }
 
     async function consultar() {
         const controller = new AbortController();
-        let timedOut = false;
-        const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
+        let timeout;
         try {
-            const query = new URLSearchParams({ idEvento: String(idEvento) });
-            const response = await fetch(contextPath + "/eventos/exploracion/detalle?" + query.toString(), {
-                method: "GET", credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" }, signal: controller.signal
+            const consulta = async () => {
+                const query = new URLSearchParams({ idEvento: String(idEvento) });
+                const response = await fetch(contextPath + "/eventos/exploracion/detalle?" + query.toString(), {
+                    method: "GET", credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" }, signal: controller.signal
+                });
+                if (response.status === 401) throw fallo("Tu sesión no está disponible o ha expirado. Inicia sesión para continuar.", true);
+                if (response.redirected) {
+                    const target = new URL(response.url, window.location.href);
+                    if (target.pathname === contextPath + "/usuario/login" || target.pathname === contextPath + "/usuario/login.jsp") throw fallo("Tu sesión ha expirado. Inicia sesión para continuar.", true);
+                    throw fallo("El servidor redirigió la consulta a una respuesta inesperada.");
+                }
+                if (!response.ok) {
+                    const messages = {
+                        400: "No se pudo consultar el evento con los datos proporcionados.",
+                        403: "No tienes permiso para consultar este evento.",
+                        404: "El evento solicitado no existe o ya no está disponible.",
+                        409: "La información del evento cambió. Vuelve a consultar.",
+                        500: "El servidor no pudo cargar el evento. Intenta nuevamente.",
+                        503: "La consulta del evento no está disponible temporalmente. Intenta nuevamente."
+                    };
+                    throw fallo(messages[response.status] || "No fue posible consultar el evento. Intenta nuevamente.");
+                }
+                const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+                if (type !== "application/json") throw fallo("Se esperaba JSON y se recibió otra respuesta. Si tu sesión expiró, vuelve a iniciar sesión.", type === "text/html");
+                let data;
+                try { data = await response.json(); }
+                catch (error) { if (controller.signal.aborted) throw error; throw fallo("La respuesta JSON no es válida. Intenta nuevamente."); }
+                if (!object(data) || data.ok !== true || !object(data.evento) || data.evento.idEvento !== idEvento
+                        || !Array.isArray(data.evento.participantes) || !Array.isArray(data.evento.mercados)
+                        || data.evento.participantes.some(item => !object(item))
+                        || data.evento.mercados.some(item => !object(item) || !validId(item.idMercado) || !Array.isArray(item.selecciones) || item.selecciones.some(selection => !object(selection)))) {
+                    throw fallo("El servidor devolvió un detalle de evento incompleto o inesperado.");
+                }
+                return data.evento;
+            };
+            const espera = new Promise((_, reject) => {
+                timeout = window.setTimeout(() => {
+                    reject(fallo("La consulta tardó demasiado. Vuelve a intentar."));
+                    controller.abort();
+                }, 15000);
             });
-            if (response.status === 401) throw fallo("Tu sesión no está disponible o ha expirado. Inicia sesión para continuar.", true);
-            if (response.redirected) {
-                const target = new URL(response.url, window.location.href);
-                if (target.pathname === contextPath + "/usuario/login" || target.pathname === contextPath + "/usuario/login.jsp") throw fallo("Tu sesión ha expirado. Inicia sesión para continuar.", true);
-                throw fallo("El servidor redirigió la consulta a una respuesta inesperada.");
-            }
-            if (!response.ok) {
-                const messages = {
-                    400: "No se pudo consultar el evento con los datos proporcionados.",
-                    403: "No tienes permiso para consultar este evento.",
-                    404: "El evento solicitado no existe o ya no está disponible.",
-                    409: "La información del evento cambió. Vuelve a consultar.",
-                    500: "El servidor no pudo cargar el evento. Intenta nuevamente."
-                };
-                throw fallo(messages[response.status] || "No fue posible consultar el evento. Intenta nuevamente.");
-            }
-            const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-            if (type !== "application/json") throw fallo("Se esperaba JSON y se recibió otra respuesta. Si tu sesión expiró, vuelve a iniciar sesión.", type === "text/html");
-            let data;
-            try { data = await response.json(); }
-            catch (error) { if (controller.signal.aborted) throw error; throw fallo("La respuesta JSON no es válida. Intenta nuevamente."); }
-            if (!object(data) || data.ok !== true || !object(data.evento) || data.evento.idEvento !== idEvento
-                    || !Array.isArray(data.evento.participantes) || !Array.isArray(data.evento.mercados)
-                    || data.evento.participantes.some(item => !object(item))
-                    || data.evento.mercados.some(item => !object(item) || !validId(item.idMercado) || !Array.isArray(item.selecciones) || item.selecciones.some(selection => !object(selection)))) {
-                throw fallo("El servidor devolvió un detalle de evento incompleto o inesperado.");
-            }
-            return data.evento;
+            return await Promise.race([consulta(), espera]);
         } catch (error) {
-            if (timedOut) throw fallo("La consulta tardó demasiado. Vuelve a intentar.");
-            if (error instanceof TypeError) throw fallo("No se pudo conectar con el servidor. Revisa tu conexión e intenta nuevamente.");
-            if (error.name === "AbortError") throw fallo("La consulta se interrumpió. Vuelve a intentar.");
-            throw error;
+            if (error && error.controlled) throw error;
+            if (error && error.name === "AbortError") throw fallo("La consulta se interrumpió. Vuelve a intentar.");
+            throw fallo("No se pudo conectar con el servidor. Revisa tu conexión e intenta nuevamente.");
         } finally { window.clearTimeout(timeout); }
     }
 
@@ -99,28 +107,37 @@
         if (text(item.pais)) card.append(node("p", "", item.pais));
         return card;
     }
-    function seleccion(item, event) {
+    function seleccion(item, event, market) {
         // Solo habilita la navegación cuando el servidor informa disponibilidad.
         // No calcula vigencia ni autorización personal en el cliente.
         const available = item.puedeSeleccionar === true && event.puedeApostar === true
                 && item.seleccionActiva === true && item.cuotaActiva === true
                 && validId(item.idSeleccion) && validId(item.idCuota) && decimal(item.cuota) && item.cuota > 0;
+        // Esta limitacion pertenece al formulario actual, no a la disponibilidad
+        // ni a la autorizacion del servidor. Otras modalidades no se bloquean.
+        const needsForecast = market.tipoMercado === "MARCADOR_FINAL";
+        const canNavigate = available && !needsForecast;
         const card = node("article", "selection" + (available ? "" : " is-unavailable"));
         card.append(node("h4", "", text(item.seleccion) || "Selección sin nombre disponible"), node("p", "odd-label", "CUOTA"),
                 node("p", "odd", decimal(item.cuota) ? String(item.cuota) : "No disponible"),
-                node("p", "selection-status", available ? "Disponible para seleccionar" : "No disponible para seleccionar"));
+                node("p", "selection-status", available ? "Disponible según la consulta del servidor" : "No disponible para seleccionar"));
         const facts = node("dl", "selection-facts");
+        if (validId(item.idParticipante)) {
+            const matches = event.participantes.filter(participant => participant.idParticipante === item.idParticipante);
+            if (matches.length === 1 && text(matches[0].participante)) fact(facts, "Participante asociado", matches[0].participante);
+        }
         if (decimal(item.probabilidadImplicitaPorcentaje)) fact(facts, "Probabilidad implícita informada", String(item.probabilidadImplicitaPorcentaje) + " %");
         if (text(item.fechaInicioCuota)) fact(facts, "Inicio de vigencia", fecha(item.fechaInicioCuota));
         if (text(item.fechaFinCuota)) fact(facts, "Fin de vigencia", fecha(item.fechaFinCuota));
         if (text(item.resultadoSeleccion)) fact(facts, "Resultado", label(item.resultadoSeleccion));
         if (text(item.fechaResolucion)) fact(facts, "Resolución", fecha(item.fechaResolucion));
         card.append(facts);
-        const action = node(available ? "a" : "button", "selection-action", available ? "Seleccionar cuota ↗" : "No disponible");
-        if (available) {
+        const action = node(canNavigate ? "a" : "button", "selection-action", canNavigate ? "Seleccionar cuota ↗" : available && needsForecast ? "Requiere pronóstico" : "No disponible");
+        if (canNavigate) {
             action.href = contextPath + "/apuestas/realizar-apuesta.jsp?idSeleccion=" + encodeURIComponent(item.idSeleccion);
-            action.setAttribute("aria-label", "Seleccionar cuota: " + (text(item.seleccion) || item.idSeleccion));
+            action.setAttribute("aria-label", "Seleccionar cuota: " + (text(item.seleccion) || "selección disponible"));
         } else { action.type = "button"; action.disabled = true; }
+        if (needsForecast) action.setAttribute("aria-describedby", "aviso-modalidad-" + market.idMercado);
         card.append(action);
         return card;
     }
@@ -130,11 +147,24 @@
         const title = node("div");
         title.append(node("h3", "", text(item.mercado) || "Mercado sin nombre disponible"));
         if (text(item.descripcionMercado)) title.append(node("p", "market-description", item.descripcionMercado));
+        const types = {CONVENCIONAL: "Convencional", MARCADOR_FINAL: "Marcador final", PRIMERA_ANOTACION: "Primera anotación"};
+        const type = text(item.tipoMercado);
+        const knownType = Object.prototype.hasOwnProperty.call(types, type);
+        title.append(node("p", "market-modality", type ? "Modalidad informada: " + (knownType ? types[type] : label(type)) : "Modalidad no informada"));
         heading.append(title, node("span", "status-badge", label(item.estadoMercado)));
         card.append(heading);
+        if (type === "MARCADOR_FINAL") {
+            const notice = node("p", "notice modality-notice", "Esta modalidad requiere indicar un marcador. El formulario actual todavía no permite introducir ese pronóstico; la selección desde esta pantalla queda pendiente de esa adaptación.");
+            notice.id = "aviso-modalidad-" + item.idMercado;
+            card.append(notice);
+        } else if (type === "CONVENCIONAL" || type === "PRIMERA_ANOTACION") {
+            card.append(node("p", "market-description", type === "PRIMERA_ANOTACION"
+                ? "Esta modalidad utiliza la selección de un participante y no requiere un pronóstico numérico adicional."
+                : "Esta modalidad no requiere un pronóstico numérico adicional."));
+        }
         const grid = node("div", "selections-grid");
         if (!item.selecciones.length) grid.append(node("p", "empty-state", "Este mercado no tiene selecciones disponibles para mostrar."));
-        else item.selecciones.forEach(itemSelection => grid.append(seleccion(itemSelection, event)));
+        else item.selecciones.forEach(itemSelection => grid.append(seleccion(itemSelection, event, item)));
         card.append(grid);
         return card;
     }
@@ -166,13 +196,16 @@
         if (loading) return;
         loading = true;
         estado("Cargando evento…", true);
+        // Retirar el detalle anterior antes de consultar; un fallo no lo restaura.
+        document.getElementById("participantes").replaceChildren();
+        document.getElementById("mercados").replaceChildren();
         try {
             render(await consultar());
             statusPanel.setAttribute("aria-busy", "false");
             statusPanel.classList.remove("is-loading");
             statusPanel.hidden = true;
             content.hidden = false;
-        } catch (error) { estado(error.message || "No fue posible cargar el evento.", false, true, error.needsLogin === true); }
+        } catch (error) { estado(error && error.controlled ? error.message : "No fue posible cargar el evento.", false, true, Boolean(error && error.needsLogin)); }
         finally { loading = false; }
     }
     retry.addEventListener("click", cargar);

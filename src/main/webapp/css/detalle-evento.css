@@ -33,6 +33,8 @@
 .market-heading > div { min-width: 0; }
 .market-heading h3 { font: 700 22px var(--display); line-height: 1.4; margin: 0; overflow-wrap: anywhere; }
 .market-description { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 10px 0 0; overflow-wrap: anywhere; }
+.market-modality { color: var(--cyan); font-size: 12px; line-height: 1.7; margin: 12px 0 0; overflow-wrap: anywhere; }
+.modality-notice { margin: 18px 0 0; overflow-wrap: anywhere; }
 .selections-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr)); gap: 16px; margin-top: 24px; }
 .selection { display: flex; flex-direction: column; min-width: 0; padding: 20px; background: rgba(0,255,255,.025); border: 1px solid rgba(0,255,255,.16); border-radius: 14px; }
 .selection.is-unavailable { background: rgba(0,0,0,.12); border-color: var(--border); }
