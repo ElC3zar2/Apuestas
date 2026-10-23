@@ -92,7 +92,7 @@
         for(const [button,delta] of [[prev,-1],[next,1]]){button.type='button';button.addEventListener('click',()=>{if(button.disabled)return;eventPage+=delta;form.requestSubmit();});group.append(button);}
         group.append(label);form.after(group);pageControls={prev,next,label};syncPages(false);
     }
-    async function csrf() {const data=await request('/administrador/seguridad/csrf');if(typeof data.csrfToken!=='string'||!data.csrfToken)throw new Error('No se obtuvo un token CSRF válido.');return data.csrfToken;}
+    async function csrf() {const data=await request('/administrador/seguridad/csrf');if(typeof data.csrfToken!=='string'||!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(data.csrfToken))throw new Error('No se obtuvo un token CSRF válido.');return data.csrfToken;}
     function navigation() {
         const role=document.body.dataset.adminRole;
         const allowed={inicio:['AUDITOR'],eventos:['OPERADOR_EVENTOS'],catalogos:['OPERADOR_EVENTOS'],mercados:['OPERADOR_EVENTOS'],
