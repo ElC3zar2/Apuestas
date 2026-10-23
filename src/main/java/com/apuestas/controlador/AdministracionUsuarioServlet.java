@@ -42,7 +42,9 @@ public class AdministracionUsuarioServlet extends HttpServlet {
         catch(RuntimeException e){AdministracionUsuarioHttp.error(res,500);return;}
         try {
             AdministracionUsuarioServicio.autorizar(actor,rol,op.lectura());
-            if(!op.lectura() && !CsrfSeguridad.validar(req,CsrfSeguridad.Ambito.ADMINISTRADOR)) {
+            if(!op.lectura()
+                    && !com.apuestas.seguridad.FiltroCsrf.validada(req,CsrfSeguridad.Ambito.ADMINISTRADOR)
+                    && !CsrfSeguridad.validar(req,CsrfSeguridad.Ambito.ADMINISTRADOR)) {
                 AdministracionUsuarioHttp.error(res,403);return;
             }
             Map<String,String[]> params=req.getParameterMap();

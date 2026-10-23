@@ -27,7 +27,9 @@ public class ControlAccesoAdministrativo implements Filter {
             res.setHeader("Allow","GET, HEAD");res.setStatus(405);return;
         }
         if("/administrador/login".equals(ruta) || "/administrador/logout".equals(ruta)) {
-            chain.doFilter(req,res);return;
+            if("/administrador/logout".equals(ruta)) new FiltroCsrf().doFilter(req,res,chain);
+            else chain.doFilter(req,res);
+            return;
         }
         HttpSession s;
         boolean valida;
@@ -53,7 +55,8 @@ public class ControlAccesoAdministrativo implements Filter {
                 res.setStatus(303);res.setHeader("Location",req.getContextPath()+vista.ruta);return;
             }
         }
-        chain.doFilter(req,res);
+        // Orden explicito: identidad administrativa, CSRF de operaciones POST, servlet/permisos.
+        new FiltroCsrf().doFilter(req,res,chain);
     }
     private static void redirigir(HttpServletRequest req,HttpServletResponse res) {
         res.setStatus(303);res.setHeader("Location",req.getContextPath()+"/administrador/login");

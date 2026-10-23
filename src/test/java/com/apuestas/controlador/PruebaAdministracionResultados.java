@@ -144,7 +144,7 @@ public class PruebaAdministracionResultados {
                 @Override protected Connection obtenerConexion() throws SQLException { return j.conexion(); }
             }));
             if(directo) s.service(req,h.res);
-            else new ControlAccesoAdministrativo().doFilter(req,h.res,(r,res)->s.service((HttpServletRequest)r,(HttpServletResponse)res));
+            else new ControlAccesoAdministrativo().doFilter(PruebaCsrfAdministrativo.conToken(req,h),h.res,(r,res)->s.service((HttpServletRequest)r,(HttpServletResponse)res));
             if(h.status!=esperado) throw new AssertionError(op+" HTTP esperado "+esperado+", recibido "+h.status);
             if(!"application/json;charset=UTF-8".equals(h.tipo)) throw new AssertionError(op+" Content-Type no JSON");
             exigir("no-store".equals(h.headers.get("Cache-Control"))&&h.creaciones==0);
