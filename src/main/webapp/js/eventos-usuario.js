@@ -4,6 +4,9 @@
     const sportSelect = document.getElementById("deporte");
     const sportsStatus = document.getElementById("deportes-status");
     const sportsRetry = document.getElementById("reintentar-deportes");
+    const leagueSelect = document.getElementById("liga");
+    const leaguesStatus = document.getElementById("ligas-status");
+    const leaguesRetry = document.getElementById("reintentar-ligas");
     const views = document.getElementById("vistas");
     const results = document.getElementById("resultados");
     const state = document.getElementById("estado-eventos");
@@ -14,8 +17,13 @@
     let eventsController;
     let requestVersion = 0;
     let sportsLoading = false;
+    let leaguesController;
+    let leaguesVersion = 0;
+    let activeLeagueIds = new Set();
+    let loadedEvents = null;
 
-    const validId = value => Number.isSafeInteger(value) && value > 0;
+    const validId = value => Number.isInteger(value) && value > 0 && value <= 2147483647;
+    const selectedSport = () => /^\d+$/.test(sportSelect.value) && validId(Number(sportSelect.value)) ? Number(sportSelect.value) : null;
     const text = value => typeof value === "string" && value.trim() ? value : null;
     const validCount = value => Number.isSafeInteger(value) && value >= 0;
     function node(tag, className, content) {
@@ -25,30 +33,115 @@
         return element;
     }
 
+    function fallo(message) { const error = new Error(message); error.controlled = true; return error; }
     async function consultar(ruta, controller) {
         let timedOut = false;
-        const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
+        let timeout;
         try {
-            const response = await fetch(contextPath + ruta, {
-                method: "GET", credentials: "same-origin", cache: "no-store",
-                headers: { Accept: "application/json" }, signal: controller.signal
+            const consulta = async () => {
+                const response = await fetch(contextPath + ruta, {
+                    method: "GET", credentials: "same-origin", cache: "no-store",
+                    headers: { Accept: "application/json" }, signal: controller.signal
+                });
+                if (response.redirected || response.status === 401) throw fallo("No se pudo completar la consulta con tu sesión actual. Vuelve a iniciar sesión si ha expirado.");
+                if (!response.ok) {
+                    const messages = {400: "Los parámetros de la consulta no son válidos.", 403: "No tienes permiso para realizar esta consulta.",
+                        404: "La información solicitada no está disponible.", 500: "El servidor no pudo completar la consulta.", 503: "La consulta no está disponible temporalmente."};
+                    throw fallo(messages[response.status] || "No fue posible completar la consulta. Intenta nuevamente.");
+                }
+                if (!/^application\/json\s*(?:;|$)/i.test(response.headers.get("content-type") || "")) throw fallo("El servidor devolvió una respuesta inesperada. No se recibieron datos JSON.");
+                let data;
+                try { data = await response.json(); }
+                catch (error) {
+                    if (controller.signal.aborted) throw error;
+                    throw fallo("La respuesta JSON del servidor no es válida. Intenta nuevamente.");
+                }
+                if (!data || typeof data !== "object" || Array.isArray(data) || data.ok !== true) throw fallo("La respuesta del servidor no contiene un resultado válido.");
+                return data;
+            };
+            const espera = new Promise((_, reject) => {
+                timeout = window.setTimeout(() => {
+                    timedOut = true;
+                    reject(fallo("La consulta está tardando demasiado. Intenta nuevamente."));
+                    controller.abort();
+                }, 15000);
             });
-            if (response.redirected || response.status === 401) throw new Error("No se pudo completar la consulta con tu sesión actual. Vuelve a iniciar sesión si ha expirado.");
-            if (!response.ok) throw new Error("El servidor no pudo completar la consulta. Intenta nuevamente.");
-            if (!(response.headers.get("content-type") || "").toLowerCase().includes("application/json")) throw new Error("El servidor devolvió una respuesta inesperada. No se recibieron datos JSON.");
-            let data;
-            try { data = await response.json(); }
-            catch (error) {
-                if (controller.signal.aborted) throw error;
-                throw new Error("La respuesta JSON del servidor no es válida. Intenta nuevamente.");
-            }
-            if (!data || typeof data !== "object" || Array.isArray(data) || data.ok !== true) throw new Error("La respuesta del servidor no contiene un resultado válido.");
-            return data;
+            return await Promise.race([consulta(), espera]);
         } catch (error) {
-            if (timedOut) throw new Error("La consulta está tardando demasiado. Intenta nuevamente.");
-            if (error instanceof TypeError) throw new Error("No se pudo conectar con el servidor. Revisa tu conexión e intenta nuevamente.");
-            throw error;
+            if (timedOut) throw fallo("La consulta está tardando demasiado. Intenta nuevamente.");
+            if (error && (error.controlled || error.name === "AbortError")) throw error;
+            throw fallo("No se pudo conectar con el servidor. Revisa tu conexión e intenta nuevamente.");
         } finally { window.clearTimeout(timeout); }
+    }
+
+    function prepararLigas(message) {
+        leagueSelect.replaceChildren(node("option", "", message));
+        leagueSelect.firstChild.value = "";
+        leagueSelect.value = "";
+        leagueSelect.disabled = true;
+        activeLeagueIds = new Set();
+    }
+
+    async function cargarLigas() {
+        const version = ++leaguesVersion;
+        if (leaguesController) leaguesController.abort();
+        const sport = selectedSport();
+        prepararLigas(sport === null ? "Selecciona primero un deporte" : "Cargando ligas…");
+        leaguesRetry.hidden = true;
+        leaguesStatus.classList.remove("is-error");
+        leaguesStatus.textContent = sport === null ? "Selecciona primero un deporte para consultar sus ligas." : "Cargando ligas…";
+        leagueSelect.setAttribute("aria-busy", String(sport !== null));
+        renderEventos();
+        if (sport === null) return;
+        const controller = new AbortController();
+        leaguesController = controller;
+        const vigente = () => version === leaguesVersion && selectedSport() === sport;
+        try {
+            const data = await consultar("/ligas/exploracion?" + new URLSearchParams({idDeporte: String(sport)}), controller);
+            if (!vigente()) return;
+            const ids = new Set();
+            if (data.idDeporte !== sport || !validCount(data.cantidad) || !Array.isArray(data.ligas) || data.cantidad !== data.ligas.length
+                    || data.ligas.some(item => {
+                        if (!item || !validId(item.idLiga) || item.idDeporte !== sport || !text(item.nombre)
+                                || typeof item.activo !== "boolean" || !(item.idPais === null || validId(item.idPais)) || ids.has(item.idLiga)) return true;
+                        ids.add(item.idLiga); return false;
+                    })) throw fallo("El servidor devolvió un catálogo de ligas inválido para este deporte.");
+            const leagues = data.ligas.filter(item => item.activo);
+            prepararLigas("Todas las ligas");
+            for (const league of leagues) {
+                const option = node("option", "", league.nombre);
+                option.value = String(league.idLiga);
+                leagueSelect.append(option);
+                activeLeagueIds.add(league.idLiga);
+            }
+            leagueSelect.disabled = !leagues.length;
+            leaguesStatus.textContent = leagues.length ? "Puedes filtrar el listado cargado por una liga o ver Todas las ligas." : "No hay ligas activas disponibles. Puedes seguir consultando eventos por deporte.";
+        } catch (error) {
+            if (!vigente() || error.name === "AbortError") return;
+            prepararLigas("Todas las ligas");
+            leaguesStatus.textContent = (error.controlled ? error.message : "No fue posible cargar las ligas.") + " Puedes seguir consultando eventos por deporte.";
+            leaguesStatus.classList.add("is-error");
+            leaguesRetry.hidden = false;
+        } finally {
+            if (vigente()) { leagueSelect.setAttribute("aria-busy", "false"); leaguesController = null; }
+        }
+    }
+
+    function renderEventos() {
+        if (!loadedEvents || loadedEvents.sport !== selectedSport()) return;
+        const league = leagueSelect.value ? Number(leagueSelect.value) : null;
+        const events = league === null ? loadedEvents.items : loadedEvents.items.filter(event => event.idLiga === league);
+        if (!events.length) {
+            estadoEventos(league === null ? "No hay eventos en el listado recibido para este deporte y estado. Prueba con otro filtro."
+                : "No hay coincidencias para esta liga en el listado actualmente cargado. Puede haber otros eventos fuera de este listado.");
+        } else {
+            const fragment = document.createDocumentFragment();
+            events.forEach(event => fragment.append(tarjeta(event)));
+            list.replaceChildren(fragment);
+            state.hidden = true;
+            eventsStatus.textContent = `${events.length} eventos mostrados del listado cargado.`;
+        }
+        count.textContent = `${events.length} de ${loadedEvents.items.length} eventos recibidos · consulta limitada a 100`;
     }
 
     function estadoEventos(message, loading = false, error = false) {
@@ -100,7 +193,9 @@
     async function cargarEventos() {
         if (eventsController) eventsController.abort();
         const version = ++requestVersion;
-        if (!sportSelect.value) { estadoEventos("Selecciona un deporte para explorar sus eventos."); return; }
+        loadedEvents = null;
+        const sport = selectedSport();
+        if (sport === null) { estadoEventos("Selecciona un deporte para explorar sus eventos."); return; }
         const controller = new AbortController();
         eventsController = controller;
         const vista = views.querySelector("input:checked").value;
@@ -108,16 +203,12 @@
         estadoEventos("Cargando eventos…", true);
         try {
             const data = await consultar("/eventos/exploracion?" + params.toString(), controller);
-            if (version !== requestVersion) return;
+            if (version !== requestVersion || selectedSport() !== sport) return;
             if (!Array.isArray(data.eventos) || !validCount(data.cantidad) || data.cantidad !== data.eventos.length
-                    || data.eventos.some(event => !event || !validId(event.idEvento))) throw new Error("El servidor devolvió un listado de eventos inválido.");
-            if (!data.eventos.length) { estadoEventos("No hay eventos para este deporte y esta vista. Prueba con otro filtro."); return; }
-            const fragment = document.createDocumentFragment();
-            data.eventos.forEach(event => fragment.append(tarjeta(event)));
-            list.replaceChildren(fragment);
-            state.hidden = true;
-            count.textContent = `${data.eventos.length} eventos mostrados · máximo 100`;
-            eventsStatus.textContent = `${data.eventos.length} eventos cargados.`;
+                    || data.cantidad > 100 || data.eventos.some(event => !event || !validId(event.idEvento) || !validId(event.idLiga)
+                        || event.idDeporte !== sport)) throw fallo("El servidor devolvió un listado de eventos inválido.");
+            loadedEvents = {sport, items: data.eventos};
+            renderEventos();
         } catch (error) {
             if (version !== requestVersion || error.name === "AbortError") return;
             estadoEventos(error.message || "No fue posible cargar los eventos.", false, true);
@@ -153,7 +244,16 @@
         } finally { sportsLoading = false; }
     }
 
-    sportSelect.addEventListener("change", () => { views.disabled = !sportSelect.value; cargarEventos(); });
+    sportSelect.addEventListener("change", () => {
+        loadedEvents = null;
+        views.disabled = selectedSport() === null;
+        cargarLigas(); cargarEventos();
+    });
+    leagueSelect.addEventListener("change", () => {
+        if (leagueSelect.value && (!/^\d+$/.test(leagueSelect.value) || !activeLeagueIds.has(Number(leagueSelect.value)))) leagueSelect.value = "";
+        renderEventos();
+    });
+    leaguesRetry.addEventListener("click", cargarLigas);
     views.addEventListener("change", cargarEventos);
     sportsRetry.addEventListener("click", cargarDeportes);
     eventsRetry.addEventListener("click", cargarEventos);

@@ -32,11 +32,15 @@
             <span class="catalog-label">EVENTOS / BETZONE</span>
         </section>
         <section class="panel filters-panel" aria-labelledby="titulo-filtros">
-            <div class="filter-heading"><div><p class="eyebrow">ENCUENTRA TU EVENTO</p><h2 id="titulo-filtros">Explorar por deporte</h2></div>
+            <div class="filter-heading"><div class="filter-title"><p class="eyebrow">ENCUENTRA TU EVENTO</p><h2 id="titulo-filtros">Explorar por deporte y liga</h2></div>
                 <div class="sport-picker"><label for="deporte">Deporte</label><select id="deporte" disabled aria-describedby="deportes-status"><option value="">Cargando deportes…</option></select></div>
+                <div class="sport-picker"><label for="liga">Liga</label><select id="liga" disabled aria-describedby="ligas-status limite-ligas"><option value="">Selecciona primero un deporte</option></select></div>
             </div>
             <p id="deportes-status" class="muted" role="status">Cargando deportes…</p>
             <button id="reintentar-deportes" class="retry" type="button" hidden>Reintentar deportes</button>
+            <p id="ligas-status" class="muted" role="status">Selecciona primero un deporte para consultar sus ligas.</p>
+            <button id="reintentar-ligas" class="retry" type="button" hidden>Reintentar ligas</button>
+            <p id="limite-ligas" class="catalog-note muted">La liga filtra únicamente el listado recibido, de hasta 100 eventos por deporte y estado. Puede haber otros eventos de esa liga fuera de este listado.</p>
             <fieldset class="view-filters" id="vistas" disabled>
                 <legend>Estado de los eventos</legend>
                 <label><input type="radio" name="vista" value="TODOS" checked><span>Todos</span></label>
