@@ -398,6 +398,11 @@
                 : "Datos oficiales recibidos. Puedes actualizar el partido manualmente.");
         } catch (error) {
             if (version !== generation || disposed || !visible()) return;
+            if (error && (error.httpStatus === 401 || error.sessionExpired === true)) {
+                ownSessionExpired = true;
+                ownClear();
+                ownState("Tu sesión ha expirado. Inicia sesión y vuelve a consultar tus apuestas.");
+            }
             sessionExpiredConfirmed = sessionExpiredConfirmed || Boolean(error && (error.sessionExpired === true || error.httpStatus === 401));
             const needsLogin = sessionExpiredConfirmed || Boolean(error && error.needsLogin);
             // Una sesión expirada permanece detenida hasta recibir datos válidos,
@@ -434,6 +439,130 @@
         if (activeController) activeController.abort();
         document.removeEventListener("visibilitychange",visibilityChanged);
     }
+
+    // Lectura personal independiente; la sesión y la propiedad se autorizan en el servidor.
+    function historico(target, item) {
+        const value = v => text(v) || "No informado";
+        fact(target, "Modalidad histórica", value(item.tipoMercadoAplicado));
+        fact(target, "Selección apostada", text(item.nombreSeleccionAplicada) || value(item.seleccion));
+        if (item.tipoMercadoAplicado === "MARCADOR_FINAL" || item.pronosticoA != null || item.pronosticoB != null) {
+            const forecast = v => Number.isInteger(v) && v >= 0 && v <= 2147483647 ? String(v) : "No informado";
+            fact(target, "Pronóstico A · " + value(item.nombreParticipanteAAplicado), forecast(item.pronosticoA));
+            fact(target, "Pronóstico B · " + value(item.nombreParticipanteBAplicado), forecast(item.pronosticoB));
+        }
+        if (text(item.clasificacionAcierto)) fact(target, "Clasificación oficial", item.clasificacionAcierto);
+        if (text(item.descripcionAcierto)) fact(target, "Descripción oficial", item.descripcionAcierto);
+    }
+    async function lecturaPersonal(route, controller) {
+        let timer, abort;
+        const error = (message, session = false) => Object.assign(new Error(message), {session});
+        const request = async () => {
+            const response = await fetch(contextPath + route, {method:"GET", credentials:"same-origin", cache:"no-store", headers:{Accept:"application/json"}, signal:controller.signal});
+            if (response.status === 401) throw error("Tu sesión ha expirado. Inicia sesión para consultar tus boletos.", true);
+            if (response.redirected) {
+                const target = new URL(response.url, window.location.href);
+                const login = target.origin === new URL(window.location.href).origin
+                    && [contextPath + "/usuario/login", contextPath + "/usuario/login.jsp"].includes(target.pathname);
+                throw error(login ? "Tu sesión ha expirado. Inicia sesión para consultar tus boletos." : "La consulta fue redirigida a un destino inesperado.", login);
+            }
+            if (response.status === 403) throw error("No tienes permiso para consultar esta información.");
+            if (!response.ok) throw error("El servidor no pudo completar la consulta. Intenta nuevamente.");
+            if ((response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase() !== "application/json") throw error("Respuesta inesperada: se esperaba JSON.");
+            let data;
+            try { data = await response.json(); } catch (_) { throw error("La respuesta JSON no es válida."); }
+            if (!object(data) || data.ok !== true) throw error("La respuesta del servidor no es válida.");
+            return data;
+        };
+        try {
+            return await Promise.race([request(), new Promise((_, reject) => {
+                timer = window.setTimeout(() => { reject(error("La consulta tardó demasiado. Vuelve a intentar.")); controller.abort(); }, 15000);
+                abort = () => reject(error("La consulta se interrumpió."));
+                controller.signal.addEventListener("abort", abort, {once:true});
+                if (controller.signal.aborted) abort();
+            })]);
+        } catch (e) { throw e instanceof TypeError ? error("No se pudo conectar con el servidor. Revisa tu conexión.") : e; }
+        finally { window.clearTimeout(timer); if (abort) controller.signal.removeEventListener("abort", abort); }
+    }
+
+    // Esta consulta no participa en cargar()/schedule(): nunca sigue el polling deportivo.
+    const ownSection = document.getElementById("apuestas-partido");
+    const ownList = document.getElementById("boletos-partido");
+    const ownRetry = document.getElementById("reintentar-apuestas-partido");
+    let ownController = null, ownVersion = 0, ownDisposed = false, ownSessionExpired = false;
+    function ownState(message, busy = false, session = false) {
+        ownList.replaceChildren();
+        document.getElementById("estado-apuestas-partido").textContent = message;
+        document.getElementById("login-apuestas-partido").hidden = !(session || ownSessionExpired);
+        ownSection.setAttribute("aria-busy", String(busy));
+        ownRetry.disabled = busy || idEvento === null;
+    }
+    function ownValidate(data) {
+        if (data.idDeporte !== null || !Array.isArray(data.boletos) || data.cantidadBoletos !== data.boletos.length) throw new Error("El historial recibido está incompleto.");
+        const seen = new Set();
+        for (const ticket of data.boletos) {
+            if (!object(ticket) || !validId(ticket.idBoleto) || seen.has(ticket.idBoleto) || !Array.isArray(ticket.detalles)
+                    || ticket.detalles.some(d => !object(d) || !validId(d.idEvento) || !validId(d.idDetalle))) throw new Error("El historial contiene identificadores o detalles inválidos.");
+            seen.add(ticket.idBoleto);
+        }
+    }
+    function ownTicket(ticket, details) {
+        const card = node("article", "own-ticket");
+        card.append(node("h3", "", text(ticket.codigoBoleto) || "No informado"),
+            node("p", "", "Estado oficial: " + (text(ticket.estadoBoleto) || "No informado")),
+            node("p", "", "Resultado oficial: " + (text(ticket.resultado) || "No informado")));
+        const selections = node("div", "own-selections");
+        details.forEach(item => {
+            const detail = node("article", "own-selection");
+            detail.append(node("h4", "", text(item.mercado) || "Mercado: No informado"));
+            const facts = node("dl", "own-facts");
+            fact(facts, "Selección", text(item.nombreSeleccionAplicada) || text(item.seleccion) || "No informado");
+            fact(facts, "Cuota aplicada", decimal(item.cuotaAplicada) ? String(item.cuotaAplicada) : "No informado");
+            fact(facts, "Resultado de selección", text(item.resultadoSeleccion) || "No informado");
+            historico(facts, item); detail.append(facts); selections.append(detail);
+        });
+        card.append(node("p", "muted", details.length + " selecciones de este partido. El boleto puede incluir otras selecciones."), selections);
+        const pdf = node("a", "text-link", "Ver boleto PDF (otra pestaña) ↗");
+        pdf.href = contextPath + "/usuario/boletos/imprimir?idBoleto=" + encodeURIComponent(ticket.idBoleto);
+        pdf.target = "_blank"; pdf.rel = "noopener noreferrer"; card.append(pdf);
+        return card;
+    }
+    async function ownLoad() {
+        if (idEvento === null || ownController || ownDisposed || !visible()) return;
+        const current = ++ownVersion, controller = new AbortController();
+        ownController = controller; ownState("Consultando tus apuestas…", true);
+        try {
+            const data = await lecturaPersonal("/usuario/boletos/historial", controller);
+            if (current !== ownVersion || ownDisposed || !visible()) return;
+            ownValidate(data);
+            ownSessionExpired = false;
+            const cards = [];
+            data.boletos.forEach(ticket => {
+                const details = ticket.detalles.filter(d => d.idEvento === idEvento);
+                if (details.length) cards.push(ownTicket(ticket, details));
+            });
+            ownState(cards.length ? cards.length + " boletos relacionados." : "No encontramos apuestas tuyas para este partido.");
+            ownList.replaceChildren(...cards);
+        } catch (e) {
+            if (current === ownVersion && !ownDisposed && visible()) ownState(e.message || "No se pudo consultar el historial. Vuelve a intentar.", false, e.session === true);
+        } finally {
+            if (ownController === controller) { ownController = null; ownRetry.disabled = idEvento === null; ownSection.setAttribute("aria-busy", "false"); }
+        }
+    }
+    function ownClear() {
+        ownVersion += 1;
+        const controller = ownController; ownController = null;
+        ownState("Información personal oculta. Se consultará de nuevo al volver.");
+        if (controller) controller.abort();
+    }
+    ownRetry.addEventListener("click", ownLoad);
+    document.addEventListener("visibilitychange", () => { if (!visible()) ownClear(); else ownLoad(); });
+    window.addEventListener("pagehide", () => { ownDisposed = true; ownClear(); });
+    window.addEventListener("pageshow", e => { if (e.persisted && ownDisposed) { ownDisposed = false; ownLoad(); } });
+    if (idEvento !== null) {
+        const historyLink = document.getElementById("historial-partido");
+        historyLink.href = contextPath + "/apuestas/mis-boletos.jsp?idEvento=" + encodeURIComponent(idEvento);
+        historyLink.hidden = false; ownLoad();
+    } else ownState("Elige un evento válido para consultar tus apuestas.");
     retry.addEventListener("click", cargar);
     refresh.addEventListener("click", cargar);
     document.addEventListener("visibilitychange",visibilityChanged);

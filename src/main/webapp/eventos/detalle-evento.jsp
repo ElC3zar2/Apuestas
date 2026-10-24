@@ -82,6 +82,17 @@
                 <p class="muted personal-note">Las cuotas corresponden a esta consulta y pueden cambiar. Las fechas conservan la hora enviada por el servidor, sin conversión de zona horaria.</p>
             </section>
         </div>
+        <section id="apuestas-partido" class="panel own-bets" aria-labelledby="titulo-apuestas-partido" aria-busy="false">
+            <h2 id="titulo-apuestas-partido">Mis apuestas en este partido</h2>
+            <p class="muted">El marcador en vivo no liquida apuestas. Los estados y resultados de tus boletos proceden exclusivamente del historial oficial.</p>
+            <p id="estado-apuestas-partido" role="status" aria-live="polite"></p>
+            <div class="own-actions">
+                <button id="reintentar-apuestas-partido" class="retry" type="button">Actualizar mis apuestas</button>
+                <a id="login-apuestas-partido" class="text-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
+                <a id="historial-partido" class="text-link" hidden>Ver mis apuestas de este partido</a>
+            </div>
+            <div id="boletos-partido" class="own-list"></div>
+        </section>
         <noscript><p class="notice">Activa JavaScript para consultar el detalle. Puedes volver al listado usando el enlace superior.</p></noscript>
     </main>
     <footer class="footer"><span>BetZone</span><span>Jugá con responsabilidad. +18.</span></footer>

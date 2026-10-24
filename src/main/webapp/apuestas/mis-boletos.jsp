@@ -37,6 +37,10 @@
             <p id="estado-deportes" class="muted filter-message" role="status">Cargando deportes…</p>
             <button id="reintentar-deportes" class="retry" type="button" hidden>Reintentar deportes</button>
         </section>
+        <div class="event-filter">
+            <p id="filtro-evento" class="notice" role="status" hidden></p>
+            <button id="quitar-filtro-evento" class="retry" type="button" hidden>Mostrar todos mis boletos</button>
+        </div>
         <section id="historial" class="history-results" aria-labelledby="titulo-boletos" aria-busy="true">
             <div class="section-heading history-heading"><h2 id="titulo-boletos">Tus boletos</h2><span id="cantidad-boletos" class="muted" role="status"></span></div>
             <p id="nota-filtro" class="notice" hidden>Con el filtro activo se muestran los detalles del deporte seleccionado. El total de selecciones y los importes corresponden al boleto completo.</p>
@@ -46,7 +50,7 @@
                 <a id="login-historial" class="text-link login-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
             </div>
             <div id="lista-boletos" class="ticket-list"></div>
-            <p class="muted pdf-note">El boleto PDF se abre en otra pestaña. Si falta sesión, permiso o el boleto ya no está disponible, allí se mostrará la respuesta del servidor. Las fechas conservan la hora informada por el backend.</p>
+            <p class="muted pdf-note">El marcador deportivo no liquida apuestas; los estados proceden del historial oficial. El boleto PDF se abre en otra pestaña. Si falta sesión, permiso o el boleto ya no está disponible, allí se mostrará la respuesta del servidor. Las fechas conservan la hora informada por el backend.</p>
         </section>
         <noscript><p class="notice">Activa JavaScript para consultar el historial y filtrar por deporte.</p></noscript>
     </main>

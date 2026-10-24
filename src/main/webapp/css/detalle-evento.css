@@ -1,4 +1,14 @@
 /* Base visual compartida con Inicio; reglas exclusivas del detalle. */
+.own-bets { margin-top: 28px; min-width: 0; }
+.own-bets p, .own-bets h3, .own-bets h4, .own-bets dd, .own-bets a { overflow-wrap: anywhere; line-height: 1.7; }
+.own-bets p, .own-bets dt, .own-bets dd { font-size: 13px; }
+.own-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 18px 0; }
+.own-list, .own-selections { display: grid; gap: 16px; }
+.own-ticket, .own-selection { min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+.own-facts { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr)); gap: 16px; }
+.own-facts > div { min-width: 0; }
+.own-bets a:focus-visible, .own-bets button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+@media (max-width: 400px) { .own-ticket, .own-selection { padding: 12px; } }
 .detail-page { min-height: calc(100vh - 160px); }
 .follow-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 22px; }
 .follow-controls p { flex: 1 1 260px; margin: 0; overflow-wrap: anywhere; }

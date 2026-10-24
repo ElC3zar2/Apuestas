@@ -1,4 +1,7 @@
 .tickets-page { min-height: calc(100vh - 160px); }
+.event-filter { margin-bottom: 24px; overflow-wrap: anywhere; }
+.event-filter .retry { margin-top: 12px; white-space: normal; }
+.event-filter button:focus-visible, .pdf-link:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
 .history-filter { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,300px); gap: 20px 28px; align-items: center; margin-bottom: 30px; }
 .sport-picker { min-width: 0; display: grid; gap: 8px; }
 .sport-picker label { color: var(--muted); font-size: 12px; }
