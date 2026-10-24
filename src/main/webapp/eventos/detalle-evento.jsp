@@ -29,6 +29,11 @@
     <main id="contenido" class="dashboard detail-page">
         <a class="back-link" href="${pageContext.request.contextPath}/eventos/listar-eventos.jsp"><span aria-hidden="true">←</span> Volver a eventos</a>
         <div class="page-heading"><p class="eyebrow">EXPLORA CADA POSIBILIDAD</p><h1>Detalle del evento</h1><p class="muted">Participantes, mercados y cuotas informados por el servidor.</p></div>
+        <div id="control-seguimiento" class="follow-controls" hidden>
+            <p id="estado-actualizacion" class="muted" role="status" aria-live="polite"></p>
+            <button id="actualizar-partido" class="retry" type="button">Actualizar partido</button>
+            <a id="login-actualizacion" class="text-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
+        </div>
         <section id="estado-detalle" class="panel detail-status is-loading" aria-busy="true" aria-label="Estado de la consulta">
             <span class="status-symbol" aria-hidden="true">◇</span>
             <p id="mensaje-detalle" role="status">Cargando evento…</p>
@@ -36,6 +41,31 @@
             <a id="login-detalle" class="text-link login-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
         </section>
         <div id="datos-detalle" hidden>
+            <section class="panel live-match" aria-labelledby="titulo-partido">
+                <div class="event-heading"><div><p id="competicion-partido" class="eyebrow"></p><h2 id="titulo-partido">Seguimiento deportivo</h2></div><span id="estado-partido" class="status-badge"></span></div>
+                <div class="scoreboard" aria-label="Participantes y marcador informado">
+                    <div class="score-team"><h3 id="participante-a">Participante A no disponible</h3><p id="condicion-a" class="muted"></p></div>
+                    <div class="score-numbers"><span id="marcador-a" aria-label="Marcador A">—</span><span aria-hidden="true">:</span><span id="marcador-b" aria-label="Marcador B">—</span></div>
+                    <div class="score-team"><h3 id="participante-b">Participante B no disponible</h3><p id="condicion-b" class="muted"></p></div>
+                </div>
+                <p id="nota-marcador" class="muted"></p>
+                <dl class="match-facts">
+                    <div><dt>Tiempo informado</dt><dd id="tiempo-partido">Tiempo no disponible</dd></div>
+                    <div><dt>Duración de referencia</dt><dd id="duracion-partido">No disponible</dd></div>
+                    <div><dt>Simulación</dt><dd id="configuracion-partido">No informada</dd></div>
+                    <div><dt>Primera anotación válida</dt><dd id="primera-anotacion">No informada</dd></div>
+                </dl>
+                <p id="tiempo-cumplido" class="notice" hidden></p>
+                <p id="fechas-simulacion" class="muted"></p>
+                <p id="resultado-partido" class="match-result"></p>
+                <p class="muted personal-note">El marcador es información deportiva, no un resultado de apuestas ni un premio abonado. La duración de referencia no finaliza el partido automáticamente.</p>
+                <a class="text-link" href="#cronologia-partido">Ver cronología ↓</a>
+            </section>
+            <section class="panel match-timeline" id="cronologia-partido" aria-labelledby="titulo-cronologia">
+                <div class="section-heading"><h2 id="titulo-cronologia">Cronología de incidencias</h2><span id="cantidad-incidencias" class="muted"></span></div>
+                <p id="nota-incidencias" class="muted"></p>
+                <ol id="lista-incidencias" class="incident-list"></ol>
+            </section>
             <section class="panel event-summary" aria-labelledby="nombre-evento">
                 <div class="event-heading"><div><p id="categoria-evento" class="eyebrow"></p><h2 id="nombre-evento"></h2></div><span id="estado-visual" class="status-badge"></span></div>
                 <dl id="ficha-evento" class="event-info"></dl>

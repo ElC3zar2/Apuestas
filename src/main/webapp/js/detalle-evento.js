@@ -16,6 +16,15 @@
     const rawId = ids.length === 1 ? ids[0] : "";
     const idEvento = /^\d+$/.test(rawId) && validId(Number(rawId)) ? Number(rawId) : null;
     let loading = false;
+    let lastEvent = null, pollTimer = null, activeController = null;
+    let generation = 0, disposed = false, refreshPending = false, stopAfterError = false;
+    let sessionExpiredConfirmed = false;
+    const refresh = document.getElementById("actualizar-partido");
+    const follow = document.getElementById("control-seguimiento");
+    const updateStatus = document.getElementById("estado-actualizacion");
+    const safeCount = value => Number.isInteger(value) && value >= 0 && value <= 2147483647;
+    const safeLongId = value => Number.isSafeInteger(value) && value > 0;
+    const visible = () => document.visibilityState !== "hidden";
 
     function node(tag, className, value) {
         const element = document.createElement(tag);
@@ -33,6 +42,148 @@
         item.append(node("dt", "", title), node("dd", "", value));
         list.append(item);
     }
+    function put(id, value) {
+        const element = document.getElementById(id);
+        if (element.textContent !== value) element.textContent = value;
+    }
+    // Reutilizar nodos con clave conserva foco y posición al actualizar mercados
+    // e incidencias. La cronología no es una región aria-live.
+    function reconcile(parent, desiredChildren) {
+        const keyed = new Map([...parent.children].filter(e => e.hasAttribute("data-live-key")).map(e => [e.getAttribute("data-live-key"), e]));
+        desiredChildren.forEach((desired, index) => {
+            const key = desired.getAttribute("data-live-key");
+            let current = key === null ? parent.children[index] : keyed.get(key);
+            if (current && key === null && current.hasAttribute("data-live-key")) current = null;
+            // Si una cuota enfocada deja de estar disponible, mantener su nodo
+            // sin href y con semántica deshabilitada evita perder el foco.
+            if (current && current.tagName === "A" && desired.tagName === "BUTTON"
+                    && current.classList.contains("selection-action") && desired.classList.contains("selection-action")) {
+                const disabledLink = node("a", "selection-action", desired.textContent);
+                disabledLink.setAttribute("role", "button"); disabledLink.setAttribute("aria-disabled", "true"); disabledLink.setAttribute("tabindex", "-1");
+                if (desired.hasAttribute("aria-describedby")) disabledLink.setAttribute("aria-describedby", desired.getAttribute("aria-describedby"));
+                desired = disabledLink;
+            }
+            if (!current || current.tagName !== desired.tagName) current = desired;
+            else {
+                for (const attribute of [...current.attributes]) if (!desired.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+                for (const attribute of [...desired.attributes]) if (current.getAttribute(attribute.name) !== attribute.value) current.setAttribute(attribute.name, attribute.value);
+                if (!desired.children.length) {
+                    if (current.textContent !== desired.textContent) current.textContent = desired.textContent;
+                } else reconcile(current, [...desired.children]);
+            }
+            if (parent.children[index] !== current) parent.insertBefore(current, parent.children[index] || null);
+        });
+        while (parent.children.length > desiredChildren.length) parent.lastElementChild.remove();
+    }
+    function duration(value) {
+        return safeCount(value) ? String(Math.floor(value / 60)) + ":" + String(value % 60).padStart(2, "0") : "Tiempo no disponible";
+    }
+    function utc(value) {
+        return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value)
+            ? value.replace("T", " ") + " UTC" : null;
+    }
+    function officialParticipants(event) {
+        const ordered = [1,2].map(order => event.participantes.filter(p => p.ordenParticipante === order));
+        if (event.participantes.length !== 2 || ordered.some(p => p.length !== 1 || !validId(p[0].idParticipante))
+                || ordered[0][0].idParticipante === ordered[1][0].idParticipante) return null;
+        return ordered.map(p => p[0]);
+    }
+    function incidentData(event) {
+        if (!Array.isArray(event.incidencias)) return {valid:false, rows:[], duplicate:false};
+        const ids = new Map(), sequences = new Map(); let duplicate = false;
+        for (const i of event.incidencias) {
+            if (!object(i) || !safeLongId(i.idIncidencia) || !validId(i.secuencia) || !safeCount(i.segundoSimulacion)
+                    || !text(i.tipoIncidencia) || typeof i.esAnulada !== "boolean"
+                    || !(i.idParticipante === null || validId(i.idParticipante))
+                    || !(i.valorAnotacion === null || (safeCount(i.valorAnotacion) && i.valorAnotacion > 0))) return {valid:false,rows:[],duplicate};
+            if (ids.has(i.idIncidencia)) {
+                if (JSON.stringify(ids.get(i.idIncidencia)) !== JSON.stringify(i)) return {valid:false,rows:[],duplicate:true};
+                duplicate = true; continue;
+            }
+            if (sequences.has(i.secuencia)) return {valid:false,rows:[],duplicate:true};
+            ids.set(i.idIncidencia,i); sequences.set(i.secuencia,i.idIncidencia);
+        }
+        return {valid:true,rows:[...ids.values()].sort((a,b)=>a.secuencia-b.secuencia),duplicate};
+    }
+    function participantName(event, id) {
+        if (!validId(id)) return "Participante no informado";
+        const matches = event.participantes.filter(p=>p.idParticipante === id);
+        return matches.length === 1 && text(matches[0].participante) ? matches[0].participante : "Participante no verificable";
+    }
+    function renderLive(event) {
+        const sim = object(event.simulacion) ? event.simulacion : null;
+        put("competicion-partido", [text(event.deporte),text(event.liga)].filter(Boolean).join(" / ") || "Competición no informada");
+        put("titulo-partido", text(event.nombre) || "Seguimiento deportivo");
+        put("estado-partido", "Estado oficial: " + label(event.estadoEvento));
+        const pair = officialParticipants(event);
+        ["a","b"].forEach((side,index)=>{
+            const p = pair && pair[index];
+            put("participante-" + side, p && text(p.participante) ? p.participante : "Participante " + side.toUpperCase() + " no disponible");
+            put("condicion-" + side, p && typeof p.esLocal === "boolean" ? (p.esLocal ? "Local" : "Visitante") : "");
+        });
+        let conflict = false;
+        const scores = pair ? pair.map((p,index)=>{
+            const a = sim ? sim[index === 0 ? "marcadorA" : "marcadorB"] : null, b = p.marcadorActual;
+            if ((a !== null && a !== undefined && !safeCount(a)) || (b !== null && b !== undefined && !safeCount(b))
+                    || (safeCount(a) && safeCount(b) && a !== b)) conflict = true;
+            return safeCount(a) ? a : safeCount(b) ? b : null;
+        }) : [null,null];
+        put("marcador-a", !conflict && scores[0] !== null ? String(scores[0]) : "—");
+        put("marcador-b", !conflict && scores[1] !== null ? String(scores[1]) : "—");
+        put("nota-marcador", conflict ? "Las fuentes del marcador no coinciden. Marcador no verificable."
+            : !pair ? "No se puede verificar la correspondencia de los participantes y el marcador."
+            : scores.some(s=>s===null) ? "Marcador parcial o no informado; no se supone un empate." : "Marcador informado por el servidor; no implica un resultado definitivo.");
+        put("tiempo-partido", duration(sim && sim.segundosTranscurridos));
+        put("duracion-partido", sim && safeCount(sim.duracionSimulacionSegundos) ? duration(sim.duracionSimulacionSegundos) : "No disponible");
+        put("configuracion-partido", sim && typeof sim.esSimulado === "boolean" ? (sim.esSimulado ? "Simulación manual configurada" : "Simulación no configurada") : "No informada");
+        const timeNotice = document.getElementById("tiempo-cumplido");
+        timeNotice.hidden = !sim || sim.tiempoVisualCumplido !== true;
+        put("tiempo-cumplido", "La duración visual de referencia se cumplió. El estado del partido solo cambia cuando lo informa el backend.");
+        const dates = [];
+        if (sim && utc(sim.fechaInicioRealUtc)) dates.push("Inicio registrado: " + utc(sim.fechaInicioRealUtc));
+        if (sim && utc(sim.fechaFinRealUtc)) dates.push("Fin registrado: " + utc(sim.fechaFinRealUtc));
+        put("fechas-simulacion", dates.join(" · "));
+        const incidents = incidentData(event);
+        let first = "Primera anotación no informada";
+        if (sim && (sim.idPrimeraAnotacion !== null && sim.idPrimeraAnotacion !== undefined)) {
+            const matches = incidents.rows.filter(i=>i.idIncidencia === sim.idPrimeraAnotacion);
+            first = incidents.valid && safeLongId(sim.idPrimeraAnotacion) && matches.length === 1 && matches[0].tipoIncidencia === "ANOTACION"
+                && matches[0].esAnulada === false && validId(sim.idPrimerParticipanteAnotador) && matches[0].idParticipante === sim.idPrimerParticipanteAnotador
+                ? participantName(event,sim.idPrimerParticipanteAnotador) + " · " + duration(matches[0].segundoSimulacion) : "Primera anotación no verificable";
+        } else if (sim && sim.idPrimerParticipanteAnotador !== null && sim.idPrimerParticipanteAnotador !== undefined) {
+            first = "Primera anotación no verificable";
+        }
+        put("primera-anotacion", first);
+        const result = [];
+        if (event.estadoEvento === "EN_VIVO") result.push("Partido en curso.");
+        else if (event.estadoEvento === "FINALIZADO") result.push("Partido finalizado según el servidor.");
+        else if (event.estadoEvento === "PENDIENTE_RESULTADO") result.push("Partido con resultado pendiente.");
+        if (event.resultadoPendiente === true) result.push("Resultado deportivo pendiente.");
+        if (text(event.resultadoTexto)) result.push("Resultado informado: " + event.resultadoTexto);
+        else if (event.resultadoPendiente !== true) result.push("Resultado oficial no informado.");
+        if (text(event.estadoResultado)) result.push("Estado del resultado: " + label(event.estadoResultado));
+        put("resultado-partido", result.join(" "));
+        put("cantidad-incidencias", incidents.valid ? incidents.rows.length + " incidencias recibidas (incluye anuladas)" : "Cantidad no verificable");
+        put("nota-incidencias", !incidents.valid ? "La cronología no está disponible o contiene datos inconsistentes. No se reconstruye el marcador."
+            : incidents.duplicate ? "Se unificaron incidencias repetidas idénticas. Se conservan las anuladas."
+            : !incidents.rows.length ? "No se recibieron incidencias." : "Orden oficial por secuencia. Las anulaciones se muestran explícitamente.");
+        const types = {ANOTACION:"Anotación",FALTA:"Falta",TARJETA_AMARILLA:"Tarjeta amarilla",TARJETA_ROJA:"Tarjeta roja",OTRA:"Otra incidencia"};
+        const items = incidents.rows.map(i=>{
+            const li = node("li", "incident" + (i.esAnulada ? " is-annulled" : ""));
+            li.setAttribute("data-live-key", "incidencia-" + i.idIncidencia);
+            li.append(node("h3", "", duration(i.segundoSimulacion) + " · " + (Object.prototype.hasOwnProperty.call(types,i.tipoIncidencia) ? types[i.tipoIncidencia] : label(i.tipoIncidencia))),
+                node("p", "", participantName(event,i.idParticipante)));
+            if (i.tipoIncidencia === "ANOTACION" && safeCount(i.valorAnotacion)) li.append(node("p", "", "Valor de anotación informado: " + i.valorAnotacion));
+            if (text(i.descripcion)) li.append(node("p", "", i.descripcion));
+            if (utc(i.fechaRegistroUtc)) li.append(node("p", "muted", "Registro: " + utc(i.fechaRegistroUtc)));
+            if (i.esAnulada) {
+                li.append(node("p", "incident-annulment", "ANULADA · " + (text(i.motivoAnulacion) || "Motivo no informado")));
+                if (utc(i.fechaAnulacionUtc)) li.append(node("p", "muted", "Anulación: " + utc(i.fechaAnulacionUtc)));
+            }
+            return li;
+        });
+        reconcile(document.getElementById("lista-incidencias"),items);
+    }
     function estado(message, busy = false, canRetry = false, needsLogin = false) {
         content.hidden = true;
         statusPanel.hidden = false;
@@ -45,19 +196,24 @@
     }
     function fallo(message, needsLogin = false) { const error = new Error(message); error.needsLogin = needsLogin; error.controlled = true; return error; }
 
-    async function consultar() {
-        const controller = new AbortController();
+    async function consultar(controller) {
         let timeout;
+        let onAbort;
         try {
             const consulta = async () => {
                 const query = new URLSearchParams({ idEvento: String(idEvento) });
                 const response = await fetch(contextPath + "/eventos/exploracion/detalle?" + query.toString(), {
                     method: "GET", credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" }, signal: controller.signal
                 });
-                if (response.status === 401) throw fallo("Tu sesión no está disponible o ha expirado. Inicia sesión para continuar.", true);
+                if (response.status === 401) { const error = fallo("Tu sesión no está disponible o ha expirado. Inicia sesión para continuar.", true); error.httpStatus = 401; throw error; }
                 if (response.redirected) {
                     const target = new URL(response.url, window.location.href);
-                    if (target.pathname === contextPath + "/usuario/login" || target.pathname === contextPath + "/usuario/login.jsp") throw fallo("Tu sesión ha expirado. Inicia sesión para continuar.", true);
+                    if (target.origin === new URL(window.location.href).origin
+                            && (target.pathname === contextPath + "/usuario/login" || target.pathname === contextPath + "/usuario/login.jsp")) {
+                        const error = fallo("Tu sesión ha expirado. Inicia sesión para continuar.", true);
+                        error.sessionExpired = true;
+                        throw error;
+                    }
                     throw fallo("El servidor redirigió la consulta a una respuesta inesperada.");
                 }
                 if (!response.ok) {
@@ -69,7 +225,8 @@
                         500: "El servidor no pudo cargar el evento. Intenta nuevamente.",
                         503: "La consulta del evento no está disponible temporalmente. Intenta nuevamente."
                     };
-                    throw fallo(messages[response.status] || "No fue posible consultar el evento. Intenta nuevamente.");
+                    const error = fallo(messages[response.status] || "No fue posible consultar el evento. Intenta nuevamente.");
+                    error.httpStatus = response.status; throw error;
                 }
                 const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
                 if (type !== "application/json") throw fallo("Se esperaba JSON y se recibió otra respuesta. Si tu sesión expiró, vuelve a iniciar sesión.", type === "text/html");
@@ -90,16 +247,22 @@
                     controller.abort();
                 }, 15000);
             });
-            return await Promise.race([consulta(), espera]);
+            const cancelled = new Promise((_, reject)=>{
+                onAbort = ()=>reject(fallo("La consulta se interrumpió."));
+                controller.signal.addEventListener("abort",onAbort,{once:true});
+                if (controller.signal.aborted) onAbort();
+            });
+            return await Promise.race([consulta(), espera, cancelled]);
         } catch (error) {
             if (error && error.controlled) throw error;
             if (error && error.name === "AbortError") throw fallo("La consulta se interrumpió. Vuelve a intentar.");
             throw fallo("No se pudo conectar con el servidor. Revisa tu conexión e intenta nuevamente.");
-        } finally { window.clearTimeout(timeout); }
+        } finally { window.clearTimeout(timeout); if (onAbort) controller.signal.removeEventListener("abort",onAbort); }
     }
 
     function participante(item) {
         const card = node("article", "participant");
+        if (validId(item.idParticipante)) card.setAttribute("data-live-key", "participante-" + item.idParticipante);
         card.append(node("h3", "", text(item.participante) || "Nombre no disponible"));
         if (Number.isInteger(item.ordenParticipante)) card.append(node("p", "", "Orden: " + item.ordenParticipante));
         if (item.esLocal === true || item.esLocal === false) card.append(node("p", "", item.esLocal ? "Local" : "Visitante"));
@@ -122,6 +285,7 @@
         const occurrences = event.mercados.reduce((total, m) => total + m.selecciones.filter(s => s.idSeleccion === item.idSeleccion).length, 0);
         const canNavigate = available && knownType && (!needsForecast || (verifiedOrder && validId(event.idEvento) && occurrences === 1));
         const card = node("article", "selection" + (available ? "" : " is-unavailable"));
+        if (validId(item.idSeleccion)) card.setAttribute("data-live-key", "seleccion-" + item.idSeleccion);
         card.append(node("h4", "", text(item.seleccion) || "Selección sin nombre disponible"), node("p", "odd-label", "CUOTA"),
                 node("p", "odd", decimal(item.cuota) ? String(item.cuota) : "No disponible"),
                 node("p", "selection-status", available ? "Disponible según la consulta del servidor" : "No disponible para seleccionar"));
@@ -148,6 +312,7 @@
     }
     function mercado(item, event) {
         const card = node("article", "panel market");
+        card.setAttribute("data-live-key", "mercado-" + item.idMercado);
         const heading = node("div", "market-heading");
         const title = node("div");
         title.append(node("h3", "", text(item.mercado) || "Mercado sin nombre disponible"));
@@ -174,9 +339,10 @@
         return card;
     }
     function render(event) {
-        document.getElementById("nombre-evento").textContent = text(event.nombre) || "Nombre del evento no disponible";
-        document.getElementById("categoria-evento").textContent = [text(event.deporte), text(event.liga)].filter(Boolean).join(" / ") || "Deporte y liga no disponibles";
-        document.getElementById("estado-visual").textContent = label(event.estadoVisual);
+        renderLive(event);
+        put("nombre-evento", text(event.nombre) || "Nombre del evento no disponible");
+        put("categoria-evento", [text(event.deporte), text(event.liga)].filter(Boolean).join(" / ") || "Deporte y liga no disponibles");
+        put("estado-visual", label(event.estadoVisual));
         const facts = node("dl");
         fact(facts, "Inicio", fecha(event.fechaInicio));
         fact(facts, "Cierre de apuestas", fecha(event.fechaCierreApuestas));
@@ -184,36 +350,100 @@
         if (text(event.fechaFin)) fact(facts, "Fin", fecha(event.fechaFin));
         if (text(event.resultadoTexto)) fact(facts, "Resultado informado", event.resultadoTexto);
         if (text(event.estadoResultado)) fact(facts, "Estado del resultado", label(event.estadoResultado));
-        document.getElementById("ficha-evento").replaceChildren(...facts.children);
+        reconcile(document.getElementById("ficha-evento"), [...facts.children]);
         const availability = document.getElementById("disponibilidad-evento");
-        availability.textContent = event.puedeApostar === true ? "El servidor informa que el evento admite apuestas." : event.puedeApostar === false ? "El evento no está disponible para apostar." : "Disponibilidad del evento no informada.";
+        put("disponibilidad-evento", event.puedeApostar === true ? "El servidor informa que el evento admite apuestas." : event.puedeApostar === false ? "El evento no está disponible para apostar." : "Disponibilidad del evento no informada.");
         availability.classList.toggle("is-open", event.puedeApostar === true);
         const participants = document.createDocumentFragment();
         if (!event.participantes.length) participants.append(node("p", "empty-state", "Este evento no tiene participantes informados."));
         else event.participantes.forEach(item => participants.append(participante(item)));
-        document.getElementById("participantes").replaceChildren(participants);
+        reconcile(document.getElementById("participantes"), [...participants.children]);
         const markets = document.createDocumentFragment();
         if (!event.mercados.length) markets.append(node("p", "panel empty-state", "Este evento no tiene mercados informados."));
         else event.mercados.forEach(item => markets.append(mercado(item, event)));
-        document.getElementById("mercados").replaceChildren(markets);
+        reconcile(document.getElementById("mercados"), [...markets.children]);
+    }
+    function clearPoll() { window.clearTimeout(pollTimer); pollTimer = null; }
+    function schedule() {
+        clearPoll();
+        if (disposed || !visible() || loading || !lastEvent || stopAfterError) return;
+        let delay = null;
+        if (lastEvent.estadoEvento === "EN_VIVO") delay = 25000;
+        else if (["PROGRAMADO","PENDIENTE_RESULTADO"].includes(lastEvent.estadoEvento)
+                || (lastEvent.estadoEvento === "FINALIZADO" && lastEvent.resultadoPendiente === true)) delay = 60000;
+        if (delay !== null) pollTimer = window.setTimeout(()=>{pollTimer = null; cargar();},delay);
     }
     async function cargar() {
-        if (loading) return;
+        if (idEvento === null || loading || disposed || !visible()) return;
+        clearPoll();
         loading = true;
-        estado("Cargando evento…", true);
-        // Retirar el detalle anterior antes de consultar; un fallo no lo restaura.
-        document.getElementById("participantes").replaceChildren();
-        document.getElementById("mercados").replaceChildren();
+        const version = ++generation;
+        const controller = new AbortController(); activeController = controller;
+        refresh.disabled = true;
+        follow.setAttribute("aria-busy","true");
+        if (!lastEvent) estado("Cargando evento…", true);
+        else put("estado-actualizacion", "Consultando datos oficiales; se conservan los últimos datos recibidos mientras se actualiza.");
         try {
-            render(await consultar());
+            const event = await consultar(controller);
+            if (version !== generation || disposed || !visible()) return;
+            render(event); lastEvent = event; stopAfterError = false; sessionExpiredConfirmed = false;
             statusPanel.setAttribute("aria-busy", "false");
             statusPanel.classList.remove("is-loading");
             statusPanel.hidden = true;
             content.hidden = false;
-        } catch (error) { estado(error && error.controlled ? error.message : "No fue posible cargar el evento.", false, true, Boolean(error && error.needsLogin)); }
-        finally { loading = false; }
+            follow.hidden = false; follow.classList.remove("is-stale");
+            document.getElementById("login-actualizacion").hidden = true;
+            put("estado-actualizacion", event.estadoEvento === "EN_VIVO" ? "Datos oficiales recibidos. Seguimiento cada 25 segundos mientras el partido esté en vivo."
+                : event.estadoEvento === "FINALIZADO" && event.resultadoPendiente === false ? "Datos oficiales recibidos. Seguimiento automático detenido: partido finalizado."
+                : "Datos oficiales recibidos. Puedes actualizar el partido manualmente.");
+        } catch (error) {
+            if (version !== generation || disposed || !visible()) return;
+            sessionExpiredConfirmed = sessionExpiredConfirmed || Boolean(error && (error.sessionExpired === true || error.httpStatus === 401));
+            const needsLogin = sessionExpiredConfirmed || Boolean(error && error.needsLogin);
+            // Una sesión expirada permanece detenida hasta recibir datos válidos,
+            // incluso si un reintento manual posterior falla por un error transitorio.
+            stopAfterError = stopAfterError || Boolean(error && (error.sessionExpired === true || [400,401,403,404].includes(error.httpStatus)));
+            if (!lastEvent) estado(error && error.controlled ? error.message : "No fue posible cargar el evento.", false, true, needsLogin);
+            else {
+                follow.hidden = false; follow.classList.add("is-stale");
+                put("estado-actualizacion", "No se pudo actualizar el partido. Se muestran los últimos datos recibidos; no se consideran actuales."
+                    + (needsLogin ? " Inicia sesión para continuar." : " Puedes reintentar manualmente."));
+                document.getElementById("login-actualizacion").hidden = !needsLogin;
+            }
+        } finally {
+            if (activeController === controller) {
+                loading = false; activeController = null; refresh.disabled = false; follow.setAttribute("aria-busy","false");
+                if (refreshPending && visible() && !disposed) { refreshPending = false; cargar(); }
+                else schedule();
+            }
+        }
+    }
+    function visibilityChanged() {
+        clearPoll();
+        if (!visible()) {
+            generation += 1; refreshPending = true;
+            if (activeController) activeController.abort();
+            if (lastEvent) { follow.classList.add("is-stale"); put("estado-actualizacion","Seguimiento pausado con la pestaña oculta. Se conservan los últimos datos recibidos."); }
+        } else if (!disposed) {
+            if (loading) refreshPending = true;
+            else { refreshPending = false; cargar(); }
+        }
+    }
+    function leave() {
+        disposed = true; generation += 1; refreshPending = false; clearPoll();
+        if (activeController) activeController.abort();
+        document.removeEventListener("visibilitychange",visibilityChanged);
     }
     retry.addEventListener("click", cargar);
+    refresh.addEventListener("click", cargar);
+    document.addEventListener("visibilitychange",visibilityChanged);
+    window.addEventListener("pagehide",leave);
+    window.addEventListener("pageshow",event=>{
+        if (event.persisted && disposed && idEvento !== null) {
+            disposed = false; document.addEventListener("visibilitychange",visibilityChanged);
+            if (loading) refreshPending = true; else cargar();
+        }
+    });
     if (idEvento === null) estado("El identificador del evento falta o no es un entero positivo válido. Vuelve al listado para elegir un evento.");
     else cargar();
 })();
