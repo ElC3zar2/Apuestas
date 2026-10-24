@@ -78,7 +78,7 @@ public class PruebaContratosAdministracionEventos {
                 if(m.getName().equals("getParameterMap"))return parametros;if(m.getName().equals("getRemoteAddr"))return "127.0.0.1";
                 try{return m.invoke(h.req,a);}catch(InvocationTargetException e){throw e.getCause();}
             });
-            new ControlAccesoAdministrativo().doFilter(req,h.res,(r,s)->servlet.service((HttpServletRequest)r,(HttpServletResponse)s));
+            new ControlAccesoAdministrativo().doFilter(PruebaCsrfAdministrativo.conToken(req,h),h.res,(r,s)->servlet.service((HttpServletRequest)r,(HttpServletResponse)s));
             exigir(h.status==esperado && "application/json;charset=UTF-8".equals(h.tipo));
             exigir("no-store".equals(h.headers.get("Cache-Control")) && !h.body.toString().contains("SECRETO_INTERNO_SQL"));
             exigir(abiertos==cerrados && (llamadas==0 || (conexionCerrada && statementCerrado && llamadas==1)));

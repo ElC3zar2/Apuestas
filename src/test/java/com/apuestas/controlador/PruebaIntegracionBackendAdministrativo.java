@@ -110,7 +110,8 @@ public class PruebaIntegracionBackendAdministrativo {
     }
     private static void logout(Sesion sesion) throws Exception {
         Http h=new Http();h.ruta="/administrador/logout";h.previa=sesion;
-        new ControlAccesoAdministrativo().doFilter(h.req,h.res,(r,s)->new LogoutAdministrativoServlet().service(h.req,h.res));
+        new ControlAccesoAdministrativo().doFilter(PruebaCsrfAdministrativo.conToken(h.req,h),h.res,
+                (r,s)->new LogoutAdministrativoServlet().service((javax.servlet.http.HttpServletRequest)r,(javax.servlet.http.HttpServletResponse)s));
         exigir(h.status==303&&h.creaciones==0&&sesion.invalidada&&sesion.datos.isEmpty());
         exigir("/app/administrador/login".equals(h.headers.get("Location")));casos++;
     }

@@ -176,7 +176,7 @@ public class PruebaAdministracionEventos {
                 }
             }
             req=proxy(HttpServletRequest.class,(p,m,a)->{
-                if(op==ASOCIAR_PARTICIPANTE_LIGA || op==DESASOCIAR_PARTICIPANTE_LIGA) {
+                if("POST".equals(op.metodo)) {
                     if(m.getName().equals("getHeaders")) return Collections.enumeration(tokenCsrf==null?Collections.emptyList():Collections.singletonList(tokenCsrf));
                     if(m.getName().equals("getHeader") || m.getName().equals("getQueryString")) return null;
                     if(m.getName().equals("getParameterValues")) return params.get(a[0]);
@@ -188,7 +188,7 @@ public class PruebaAdministracionEventos {
         }
         void p(String nombre,String... valores) { params.put(nombre,valores); }
         JsonNode ejecutar(int estado) throws Exception {
-            if((op==ASOCIAR_PARTICIPANTE_LIGA || op==DESASOCIAR_PARTICIPANTE_LIGA) && !omitirCsrf
+            if("POST".equals(op.metodo) && !omitirCsrf
                     && h.previa!=null && !h.previa.expirada && !h.previa.falloLectura
                     && com.apuestas.seguridad.SesionAdministrativa.valida(h.previa.ref))
                 tokenCsrf=com.apuestas.seguridad.CsrfSeguridad.obtener(h.previa.ref,com.apuestas.seguridad.CsrfSeguridad.Ambito.ADMINISTRADOR);
