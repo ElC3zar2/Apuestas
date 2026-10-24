@@ -2,6 +2,16 @@
 .events-page { min-height: calc(100vh - 160px); }
 .catalog-label { color: var(--muted); font-size: 10px; letter-spacing: .16em; white-space: nowrap; }
 .filters-panel { margin-bottom: 34px; }
+.own-events { margin-bottom: 30px; }
+.own-events-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.own-events-actions .retry { margin: 0; }
+.own-events-actions a { white-space: normal; line-height: 1.8; }
+#apuestas-status, #nota-historial { overflow-wrap: anywhere; }
+#apuestas-status.is-error { color: #FFBDCF; }
+.event-card.has-own-bet { border-color: rgba(0,255,102,.35); }
+.personal-event { margin-bottom: 18px; padding: 12px; border: 1px solid rgba(0,255,102,.25); border-radius: 10px; }
+.own-event-label { margin: 0 0 8px; font-size: 12px; line-height: 1.7; color: var(--green); overflow-wrap: anywhere; }
+.personal-event a { color: var(--cyan); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 .filter-heading { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: center; gap: 20px 28px; }
 .filter-title { grid-column: 1 / -1; }
 .sport-picker { display: grid; gap: 8px; min-width: 0; }

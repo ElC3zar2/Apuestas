@@ -50,6 +50,16 @@
                 <label><input type="radio" name="vista" value="FINALIZADOS"><span>Finalizados</span></label>
             </fieldset>
         </section>
+        <section class="panel own-events" id="apuestas-propias" aria-labelledby="titulo-apuestas-propias" aria-busy="false">
+            <h2 id="titulo-apuestas-propias">Tus apuestas en este catálogo</h2>
+            <p id="apuestas-status" class="muted" role="status">Consultando tus apuestas…</p>
+            <div class="own-events-actions">
+                <a class="text-link" href="${pageContext.request.contextPath}/apuestas/mis-boletos.jsp">Ver Mis apuestas ↗</a>
+                <button id="reintentar-apuestas" class="retry" type="button" hidden>Reintentar verificación de apuestas</button>
+                <a id="login-apuestas" class="text-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
+            </div>
+            <p id="nota-historial" class="catalog-note muted">Mis apuestas sigue siendo la fuente para consultar tus boletos, incluidos los partidos que no aparecen en este catálogo limitado a 100 eventos por consulta.</p>
+        </section>
         <section class="results-section" id="resultados" aria-labelledby="titulo-resultados" aria-busy="false">
             <div class="section-heading results-heading"><h2 id="titulo-resultados">Eventos</h2><span id="cantidad-eventos" class="muted" role="status"></span></div>
             <div class="results-state panel" id="estado-eventos"><span class="state-mark" aria-hidden="true">◇</span><p id="eventos-status" role="status">Selecciona un deporte para explorar sus eventos.</p><button id="reintentar-eventos" class="retry" type="button" hidden>Reintentar eventos</button></div>

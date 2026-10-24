@@ -14,6 +14,10 @@
     const eventsRetry = document.getElementById("reintentar-eventos");
     const list = document.getElementById("lista-eventos");
     const count = document.getElementById("cantidad-eventos");
+    const historyPanel = document.getElementById("apuestas-propias");
+    const historyStatus = document.getElementById("apuestas-status");
+    const historyRetry = document.getElementById("reintentar-apuestas");
+    const historyLogin = document.getElementById("login-apuestas");
     let eventsController;
     let requestVersion = 0;
     let sportsLoading = false;
@@ -21,6 +25,10 @@
     let leaguesVersion = 0;
     let activeLeagueIds = new Set();
     let loadedEvents = null;
+    let historyController = null, historyVersion = 0, historyLoading = false, historyReady = false;
+    let ownEvents = new Map(), ticketCount = 0, disposed = false;
+    const cardCache = new Map();
+    const visible = () => document.visibilityState !== "hidden";
 
     const validId = value => Number.isInteger(value) && value > 0 && value <= 2147483647;
     const selectedSport = () => /^\d+$/.test(sportSelect.value) && validId(Number(sportSelect.value)) ? Number(sportSelect.value) : null;
@@ -33,18 +41,41 @@
         return element;
     }
 
-    function fallo(message) { const error = new Error(message); error.controlled = true; return error; }
+    function fallo(message, needsLogin = false) { const error = new Error(message); error.controlled = true; error.needsLogin = needsLogin; return error; }
     async function consultar(ruta, controller) {
         let timedOut = false;
         let timeout;
+        let onAbort;
         try {
             const consulta = async () => {
                 const response = await fetch(contextPath + ruta, {
                     method: "GET", credentials: "same-origin", cache: "no-store",
                     headers: { Accept: "application/json" }, signal: controller.signal
                 });
-                if (response.redirected || response.status === 401) throw fallo("No se pudo completar la consulta con tu sesión actual. Vuelve a iniciar sesión si ha expirado.");
+                if (controller.signal.aborted) {
+                    const error = fallo("La consulta se interrumpió."); error.name = "AbortError"; throw error;
+                }
+                let redirectedToLogin = false;
+                if (response.redirected) {
+                    const target = new URL(response.url, window.location.href);
+                    redirectedToLogin = target.origin === new URL(window.location.href).origin
+                        && [contextPath + "/usuario/login", contextPath + "/usuario/login.jsp"].includes(target.pathname);
+                }
+                if (response.status === 401 || redirectedToLogin) {
+                    if (ruta !== "/usuario/boletos/historial") {
+                        descartarHistorial();
+                        historyStatus.textContent = "No se pudieron verificar tus apuestas. Tu sesión puede haber expirado; inicia sesión o reintenta.";
+                        historyLogin.hidden = false; historyRetry.hidden = false;
+                    }
+                    throw fallo("No se pudo completar la consulta con tu sesión actual. Vuelve a iniciar sesión si ha expirado.",true);
+                }
+                if (response.redirected) throw fallo("La consulta fue redirigida a una respuesta inesperada.");
                 if (!response.ok) {
+                    if (response.status === 403 && ruta !== "/usuario/boletos/historial") {
+                        descartarHistorial();
+                        historyStatus.textContent = "No se pudieron verificar tus apuestas con los permisos actuales. Puedes reintentar la verificación.";
+                        historyRetry.hidden = false; historyLogin.hidden = true;
+                    }
                     const messages = {400: "Los parámetros de la consulta no son válidos.", 403: "No tienes permiso para realizar esta consulta.",
                         404: "La información solicitada no está disponible.", 500: "El servidor no pudo completar la consulta.", 503: "La consulta no está disponible temporalmente."};
                     throw fallo(messages[response.status] || "No fue posible completar la consulta. Intenta nuevamente.");
@@ -66,12 +97,97 @@
                     controller.abort();
                 }, 15000);
             });
-            return await Promise.race([consulta(), espera]);
+            const cancelled = new Promise((_, reject)=>{
+                onAbort = ()=>{ const error = fallo("La consulta se interrumpió."); error.name = "AbortError"; reject(error); };
+                controller.signal.addEventListener("abort",onAbort,{once:true});
+                if (controller.signal.aborted) onAbort();
+            });
+            return await Promise.race([consulta(), espera, cancelled]);
         } catch (error) {
             if (timedOut) throw fallo("La consulta está tardando demasiado. Intenta nuevamente.");
             if (error && (error.controlled || error.name === "AbortError")) throw error;
             throw fallo("No se pudo conectar con el servidor. Revisa tu conexión e intenta nuevamente.");
-        } finally { window.clearTimeout(timeout); }
+        } finally { window.clearTimeout(timeout); if (onAbort) controller.signal.removeEventListener("abort",onAbort); }
+    }
+
+    function descartarHistorial() {
+        historyVersion += 1;
+        if (historyController) historyController.abort();
+        historyController = null; historyLoading = false; historyReady = false;
+        ownEvents = new Map(); ticketCount = 0;
+        historyPanel.setAttribute("aria-busy","false");
+        renderEventos(); notaHistorial();
+    }
+    function indexarHistorial(data) {
+        if (data.idDeporte !== null || !validCount(data.cantidadBoletos) || !Array.isArray(data.boletos)
+                || data.cantidadBoletos !== data.boletos.length) throw fallo("El historial recibido está incompleto.");
+        const tickets = new Map(), index = new Map();
+        for (const ticket of data.boletos) {
+            if (!ticket || !validId(ticket.idBoleto) || !text(ticket.codigoBoleto) || !text(ticket.estadoBoleto) || !text(ticket.resultado)
+                    || !Array.isArray(ticket.detalles) || ticket.detalles.some(d=>!d || !validId(d.idEvento) || !validId(d.idDeporte) || !validId(d.idSeleccion))) throw fallo("El historial contiene un boleto o detalle inválido.");
+            const signature = JSON.stringify([ticket.codigoBoleto,ticket.estadoBoleto,ticket.resultado,
+                [...new Set(ticket.detalles.map(d=>JSON.stringify([d.idEvento,d.idDeporte,d.idSeleccion])))].sort()]);
+            if (tickets.has(ticket.idBoleto)) {
+                if (tickets.get(ticket.idBoleto) !== signature) throw fallo("El historial contiene boletos duplicados inconsistentes.");
+                continue;
+            }
+            tickets.set(ticket.idBoleto,signature);
+            const pending = ticket.estadoBoleto === "PENDIENTE" && ticket.resultado === "PENDIENTE";
+            for (const detail of ticket.detalles) {
+                if (!index.has(detail.idEvento)) index.set(detail.idEvento,{idDeporte:detail.idDeporte,tickets:new Set(),pending:false});
+                const entry = index.get(detail.idEvento);
+                if (entry.idDeporte !== detail.idDeporte) throw fallo("La asociación de eventos del historial es inconsistente.");
+                entry.tickets.add(ticket.idBoleto); entry.pending = entry.pending || pending;
+            }
+        }
+        return {index,count:tickets.size};
+    }
+    function notaHistorial() {
+        let note = "Mis apuestas sigue siendo la fuente para consultar tus boletos, incluidos los partidos que no aparecen en este catálogo limitado a 100 eventos por consulta.";
+        if (historyReady && loadedEvents && loadedEvents.sport === selectedSport()) {
+            const received = new Set(loadedEvents.items.map(e=>e.idEvento));
+            const missing = [...ownEvents].filter(([id,entry])=>entry.idDeporte === loadedEvents.sport && !received.has(id)).length;
+            if (missing) note = missing + (missing === 1 ? " partido con apuestas no aparece" : " partidos con apuestas no aparecen")
+                + " en el catálogo recibido para este deporte y estado. Eso no elimina tus apuestas: consúltalas en Mis apuestas. El catálogo está limitado a 100 eventos.";
+        }
+        document.getElementById("nota-historial").textContent = note;
+    }
+    async function cargarHistorial() {
+        if (historyLoading || disposed || !visible()) return;
+        descartarHistorial();
+        const version = historyVersion, controller = new AbortController();
+        historyController = controller; historyLoading = true;
+        historyPanel.setAttribute("aria-busy","true"); historyStatus.classList.remove("is-error");
+        historyStatus.textContent = "Consultando tus apuestas…"; historyRetry.hidden = true; historyLogin.hidden = true;
+        const vigente = ()=>version === historyVersion && !disposed && visible();
+        try {
+            const data = await consultar("/usuario/boletos/historial",controller);
+            if (!vigente()) return;
+            const indexed = indexarHistorial(data);
+            ownEvents = indexed.index; ticketCount = indexed.count; historyReady = true;
+            historyStatus.textContent = ticketCount === 0 ? "No hay apuestas registradas en tu historial. Puedes seguir explorando eventos."
+                : "Tus apuestas se verificaron. Se priorizan tus partidos dentro del listado recibido y los filtros seleccionados.";
+            renderEventos(); notaHistorial();
+        } catch (error) {
+            if (!vigente()) return;
+            historyStatus.textContent = "No se pudieron verificar tus apuestas. Puedes continuar explorando eventos."
+                + (error.needsLogin ? " Tu sesión puede haber expirado; inicia sesión para volver a verificarlas." : " Reintenta la verificación cuando quieras.");
+            historyStatus.classList.add("is-error"); historyRetry.hidden = false; historyLogin.hidden = !error.needsLogin;
+        } finally {
+            if (version === historyVersion) { historyLoading = false; historyController = null; historyPanel.setAttribute("aria-busy","false"); }
+        }
+    }
+    function association(event) {
+        const entry = historyReady ? ownEvents.get(event.idEvento) : null;
+        return entry && entry.idDeporte === event.idDeporte ? entry : null;
+    }
+    function priority(event) {
+        const own = association(event), live = event.estadoEvento === "EN_VIVO";
+        if (live && own) return 0;
+        if (own && own.pending) return 1;
+        if (live) return 2;
+        if (event.estadoEvento === "PROGRAMADO") return 3;
+        return 4; // Finalizados u otros estados: no se inventa su estado deportivo.
     }
 
     function prepararLigas(message) {
@@ -130,18 +246,30 @@
     function renderEventos() {
         if (!loadedEvents || loadedEvents.sport !== selectedSport()) return;
         const league = leagueSelect.value ? Number(leagueSelect.value) : null;
-        const events = league === null ? loadedEvents.items : loadedEvents.items.filter(event => event.idLiga === league);
+        const filtered = league === null ? loadedEvents.items : loadedEvents.items.filter(event => event.idLiga === league);
+        const events = filtered.map((event,index)=>({event,index})).sort((a,b)=>priority(a.event)-priority(b.event)||a.index-b.index).map(item=>item.event);
         if (!events.length) {
             estadoEventos(league === null ? "No hay eventos en el listado recibido para este deporte y estado. Prueba con otro filtro."
                 : "No hay coincidencias para esta liga en el listado actualmente cargado. Puede haber otros eventos fuera de este listado.");
         } else {
-            const fragment = document.createDocumentFragment();
-            events.forEach(event => fragment.append(tarjeta(event)));
-            list.replaceChildren(fragment);
+            const focused = document.activeElement;
+            const cards = events.map(event=>{
+                let cached = cardCache.get(event.idEvento);
+                if (!cached) { cached = tarjeta(event); cardCache.set(event.idEvento,cached); }
+                const own = association(event);
+                cached.personal.hidden = !own; cached.card.classList.toggle("has-own-bet",Boolean(own));
+                const message = own ? "Tienes " + own.tickets.size + (own.tickets.size === 1 ? " boleto asociado" : " boletos asociados") : "";
+                if (cached.label.textContent !== message) cached.label.textContent = message;
+                return cached.card;
+            });
+            cards.forEach((card,index)=>{ if (list.children[index] !== card) list.insertBefore(card,list.children[index] || null); });
+            while (list.children.length > cards.length) list.lastElementChild.remove();
+            if (focused && list.contains(focused) && document.activeElement !== focused) focused.focus({preventScroll:true});
             state.hidden = true;
             eventsStatus.textContent = `${events.length} eventos mostrados del listado cargado.`;
         }
         count.textContent = `${events.length} de ${loadedEvents.items.length} eventos recibidos · consulta limitada a 100`;
+        notaHistorial();
     }
 
     function estadoEventos(message, loading = false, error = false) {
@@ -170,6 +298,10 @@
         const visual = text(event.estadoVisual) || text(event.estadoEvento);
         top.append(node("span", "event-badge" + (event.estadoVisual === "EN_PROGRESO" ? " is-live" : ""), visual ? visual.replace(/_/g, " ") : "Estado no disponible"));
         card.append(top, node("h3", "", text(event.evento) || "Evento sin nombre disponible"));
+        const personal = node("div", "personal-event"), ownLabel = node("p", "own-event-label");
+        const ownLink = node("a", "", "Ver Mis apuestas ↗");
+        ownLink.href = contextPath + "/apuestas/mis-boletos.jsp";
+        personal.hidden = true; personal.append(ownLabel,ownLink); card.append(personal);
         const participants = [text(event.participante1), text(event.participante2)].filter(Boolean);
         if (participants.length) card.append(node("p", "event-participants", participants.join(" · ")));
         const facts = node("dl", "event-facts");
@@ -187,13 +319,13 @@
         link.setAttribute("aria-label", "Ver evento: " + (text(event.evento) || event.idEvento));
         footer.append(node("span", "availability" + (event.puedeApostar === true ? " is-open" : ""), availability), link);
         card.append(facts, footer);
-        return card;
+        return {card,personal,label:ownLabel};
     }
 
     async function cargarEventos() {
         if (eventsController) eventsController.abort();
         const version = ++requestVersion;
-        loadedEvents = null;
+        loadedEvents = null; cardCache.clear(); notaHistorial();
         const sport = selectedSport();
         if (sport === null) { estadoEventos("Selecciona un deporte para explorar sus eventos."); return; }
         const controller = new AbortController();
@@ -204,9 +336,12 @@
         try {
             const data = await consultar("/eventos/exploracion?" + params.toString(), controller);
             if (version !== requestVersion || selectedSport() !== sport) return;
+            const ids = new Set();
             if (!Array.isArray(data.eventos) || !validCount(data.cantidad) || data.cantidad !== data.eventos.length
-                    || data.cantidad > 100 || data.eventos.some(event => !event || !validId(event.idEvento) || !validId(event.idLiga)
-                        || event.idDeporte !== sport)) throw fallo("El servidor devolvió un listado de eventos inválido.");
+                    || data.cantidad > 100 || data.eventos.some(event => {
+                        if (!event || !validId(event.idEvento) || !validId(event.idLiga) || event.idDeporte !== sport || ids.has(event.idEvento)) return true;
+                        ids.add(event.idEvento); return false;
+                    })) throw fallo("El servidor devolvió un listado de eventos inválido.");
             loadedEvents = {sport, items: data.eventos};
             renderEventos();
         } catch (error) {
@@ -257,5 +392,16 @@
     views.addEventListener("change", cargarEventos);
     sportsRetry.addEventListener("click", cargarDeportes);
     eventsRetry.addEventListener("click", cargarEventos);
+    historyRetry.addEventListener("click", cargarHistorial);
+    document.addEventListener("visibilitychange",()=>{
+        if (!visible()) {
+            descartarHistorial(); historyStatus.textContent = "Verificación de apuestas pausada. Se consultará de nuevo al volver a esta pestaña.";
+            historyRetry.hidden = true; historyLogin.hidden = true;
+        } else cargarHistorial();
+    });
+    window.addEventListener("focus",cargarHistorial);
+    window.addEventListener("pagehide",()=>{ disposed = true; descartarHistorial(); });
+    window.addEventListener("pageshow",event=>{ if (event.persisted) { disposed = false; cargarHistorial(); } });
     cargarDeportes();
+    cargarHistorial();
 })();
