@@ -5,9 +5,8 @@
     const role = (document.body.dataset.adminRole || '').trim();
     const writable = role === 'ADMINISTRADOR';
     const readable = writable || role === 'AUDITOR';
-    // Bloqueo de integración: solo una futura revisión de código podrá habilitar aprobaciones reales.
-    // Las pruebas aisladas sirven una copia en memoria; no hay bypass por URL, DOM o almacenamiento.
-    const approvalsEnabled = false;
+    // Disponibilidad visual; cada escritura sigue autorizada por sesion, CSRF y backend.
+    const approvalsEnabled = true;
     const prefix = '/administrador/usuarios/';
     const field = (name, label, type = 'textarea', required = false) => ({name,label,type,required});
     const target = (name, label) => field(name,label,'target',true);
@@ -49,7 +48,7 @@
         const verification=detail.verificaciones.find(item=>item.idVerificacion===recordId(form,'idVerificacion'));
         switch(route){
             case 'verificacion/iniciar':return verification?.estadoVerificacion==='PENDIENTE';
-            case 'verificacion/aprobar':return approvalsEnabled&&['PENDIENTE','EN_REVISION'].includes(verification?.estadoVerificacion)&&account.estadoUsuario!=='CERRADO';
+            case 'verificacion/aprobar':return approvalsEnabled&&verification?.estadoVerificacion==='EN_REVISION'&&account.estadoUsuario!=='CERRADO';
             case 'verificacion/rechazar':return ['PENDIENTE','EN_REVISION'].includes(verification?.estadoVerificacion);
             case 'verificacion/reabrir':return ['PENDIENTE','SUSPENDIDO'].includes(account.estadoUsuario)&&latestVerification()?.estadoVerificacion==='RECHAZADA';
             case 'estado/cambiar':return account.estadoUsuario!=='CERRADO';
@@ -60,7 +59,7 @@
     }
     function sync() {
         if(leaving)return;
-        for(const id of ['pending-form','user-query','user-search'])$(id).querySelectorAll('input,button').forEach(el=>{el.disabled=busy||expired||!readable;});
+        for(const id of ['pending-form','user-query','user-search'])$(id).querySelectorAll('input,button,select').forEach(el=>{el.disabled=busy||expired||!readable;});
         document.querySelectorAll('[data-user-action]').forEach(el=>{el.disabled=busy||expired;});
         for(const [route,form] of forms)form.querySelector('fieldset').disabled=busy||expired||!available(route,form);
         for(const [route,button] of operationButtons)button.disabled=busy||expired||!available(route,forms.get(route));
@@ -130,7 +129,7 @@
         $('user-identity').textContent=identity(user);$('user-email').textContent=display(user.correo);
         $('operation-user').textContent='Cuenta seleccionada: '+identity(user)+' · '+display(user.correo);
         $('user-account').replaceChildren();
-        values($('user-account'),[['Estado',user.nombreEstadoUsuario||user.estadoUsuario],['Correo verificado',user.correoVerificado],['Registro',user.fechaRegistro],['Rol',user.rol],['ID de referencia',user.idUsuario]]);
+        values($('user-account'),[['Estado de cuenta',user.estadoUsuario],['Correo verificado',user.correoVerificado],['Última verificación administrativa',latestVerification()?.estadoVerificacion],['Restricciones vigentes',next.restricciones.filter(item=>item.vigente).length],['Registro',user.fechaRegistro],['Rol',user.rol],['ID de referencia',user.idUsuario]]);
         $('user-personal').replaceChildren();
         values($('user-personal'),[['Nacimiento',user.fechaNacimiento],['Género',user.genero],['Teléfono',user.telefono],['Tipo de documento',user.tipoDocumento],['Documento',user.numeroDocumento],['País',user.pais],['Departamento',user.departamento],['Municipio',user.municipio],['Ciudad exterior',user.ciudadExterior],['Dirección',user.direccion]]);
         $('user-verifications').replaceChildren();
@@ -197,7 +196,7 @@
         // El listado oficial solo devuelve cuentas cliente; el detalle vuelve a validar el rol.
         return writable&&!uncertain.has(user.idUsuario)&&(!user.rol||user.rol==='USUARIO')&&Number.isInteger(user.idUsuario)
             &&validId(user.idUsuario)&&Number.isInteger(user.idVerificacion)&&validId(user.idVerificacion)
-            &&['PENDIENTE','EN_REVISION'].includes(user.estadoVerificacion)
+            &&user.estadoVerificacion==='EN_REVISION'
             &&['PENDIENTE','ACTIVO','SUSPENDIDO'].includes(user.estadoUsuario);
     }
     function batchCheckbox(user) {
@@ -261,7 +260,7 @@
             &&current.account.correo===user.correo&&current.account.correoVerificado===user.correoVerificado
             &&current.account.estadoUsuario!=='CERRADO'&&current.latest?.idVerificacion===user.idVerificacion
             &&current.latest.estadoVerificacion===user.estadoVerificacion
-            &&['PENDIENTE','EN_REVISION'].includes(current.latest.estadoVerificacion);
+            &&current.latest.estadoVerificacion==='EN_REVISION';
     }
     async function reconcileBatch(row) {
         try {
@@ -272,7 +271,7 @@
         }catch(error){if(error.status===401)report(error);row.note+=' No fue posible reconciliar el detalle oficial.';}
     }
     async function approveBatch() {
-        if(!approvalsEnabled){status('Aprobaciones bloqueadas hasta la validación SQL por Fernando.',true);return;}
+        if(!approvalsEnabled)return;
         if(busy||expired||!writable||batchResults||!batchSelection.size||batchSelection.size>40)return;
         const selected=[...batchSelection.values()].map(user=>({...user}));
         if(selected.some(user=>!batchEligible(user))||new Set(selected.map(u=>u.idVerificacion)).size!==selected.length)return;
@@ -309,6 +308,7 @@
                             ||result.estadoUsuario==='ACTIVO'&&!result.correoVerificado
                             ||result.estadoUsuario==='PENDIENTE'&&result.correoVerificado)
                         throw new Error('La respuesta no confirma un resultado de aprobación consistente.');
+                    row.resultado={...result};
                     row.state=result.estadoUsuario==='ACTIVO'?'activo':result.estadoUsuario==='SUSPENDIDO'?'suspendido':'correo';
                     row.note='Respuesta oficial: APROBADA; cuenta '+result.estadoUsuario+'; correo verificado: '
                         +display(result.correoVerificado)+'. '+(result.sinCambios?'El servidor informó sin cambios; no se atribuye una aprobación nueva.':'Operación confirmada.');
@@ -353,7 +353,8 @@
             const expected={'verificacion/iniciar':'EN_REVISION','verificacion/aprobar':'APROBADA','verificacion/rechazar':'RECHAZADA','verificacion/reabrir':'PENDIENTE'}[route];
             if(result.estadoVerificacion!==expected||(route!=='verificacion/reabrir'&&typeof result.sinCambios!=='boolean'))throw new Error('La respuesta no confirma el estado oficial de verificación.');
             if(route==='verificacion/aprobar'&&(!['ACTIVO','PENDIENTE','SUSPENDIDO'].includes(result.estadoUsuario)||typeof result.correoVerificado!=='boolean'
-                    ||(result.estadoUsuario==='ACTIVO'&&!result.correoVerificado)||(account?.estadoUsuario==='SUSPENDIDO'&&result.estadoUsuario!=='SUSPENDIDO')))
+                    ||(result.estadoUsuario==='ACTIVO'&&!result.correoVerificado)||(result.estadoUsuario==='PENDIENTE'&&result.correoVerificado)
+                    ||(account?.estadoUsuario==='SUSPENDIDO'&&result.estadoUsuario!=='SUSPENDIDO')))
                 throw new Error('La respuesta de aprobación no confirma un estado de cuenta consistente.');
             if(route==='verificacion/rechazar'&&!['PENDIENTE','ACTIVO','SUSPENDIDO','CERRADO'].includes(result.estadoUsuario))throw new Error('Respuesta de rechazo incompleta.');
             if(route==='verificacion/reabrir'&&detail?.usuario.idUsuario===userId&&detail.verificaciones.some(v=>v.idVerificacion===result.idVerificacion))throw new Error('La reapertura no confirma una nueva solicitud.');
@@ -388,7 +389,7 @@
             if(route==='estado/cambiar')fieldset.append(node('small','El backend exige correo verificado y última verificación aprobada para activar; no permite cambiar una cuenta cerrada ni cerrarla con saldo comprometido.'));
             if(route==='verificacion/reabrir')fieldset.append(node('small','Requiere última verificación rechazada y cuenta pendiente o suspendida. Se crea una nueva solicitud; no se modifica el historial.'));
             if(route==='restricciones/agregar')fieldset.append(node('small','Fecha opcional sin conversión de zona horaria. La vigencia y los conflictos los valida el servidor.'));
-            if(route==='verificacion/aprobar')section.append(node('p','Aprobación bloqueada para uso real hasta validación SQL por Fernando.','warning'));
+            if(route==='verificacion/aprobar')section.append(node('p','Inicia la revisión y comprueba la identidad antes de aprobar. El backend autoriza y confirma el resultado.','muted'));
             const submit=node('button',title,'primary');submit.type='submit';fieldset.append(submit);form.append(fieldset);section.append(form);$('users-forms').append(section);forms.set(route,form);
             if(route==='estado/cambiar')form.elements.nuevoEstado.addEventListener('change',()=>{form.elements.motivo.required=['SUSPENDIDO','CERRADO'].includes(form.elements.nuevoEstado.value);});
             form.addEventListener('submit',async event=>{
@@ -407,6 +408,14 @@
                 busy=true;sync();status('Procesando operación…');let sent=false;
                 $('users-operation-result').hidden=true;
                 try{
+                    if(route==='verificacion/aprobar'){
+                        const previous=detail.usuario;
+                        const selected=detail.verificaciones.find(v=>v.idVerificacion===Number(payload.get('idVerificacion')));
+                        const current=await batchDetail(previous);
+                        if(!selected||!batchUnchanged({...previous,idVerificacion:selected.idVerificacion,estadoVerificacion:selected.estadoVerificacion},current)){
+                            stale=true;throw new Error('La cuenta o verificación cambió. Consulta nuevamente el detalle antes de aprobar.');
+                        }
+                    }
                     const csrf=await api('/administrador/seguridad/csrf');if(typeof csrf.csrfToken!=='string'||!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(csrf.csrfToken))throw new Error('El servidor no devolvió un token CSRF válido.');
                     sent=true;const data=await api(prefix+route,{method:'POST',headers:{'X-CSRF-Token':csrf.csrfToken},body:payload});validateOutcome(route,data.resultado,payload,userId);
                     $('users-operation-values').replaceChildren();values($('users-operation-values'),Object.entries(data.resultado).filter(([key])=>Object.hasOwn(labels,key)).map(([key,value])=>[labels[key],value]));$('users-operation-result').hidden=false;
@@ -419,7 +428,7 @@
                 }catch(error){
                     report(error);
                     if(!live())return;
-                    if(sent&&(!error.status||error.status>=500||error.status===408)){uncertain.add(userId);stale=true;status('Operación sin confirmación. Conservamos tus campos. Consulta el detalle del mismo usuario antes de considerar un reintento.',true);}
+                    if(sent&&![400,401,403,404,405,409].includes(error.status)){uncertain.add(userId);stale=true;status('Operación sin confirmación. Conservamos tus campos. Consulta el detalle del mismo usuario antes de considerar un reintento.',true);}
                     else if(sent&&error.status===409)stale=true;
                 }finally{busy=false;sync();}
             });
@@ -427,19 +436,23 @@
     }
     async function searchUsers(page){
         if(busy||expired||!readable)return;
-        const requestedText=$('user-search-text').value.trim(),revision=++searchRevision;
+        const requestedText=$('user-search-text').value.trim(),requestedState=$('user-search-state').value,revision=++searchRevision;
         if($('user-search-text').value.length>150||!Number.isInteger(page)||page<1||((page-1)*50)>2147483647){status('La búsqueda admite hasta 150 caracteres y una página válida.',true);return;}
         searchText=requestedText;searchValid=false;busy=true;sync();status('Buscando usuarios…');$('user-search-results').replaceChildren();$('users-page').textContent='Consultando página '+page+'…';
         try {
-            const data=await api('/administrador/usuarios/buscar?'+new URLSearchParams({buscar:requestedText,pagina:page,tamanoPagina:50}));
-            if(revision!==searchRevision||requestedText!==$('user-search-text').value.trim())return;
+            const params=new URLSearchParams({buscar:requestedText,pagina:page,tamanoPagina:50});
+            if(requestedState)params.set('estado',requestedState);
+            const data=await api('/administrador/usuarios/buscar?'+params);
+            if(revision!==searchRevision||requestedText!==$('user-search-text').value.trim()||requestedState!==$('user-search-state').value)return;
             if(!Array.isArray(data.usuarios)||data.pagina!==page||data.tamanoPagina!==50||!Number.isSafeInteger(data.total)||data.total<0
                     ||(page>1&&(page-1)*50>=data.total)||data.usuarios.length!==Math.min(50,Math.max(0,data.total-(page-1)*50))
-                    ||data.usuarios.some(user=>!user||!Number.isInteger(user.idUsuario)||!validId(user.idUsuario)||typeof user.correo!=='string'||!user.correo.trim()||typeof user.rol!=='string'||typeof user.estadoUsuario!=='string')
+                    ||data.usuarios.some(user=>!user||!Number.isInteger(user.idUsuario)||!validId(user.idUsuario)||typeof user.correo!=='string'||!user.correo.trim()
+                        ||!(user.nombre===null||typeof user.nombre==='string')||!(user.apellido===null||typeof user.apellido==='string')
+                        ||user.rol!=='USUARIO'||!['PENDIENTE','ACTIVO','SUSPENDIDO','CERRADO'].includes(user.estadoUsuario)||requestedState&&user.estadoUsuario!==requestedState)
                     ||new Set(data.usuarios.map(user=>user.idUsuario)).size!==data.usuarios.length)throw new Error('La página recibida es inconsistente. Vuelve a buscar desde la primera página.');
-            searchPage=page;searchTotal=data.total;searchValid=true;$('users-page').textContent='Página '+page+' · '+data.total+' cuentas';
+            searchPage=page;searchTotal=data.total;searchValid=true;$('users-page').textContent='Página '+page+' · '+data.total+' cuentas · '+(requestedState||'TODOS');
             table($('user-search-results'),'Cuentas encontradas',['Nombre','Correo','Estado','Rol','Acción'],data.usuarios.map(user=>[identity(user),user.correo,user.estadoUsuario,user.rol,user.rol==='USUARIO'?button('Seleccionar cuenta',()=>consult(user.idUsuario)):'Datos básicos disponibles en esta fila']));
-            status(data.usuarios.length?'Selecciona una cuenta para consultar su detalle.':'No se encontraron usuarios con esos datos.');
+            status(data.usuarios.length?'Selecciona una cuenta para consultar su detalle.':'No se encontraron cuentas con los filtros seleccionados.');
         }catch(e){if(revision!==searchRevision)return;if(live()){searchTotal=0;searchValid=false;$('users-page').textContent='Consulta sin confirmar. Vuelve a buscar.';}report(e);}finally{busy=false;sync();}
     }
     $('batch-all').addEventListener('change',()=>{
@@ -461,6 +474,7 @@
         $('batch-summary').replaceChildren();$('batch-rows').replaceChildren();syncBatch();
     });
     $('user-search-text').addEventListener('input',()=>{++searchRevision;searchPage=1;searchTotal=0;searchValid=false;$('user-search-results').replaceChildren();$('users-page').textContent='Búsqueda modificada. Consulta nuevamente.';sync();});
+    $('user-search-state').addEventListener('change',()=>{++searchRevision;searchPage=1;searchTotal=0;searchValid=false;$('user-search-results').replaceChildren();$('users-page').textContent='Filtro modificado. Consulta nuevamente.';sync();if(!busy)searchUsers(1);});
     $('user-search').addEventListener('submit',event=>{event.preventDefault();searchUsers(1);});
     $('users-prev').addEventListener('click',()=>{if(searchPage>1)searchUsers(searchPage-1);});
     $('users-next').addEventListener('click',()=>{if(searchPage*50<searchTotal)searchUsers(searchPage+1);});

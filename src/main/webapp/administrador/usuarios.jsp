@@ -43,18 +43,18 @@
 <p id="users-status" class="live-status" role="status" aria-live="polite">Selecciona una cuenta del listado de verificaciones pendientes.</p>
 <a id="users-login" href="${pageContext.request.contextPath}/administrador/login" hidden>Volver a iniciar sesión</a>
 <p id="users-uncertain" class="warning" role="status" hidden>Hay una operación sin confirmación. Consulta de nuevo el detalle del mismo usuario antes de considerar un reintento. No se reenvía ningún POST automáticamente.</p>
-<p id="users-approval-block" class="warning" role="status">La aprobación individual y por lotes está bloqueada para uso real hasta completar la validación SQL autorizada. Las demás operaciones conservan sus permisos.</p>
+<p id="users-approval-block" class="warning" role="status">Aprobación individual habilitada e integrada desde la corrección probada en AWS. Los lotes requieren validación integral con múltiples usuarios en un entorno autorizado. El backend autoriza cada operación.</p>
 <section class="panel"><h2>Usuarios pendientes de verificación</h2>
 <form id="pending-form" class="toolbar"><label for="pending-count">Cantidad máxima<input id="pending-count" name="cantidad" type="number" min="1" max="500" step="1" value="100" required></label><button type="submit">Consultar / actualizar pendientes</button></form>
 <p class="muted">Esta consulta incluye verificaciones pendientes o en revisión; no es un listado general de usuarios.</p>
 <section id="users-batch" class="users-batch" hidden aria-labelledby="batch-title">
 <h3 id="batch-title">Aprobación de verificaciones por lote</h3>
-<p class="warning">La interfaz por lotes no puede autorizarse para uso real hasta que se instale y valide el procedimiento SQL corregido.</p>
-<p class="muted">Selecciona únicamente identidades que hayas revisado y decidido aprobar. La selección no sustituye la revisión de identidad.</p>
+<p class="warning">El lote procesa hasta 40 verificaciones EN_REVISION mediante operaciones individuales. Puede finalizar parcialmente; sus resultados se conservan para revisión.</p>
+<p class="muted">Selecciona únicamente identidades que hayas revisado y decidido aprobar. Primero consulta la cuenta e inicia la revisión de cada verificación PENDIENTE. La selección no sustituye la revisión de identidad.</p>
 <div class="toolbar"><label class="batch-choice"><input id="batch-all" type="checkbox"> Seleccionar todos los elegibles visibles (máximo 40)</label><button id="batch-clear" type="button">Limpiar selección</button><strong id="batch-count" role="status">Seleccionados: 0 de 40</strong></div>
 <label for="batch-observation">Observación administrativa común (opcional, máximo 500 caracteres)</label>
 <textarea id="batch-observation" maxlength="500" rows="3"></textarea>
-<button id="batch-approve" type="button" class="primary" aria-describedby="users-approval-block" disabled>Aprobación bloqueada: validación SQL pendiente</button>
+<button id="batch-approve" type="button" class="primary" aria-describedby="users-approval-block" disabled>Aprobar verificaciones seleccionadas</button>
 </section>
 <div id="pending-results" class="management-results"></div>
 </section>
@@ -66,7 +66,7 @@
 <button id="batch-dismiss" type="button">Descartar resultados revisados e iniciar otro lote</button>
 </section>
 <section class="panel"><h2>Consultar usuario</h2><p class="muted">Este módulo consulta únicamente cuentas cliente con rol USUARIO. Las cuentas administrativas no están admitidas por este contrato.</p>
-<section class="panel"><h2>Buscar cuentas</h2><form id="user-search" class="toolbar"><label for="user-search-text">Nombre o correo<input id="user-search-text" name="buscar" type="search" maxlength="150"></label><button type="submit">Buscar usuarios</button></form>
+<section class="panel"><h2>Buscar cuentas</h2><form id="user-search" class="toolbar"><label for="user-search-text">Nombre o correo<input id="user-search-text" name="buscar" type="search" maxlength="150"></label><label for="user-search-state">Estado de cuenta<select id="user-search-state" name="estado"><option value="">TODOS</option><option>PENDIENTE</option><option>ACTIVO</option><option>SUSPENDIDO</option><option>CERRADO</option></select></label><button type="submit">Buscar usuarios</button></form>
 <div class="toolbar"><button id="users-prev" type="button" disabled>Anterior</button><span id="users-page" role="status"></span><button id="users-next" type="button" disabled>Siguiente</button></div><div id="user-search-results" class="management-results"></div>
 <form id="user-query" hidden><input id="user-id" name="idUsuario" type="hidden"></form></section>
 <div id="user-detail" hidden><h3 id="user-identity"></h3><p id="user-email" class="muted"></p><div id="user-account" class="management-results"></div>

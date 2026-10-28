@@ -41,7 +41,10 @@ public class ConsultasAdministrativasServicio {
         if(op==OperacionConsultaAdministrativa.USUARIOS){
             String buscar=params.containsKey("buscar")?params.get("buscar")[0]:"";
             if(buscar.length()>150)throw new IllegalArgumentException();
-            return Objects.requireNonNull(usuarios.buscarUsuarios(buscar.trim(),pagina,tamano));
+            String estado=params.containsKey("estado")?params.get("estado")[0].trim():null;
+            if(estado!=null&&!Arrays.asList("PENDIENTE","ACTIVO","SUSPENDIDO","CERRADO").contains(estado))throw new IllegalArgumentException();
+            return Objects.requireNonNull(estado==null?usuarios.buscarUsuarios(buscar.trim(),pagina,tamano)
+                    :usuarios.buscarUsuarios(buscar.trim(),estado,pagina,tamano));
         }
         Integer deporte=params.containsKey("idDeporte")?numero(params,"idDeporte",1):null;
         String estado=params.containsKey("estado")?params.get("estado")[0].trim():null;

@@ -30,7 +30,7 @@ window.BetZoneMarkets = (() => {
         return JSON.parse(result+raw.slice(start));
     }
     function date(value){
-        if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,7})?)?$/.test(value))return false;
+        if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?$/.test(value))return false;
         const [y,m,d,h,n,s=0]=value.match(/\d+/g).map(Number),v=new Date(0);v.setUTCFullYear(y,m-1,d);
         return y>0&&v.getUTCFullYear()===y&&v.getUTCMonth()===m-1&&v.getUTCDate()===d&&h<24&&n<60&&s<60;
     }

@@ -55,27 +55,37 @@ public class AdministracionUsuarioDAO {
     }
     /** Busqueda paginada sobre la misma cuenta/perfil del detalle; proyeccion minima sin secretos. */
     public com.apuestas.modelo.ConsultasAdministrativasModelos.PaginaUsuarios buscarUsuarios(String buscar,int pagina,int tamano)throws SQLException {
+        return buscarUsuarios(buscar,null,pagina,tamano);
+    }
+    public com.apuestas.modelo.ConsultasAdministrativasModelos.PaginaUsuarios buscarUsuarios(String buscar,String estado,int pagina,int tamano)throws SQLException {
         long offset=((long)pagina-1)*tamano;
         if(buscar==null||buscar.length()>150||pagina<1||tamano<1||tamano>100||offset>Integer.MAX_VALUE)throw new IllegalArgumentException();
+        if(estado!=null&&!Arrays.asList("PENDIENTE","ACTIVO","SUSPENDIDO","CERRADO").contains(estado))throw new IllegalArgumentException();
         String from=" FROM dbo.Usuario U LEFT JOIN dbo.PerfilUsuario P ON P.IdUsuario=U.IdUsuario"
                 +" JOIN dbo.Estado E ON E.IdEstado=U.IdEstado JOIN dbo.TipoEstado TE ON TE.IdTipoEstado=E.IdTipoEstado AND TE.Codigo='USUARIO'"
                 +" JOIN dbo.Rol R ON R.IdRol=U.IdRol";
-        String where=buscar.isEmpty()?"":" WHERE (CONCAT(P.Nombre,' ',P.Apellido) LIKE ? ESCAPE '!' OR U.Correo LIKE ? ESCAPE '!')";
+        // Rol.Nombre es la clave unica oficial, utilizada tambien por los SP administrativos.
+        String where=" WHERE R.Nombre='USUARIO'"+(estado==null?"":" AND E.Codigo=?")
+                +(buscar.isEmpty()?"":" AND (CONCAT(P.Nombre,' ',P.Apellido) LIKE ? ESCAPE '!' OR U.Correo LIKE ? ESCAPE '!')");
         String literal="%"+buscar.replace("!","!!").replace("%","!%").replace("_","!_").replace("[","![").replace("]","!]")+"%";
         try(Connection c=obtenerConexion()) {
             long total;
             try(PreparedStatement ps=c.prepareStatement("SELECT COUNT_BIG(*) AS Total"+from+where)) {
-                if(!buscar.isEmpty()){ps.setString(1,literal);ps.setString(2,literal);}
+                int i=1;if(estado!=null)ps.setString(i++,estado);
+                if(!buscar.isEmpty()){ps.setString(i++,literal);ps.setString(i,literal);}
                 try(ResultSet rs=ps.executeQuery()){if(!rs.next()||!(rs.getObject("Total") instanceof Long))throw contrato();total=(Long)rs.getObject("Total");if(total<0||rs.next())throw contrato();}
             }
             List<com.apuestas.modelo.ConsultasAdministrativasModelos.UsuarioBusqueda> filas=new ArrayList<>();
             try(PreparedStatement ps=c.prepareStatement("SELECT U.IdUsuario,P.Nombre,P.Apellido,U.Correo,E.Codigo AS EstadoUsuario,R.Nombre AS Rol"+from+where+" ORDER BY U.Correo,U.IdUsuario OFFSET ? ROWS FETCH NEXT ? ROWS ONLY")) {
-                int i=1;if(!buscar.isEmpty()){ps.setString(i++,literal);ps.setString(i++,literal);}ps.setLong(i,offset);ps.setInt(i+1,tamano);
+                int i=1;if(estado!=null)ps.setString(i++,estado);
+                if(!buscar.isEmpty()){ps.setString(i++,literal);ps.setString(i++,literal);}ps.setLong(i,offset);ps.setInt(i+1,tamano);
                 try(ResultSet rs=ps.executeQuery()) {
                     while(rs.next()) {
                         com.apuestas.modelo.ConsultasAdministrativasModelos.UsuarioBusqueda v=new com.apuestas.modelo.ConsultasAdministrativasModelos.UsuarioBusqueda();
                         v.idUsuario=id(rs,"IdUsuario",false);v.nombre=texto(rs,"Nombre",true);v.apellido=texto(rs,"Apellido",true);
                         v.correo=texto(rs,"Correo",false);v.estadoUsuario=texto(rs,"EstadoUsuario",false);v.rol=texto(rs,"Rol",false);
+                        if(!"USUARIO".equals(v.rol)||!Arrays.asList("PENDIENTE","ACTIVO","SUSPENDIDO","CERRADO").contains(v.estadoUsuario)
+                                ||estado!=null&&!estado.equals(v.estadoUsuario))throw contrato();
                         if(filas.size()>=tamano)throw contrato();filas.add(v);
                     }
                 }
