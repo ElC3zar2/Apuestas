@@ -690,7 +690,18 @@
     }
     renderForms();
     if (page === 'eventos' && $('event-wizard') && window.BetZoneEventWizard) {
-        eventWizard = window.BetZoneEventWizard({request:api,base,role,onEvent:selectEvent,onError:report,onSport:id => { $('browse-sport').value=String(id); },run:async work => {
+        eventWizard = window.BetZoneEventWizard({request:api,base,role,onEvent:selectEvent,onError:report,onSport:(id,name) => {
+            const sport=$('browse-sport');
+            if(sport.value===String(id))return;
+            if(validId(id)&&typeof name==='string'&&![...sport.options].some(o=>o.value===String(id)))sport.append(window.BetZoneAdmin.option(id,name));
+            sport.value=String(id);window.BetZoneAdmin.resetEvents();
+            officialEvent4=null;catalogParticipants=[];catalogLeagues=[];listedEvents=[];eventParticipantPage4=1;eventParticipantTotal4=0;
+            document.querySelectorAll('.management-form').forEach(form=>{form.reset();delete form.dataset.loadedId;});
+            for(const field of ['idLiga','idParticipante'])populate(field,[],field,'nombre');
+            window.BetZoneAdmin.choices($('detail-id'),[],'idEvento','evento');
+            $('detail-results').replaceChildren();$('browse-results').replaceChildren();
+            $('selected-live').hidden=true;$('selected-markets').hidden=true;
+        },run:async work => {
             if (busy || sessionBlocked || uncertain) return;
             busy = true; sync();
             try { await work(); } finally { busy = false; sync(); }
@@ -712,7 +723,7 @@
             for(const name of ['idDeporte','idLiga','idParticipante'])populate(name,[],name,'nombre');
             window.BetZoneAdmin.choices($('browse-sport'),[],'idDeporte','nombre','Selecciona un deporte');
             if(page==='catalogos'){$('participant-results').replaceChildren();window.BetZoneAdmin.choices($('participant-league'),[],'idLiga','nombre','Todo el deporte');}
-            else{$('detail-results').replaceChildren();window.BetZoneAdmin.choices($('detail-id'),[],'idEvento','evento');window.BetZoneAdmin.choices($('wizard-recovery-id'),[],'idEvento','evento');}
+            else{$('detail-results').replaceChildren();window.BetZoneAdmin.choices($('detail-id'),[],'idEvento','evento');if(!eventWizard)window.BetZoneAdmin.choices($('wizard-recovery-id'),[],'idEvento','evento');}
         }
         query('/deportes/exploracion',data=> {
             if (!Array.isArray(data.deportes)) throw new Error('Respuesta de deportes inválida.');
@@ -747,7 +758,7 @@
             if (!Array.isArray(data.eventos)) throw new Error('Respuesta de eventos inválida.');
             if(page==='eventos'&&(new Set(data.eventos.map(e=>e.idEvento)).size!==data.eventos.length||data.eventos.length!==Math.min(100,Math.max(0,data.total-(data.pagina-1)*100))||data.eventos.some(e=>!Number.isInteger(e.idEvento)||!validId(e.idEvento)||!validId(e.idLiga)||typeof e.evento!=='string'||!e.evento.trim()||!stamp(e.fechaInicio)||!states.includes(e.estadoEvento)||e.idDeporte!==Number($('browse-sport').value)||($('event-state-filter').value&&e.estadoEvento!==$('event-state-filter').value))))throw new Error('Listado administrativo inconsistente.');
             window.BetZoneAdmin.pageData(data);listedEvents=data.eventos;
-            if($('wizard-recovery-id'))window.BetZoneAdmin.choices($('wizard-recovery-id'),data.eventos,'idEvento',window.BetZoneAdmin.eventLabel);
+            if($('wizard-recovery-id')&&!eventWizard)window.BetZoneAdmin.choices($('wizard-recovery-id'),data.eventos,'idEvento',window.BetZoneAdmin.eventLabel);
             window.BetZoneAdmin.choices($('detail-id'),data.eventos,'idEvento',window.BetZoneAdmin.eventLabel);
             if(!data.eventos.length)status('No hay eventos disponibles en esta consulta.');
             table($('browse-results'),'Eventos administrativos de esta página',['Evento','Liga','Estado','Referencia','Acción'],data.eventos.map(event=>[event.evento,event.liga,event.estadoEvento,event.idEvento,action('Abrir evento',()=>detail(event.idEvento))]));
