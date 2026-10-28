@@ -216,3 +216,10 @@ progress::-moz-progress-bar { background: var(--accent); }
 @media (max-width: 700px) {
     .operation-nav { display: grid; grid-template-columns: minmax(0, 1fr); }
 }
+
+/* MEJORA-03: distribución exclusiva del asistente 1X2. */
+#market-one .one-steps { display: flex; flex-wrap: wrap; gap: 24px; padding-left: 24px; }
+#market-one .one-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; margin: 20px 0; }
+#market-one label { display: grid; gap: 8px; margin: 12px 0; overflow-wrap: anywhere; }
+#market-one input, #market-one textarea, #market-one select { width: 100%; min-width: 0; }
+@media (max-width: 760px) { #market-one .one-grid { grid-template-columns: minmax(0,1fr); } }

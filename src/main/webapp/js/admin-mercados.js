@@ -58,6 +58,8 @@ window.BetZoneMarkets = (() => {
         const $=value=>document.getElementById(value),A=window.BetZoneAdmin,base=document.body.dataset.contextPath||'',role=document.body.dataset.adminRole||'';
         const canWrite=['ADMINISTRADOR','OPERADOR_EVENTOS'].includes(role),forms=new Map(),buttons=new Map(),fingerprints=new Set();
         let busy=false,sessionBlocked=false,leaving=false,revision=0,event=null,marketId=null,selectionId=null,uncertain=null,verified=false,activeRoute='mercados/crear';
+        const planKey='betzone-market-1x2:'+base;
+        let plan=null,planNeedsCheck=false,planConflict='',planReview=false,planInvalid=false;
         const node=(tag,value,className)=>{const e=document.createElement(tag);if(value!==undefined)e.textContent=value;if(className)e.className=className;return e;};
         const show=v=>v===null||v===undefined?'Sin dato':typeof v==='boolean'?v?'Sí':'No':String(v);
         const market=()=>event?.mercados.find(m=>m.idMercado===marketId)||null;
@@ -87,6 +89,10 @@ window.BetZoneMarkets = (() => {
             if(rows.some(s=>s.idCuota===null||s.cuotaActiva!==true))missing.push('Hay selecciones sin cuota activa');
             if(m.tipoMercado==='MARCADOR_FINAL'&&(rows.length!==1||rows.some(s=>s.idParticipante!==null)))missing.push('Marcador final requiere una selección genérica única');
             if(m.tipoMercado==='PRIMERA_ANOTACION'&&(new Set(rows.map(s=>s.idParticipante).filter(id)).size!==2||rows.some(s=>!event.participantes.some(p=>p.idParticipante===s.idParticipante))))missing.push('La modalidad requiere dos participantes distintos del evento');
+            if(m.tipoMercado==='CONVENCIONAL'&&(plan?.market.id===m.idMercado||sameName(m.mercado,'Resultado final — 1X2')
+                ||m.selecciones.some(s=>s.seleccion==='X - Empate'&&s.idParticipante===null)&&m.selecciones.some(s=>/^[12] - /.test(s.seleccion)&&s.idParticipante!==null))){
+                try{const teams=oneTeams(event);if(m.selecciones.length!==3||rows.length!==3||!oneEquivalent(m,teams))missing.push('1X2 requiere exactamente LOCAL, EMPATE y VISITANTE activos');}catch{missing.push('Participantes 1X2 incompatibles');}
+            }
             return missing;
         }
         function available(route){
@@ -112,6 +118,7 @@ window.BetZoneMarkets = (() => {
             p.disabled=p.disabled||forms.get('selecciones/crear').querySelector('fieldset').disabled||market()?.tipoMercado==='MARCADOR_FINAL';
             const vr=forms.get('cuotas/registrar').elements.valorResultado;vr.disabled=vr.disabled||forms.get('cuotas/registrar').querySelector('fieldset').disabled||market()?.tipoMercado!=='MARCADOR_FINAL';
             $('management-forms').setAttribute('aria-busy',String(busy));
+            syncPlan();
         }
         function table(target,caption,headings,rows){
             const wrap=node('div',undefined,'table-scroll');wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label',caption);
@@ -122,7 +129,7 @@ window.BetZoneMarkets = (() => {
         }
         function action(label,fn){const b=node('button',label);b.type='button';b.addEventListener('click',()=>{if(!busy&&!sessionBlocked)fn();});return b;}
         function clearForms(){forms.forEach(f=>f.reset());}
-        function clearContext(){event=null;marketId=null;selectionId=null;revision++;clearForms();$('detail-results').replaceChildren();$('market-context').replaceChildren(node('p','Consulta un evento para administrar sus mercados.'));$('market-selections').replaceChildren();$('selection-context').textContent='Selecciona una selección para consultar su cuota activa.';A.choices($('market-picker'),[],'idMercado','mercado');A.choices($('selection-picker'),[],'idSeleccion','seleccion');$('selected-live').hidden=true;$('selected-markets').hidden=true;}
+        function clearContext(){event=null;marketId=null;selectionId=null;revision++;planReview=false;clearForms();$('detail-results').replaceChildren();$('market-context').replaceChildren(node('p','Consulta un evento para administrar sus mercados.'));$('market-selections').replaceChildren();$('selection-context').textContent='Selecciona una selección para consultar su cuota activa.';A.choices($('market-picker'),[],'idMercado','mercado');A.choices($('selection-picker'),[],'idSeleccion','seleccion');$('selected-live').hidden=true;$('selected-markets').hidden=true;}
         function selectMarket(value,selected=null){
             const m=event?.mercados.find(m=>m.idMercado===Number(value));marketId=m?.idMercado||null;selectionId=null;clearForms();
             $('market-picker').value=m?String(m.idMercado):'';$('market-context').replaceChildren();$('market-selections').replaceChildren();
@@ -157,7 +164,9 @@ window.BetZoneMarkets = (() => {
             selectMarket(preferred.market,preferred.selection);
         }
         async function readDetail(eventId,preferred={},verify){
+            const stamp=revision;
             const data=await request('/administrador/eventos/detalle?'+new URLSearchParams({idEvento:eventId})),e=checkDetail(data.evento,eventId);
+            if(stamp!==revision||leaving)throw new DOMException('El contexto del evento cambió.','AbortError');
             if(verify)verify(e);render(e,preferred);
             if(uncertain){
                 verified=uncertain.route==='mercados/estado/cambiar'&&preferred.market===uncertain.market&&(uncertain.selection===null||preferred.selection===uncertain.selection)&&e.idEvento===uncertain.event&&e.idLiga===uncertain.league&&e.idDeporte===uncertain.sport&&e.mercados.some(m=>m.idMercado===uncertain.market&&m.estadoMercado===uncertain.payload.nuevoEstado);
@@ -171,6 +180,8 @@ window.BetZoneMarkets = (() => {
         function detail(value){
             if(busy||sessionBlocked)return;
             if(!inputId(value)){status('Selecciona un evento válido del listado.',true);return;}
+            if(plan&&plan.event.idEvento!==Number(value)&&!window.confirm('Hay un proceso 1X2 conservado para '+plan.event.evento+'. Consultar otro evento no lo reemplaza ni reenvía operaciones. ¿Continuar la consulta?'))return;
+            if(event?.idEvento!==Number(value)&&!plan)for(const code of ['1','X','2'])$('one-odds-'+code).value='';
             const preferred=event?.idEvento===Number(value)?{market:marketId,selection:selectionId}:{};clearContext();query(()=>readDetail(value,preferred));
         }
         function readback(e,route,p,r){
@@ -226,6 +237,7 @@ window.BetZoneMarkets = (() => {
             const fingerprint=route+'?'+new URLSearchParams(p)+(route==='cuotas/registrar'?'&cuotaConsultada='+selection().idCuota:'');if(route!=='mercados/estado/cambiar'&&fingerprints.has(fingerprint)){status('Estos datos ya recibieron confirmación. Consulta el resultado antes de repetir.',true);return;}
             const context={event:event.idEvento,sport:event.idDeporte,league:event.idLiga,market:route==='mercados/crear'?null:marketId,selection:['cuotas/registrar','mercados/estado/cambiar'].includes(route)?selectionId:null,label:[event.evento,route!=='mercados/crear'?market()?.mercado:null,['cuotas/registrar','mercados/estado/cambiar'].includes(route)?selection()?.seleccion:null,p.nombre].filter(Boolean).join(' → ')};
             if(!window.confirm(operationNames[route]+' · '+context.label+(p.nuevoEstado?' · '+market().estadoMercado+' → '+p.nuevoEstado:'')+(p.nuevoEstado==='CERRADO'||p.nuevoEstado==='ANULADO'?'. El backend puede desactivar cuotas activas; no liquida apuestas desde este formulario.':'')+'. ¿Confirmar?'))return;
+            if(plan){if(!window.confirm('Esta operación manual puede cambiar el proceso 1X2 conservado. Deberás consultar nuevamente su detalle antes de continuarlo. ¿Confirmar?'))return;planNeedsCheck=true;}
             busy=true;sync();let sent=false;status('Enviando operación…');
             try{
                 const token=await request('/administrador/seguridad/csrf');if(typeof token.csrfToken!=='string'||!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(token.csrfToken))fail('Token CSRF inválido; no se envió la operación.');
@@ -238,6 +250,180 @@ window.BetZoneMarkets = (() => {
                 if(leaving||error.cancelledByNavigation)return;report(error);
                 if(sent&&(!error.status||error.status>=500||error.status===408)){uncertain={...context,route,payload:{...p}};resetVerification();status('Esta operación podría haber sido procesada, pero no recibimos su confirmación. Consulta el contexto afectado; no repitas el POST.',true);}
             }finally{busy=false;sync();}
+        }
+        // Flujo 1X2 dentro del mismo controlador; todas las escrituras usan request/CSRF oficiales.
+        function oneTeams(e){
+            if(!e||e.participantes.length!==2||e.participantes.some(p=>p.tipoParticipante!=='EQUIPO')
+                ||!e.participantes.some(p=>p.ordenParticipante===1)||!e.participantes.some(p=>p.ordenParticipante===2))fail('1X2 requiere dos EQUIPOS distintos con órdenes 1 y 2. Usa la administración manual para otras configuraciones.');
+            const local=e.participantes.filter(p=>p.esLocal===true),visitor=e.participantes.filter(p=>p.esLocal===false);
+            if(local.length!==1||visitor.length!==1)fail('LOCAL y VISITANTE no están identificados inequívocamente. Revisa las asociaciones del evento.');
+            return {local:local[0],visitor:visitor[0]};
+        }
+        function oneIdentity(e){
+            const t=oneTeams(e),person=p=>({id:p.idParticipante,name:p.participante,order:p.ordenParticipante});
+            return {idEvento:e.idEvento,idDeporte:e.idDeporte,idLiga:e.idLiga,evento:e.evento,deporte:e.deporte,liga:e.liga,
+                fechaInicio:e.fechaInicio,fechaFin:e.fechaFin,local:person(t.local),visitor:person(t.visitor)};
+        }
+        function oneEquivalent(m,t){
+            return m.tipoMercado==='CONVENCIONAL'&&m.selecciones.length===3
+                &&[t.local.idParticipante,null,t.visitor.idParticipante].every(person=>m.selecciones.filter(s=>s.idParticipante===person).length===1);
+        }
+        function oneRows(e){
+            const t=oneTeams(e),label=(code,name,fallback)=>(code+' - '+name).length<=150?code+' - '+name:fallback;
+            // Los nombres completos permanecen visibles aunque la etiqueta SQL deba ser corta.
+            return [{code:'1',name:label('1',t.local.participante,'1 - LOCAL'),person:t.local.idParticipante,personName:t.local.participante},
+                {code:'X',name:'X - Empate',person:null,personName:'Empate'},
+                {code:'2',name:label('2',t.visitor.participante,'2 - VISITANTE'),person:t.visitor.idParticipante,personName:t.visitor.participante}];
+        }
+        function oneDraft(){
+            const identity=oneIdentity(event),name=$('one-name').value.trim(),description=$('one-description').value.trim();
+            if(!['BORRADOR','PROGRAMADO'].includes(event.estadoEvento))fail('El evento debe estar en BORRADOR o PROGRAMADO para configurar el mercado.');
+            if(!text(name,150)||description.length>250)fail('Revisa el nombre del mercado (máximo 150) y su descripción (máximo 250).');
+            const rows=oneRows(event).map(r=>{const odds=$('one-odds-'+r.code).value.trim();decimal(odds);return {...r,odds,id:null,state:'pending',quote:{id:null,state:'pending'}};});
+            return {event:identity,market:{name,description,id:null,state:'pending'},rows,open:{state:'pending'},started:false,reviewRequired:'',last:'Plan revisado; todavía no se envió ninguna operación.'};
+        }
+        function validPlan(p){
+            const state=v=>['pending','confirmed','uncertain'].includes(v),ref=v=>v===null||id(v);
+            try{return p&&typeof p.started==='boolean'&&typeof p.reviewRequired==='string'&&p.reviewRequired.length<=250&&id(p.event.idEvento)&&id(p.event.idDeporte)&&id(p.event.idLiga)&&text(p.event.evento,200)&&date(p.event.fechaInicio)
+                &&(p.event.fechaFin===null||date(p.event.fechaFin))&&id(p.event.local.id)&&id(p.event.visitor.id)&&p.event.local.id!==p.event.visitor.id
+                &&[p.event.local,p.event.visitor].every(v=>text(v.name,150)&&[1,2].includes(v.order))&&p.event.local.order!==p.event.visitor.order
+                &&text(p.market.name,150)&&typeof p.market.description==='string'&&p.market.description.length<=250&&ref(p.market.id)&&state(p.market.state)
+                &&(p.market.state!=='confirmed'||id(p.market.id))&&Array.isArray(p.rows)&&p.rows.length===3&&p.rows.every((r,i)=>r.code===['1','X','2'][i]
+                    &&text(r.name,150)&&r.personName===[p.event.local.name,'Empate',p.event.visitor.name][i]
+                    &&r.name===(i===1?'X - Empate':(r.code+' - '+r.personName).length<=150?r.code+' - '+r.personName:i===0?'1 - LOCAL':'2 - VISITANTE')
+                    &&r.person===[p.event.local.id,null,p.event.visitor.id][i]&&decimal(r.odds)>10000n&&ref(r.id)&&state(r.state)
+                    &&(r.state!=='confirmed'||id(r.id))&&r.quote&&ref(r.quote.id)&&state(r.quote.state)&&(r.quote.state!=='confirmed'||id(r.quote.id)))
+                &&new Set(p.rows.map(r=>r.name)).size===3&&new Set(p.rows.filter(r=>r.id!==null).map(r=>r.id)).size===p.rows.filter(r=>r.id!==null).length&&state(p.open.state);
+            }catch{return false;}
+        }
+        function savePlan(required=false){
+            try{if(plan)sessionStorage.setItem(planKey,JSON.stringify({version:1,plan}));else sessionStorage.removeItem(planKey);}
+            catch{if(required)fail('No se pudo conservar el proceso en esta pestaña; no se envió el POST.');status('El proceso permanece en pantalla, pero no pudo guardarse. Conserva sus referencias antes de salir.',true);}
+        }
+        function planComplete(){return Boolean(plan&&event?.idEvento===plan.event.idEvento&&!planNeedsCheck&&!planConflict&&plan.market.state==='confirmed'
+            &&plan.rows.every(r=>r.state==='confirmed'&&r.quote.state==='confirmed'));}
+        function planUnknown(){return plan&&(plan.market.state==='uncertain'||plan.rows.some(r=>r.state==='uncertain'||r.quote.state==='uncertain')||plan.open.state==='uncertain');}
+        function syncPlan(){
+            const locked=busy||sessionBlocked||!canWrite||Boolean(uncertain)||planInvalid;
+            $('one-edit').hidden=Boolean(plan)||planReview;$('one-review').hidden=Boolean(plan)||!planReview;$('one-progress').hidden=!plan;
+            let compatible=false,reason='Consulta un evento para preparar su resultado final 1X2.';
+            try{if(event){oneTeams(event);compatible=['BORRADOR','PROGRAMADO'].includes(event.estadoEvento);reason=compatible?'LOCAL y VISITANTE identificados mediante sus asociaciones oficiales.':'El estado del evento no admite crear mercados.';
+                const rows=oneRows(event);for(const r of rows)$('one-person-'+r.code).textContent=r.personName;}}
+            catch(e){reason=e.message;}
+            $('one-context').textContent=planInvalid?'El progreso guardado es incompatible. Se conserva el almacenamiento original; requiere revisión manual antes de otro proceso.':plan?'Proceso conservado: '+plan.event.evento+' · '+plan.market.name:reason;
+            for(const el of $('one-edit').querySelectorAll('input,textarea,select,button'))el.disabled=locked||Boolean(plan)||!compatible;
+            $('one-confirm').disabled=locked||Boolean(plan)||!planReview||!compatible;$('one-back').disabled=locked;
+            for(const name of ['check','adopt','resume','open','release','cancel'])$('one-'+name).disabled=locked||!plan;
+            $('one-cancel').disabled||=plan?.started===true;
+            $('one-resume').disabled||=planNeedsCheck||Boolean(planConflict)||Boolean(planUnknown())||planComplete()||event?.idEvento!==plan?.event.idEvento;
+            const m=event?.mercados.find(m=>m.idMercado===plan?.market.id);
+            $('one-open').disabled||=!planComplete()||m?.estadoMercado!=='BORRADOR'||event?.estadoEvento!=='PROGRAMADO'||plan?.open.state!=='pending';
+            $('one-release').disabled||=!planComplete()||Boolean(planUnknown());
+            if(plan){
+                const state=planConflict?'CONFLICTO':planUnknown()?'INCIERTO':planNeedsCheck?'PENDIENTE DE COMPROBACIÓN':planComplete()?(m?.estadoMercado==='ABIERTO'?'ABIERTO':'COMPLETO · mercado '+(m?.estadoMercado||'sin comprobar')):'INCOMPLETO';
+                $('one-state').textContent=state+' · '+(planConflict||plan.last);
+                if(planComplete()&&event.estadoEvento==='BORRADOR')$('one-state').textContent+=' Programa primero el evento mediante administración de eventos; el asistente no cambia su estado.';
+                const stateName=v=>({pending:'PENDIENTE',confirmed:'CONFIRMADO',uncertain:'INCIERTO'}[v]);
+                const evidence=target=>target.state==='confirmed'&&(planNeedsCheck||planConflict)
+                    ?(target.observed?'REFERENCIA OBSERVADA':'RESPUESTA CONSERVADA')+' · comprobar detalle'
+                    :target.observed?'OBSERVADO Y VINCULADO':stateName(target.state);
+                $('one-market-state').textContent='Mercado: '+evidence(plan.market)+(plan.market.id?' · referencia #'+plan.market.id:' · sin ID oficial')+'. Estado de apertura: '+evidence(plan.open)+'.';
+                $('one-rows').replaceChildren();table($('one-rows'),'Progreso conservado del proceso 1X2',['Resultado','Selección','Cuota revisada','Selección oficial','Cuota oficial'],plan.rows.map(r=>[r.code+' · '+r.personName,r.name,r.odds,evidence(r)+(r.id?' · #'+r.id:''),evidence(r.quote)+(r.quote.id?' · #'+r.quote.id:'')]));
+            }
+        }
+        function reviewPlan(){
+            if(busy||sessionBlocked||!canWrite||uncertain||plan||planInvalid)return;
+            try{const p=oneDraft(),dl=node('dl',undefined,'operation-values');
+                for(const [label,value]of [['Evento',p.event.evento],['Deporte',p.event.deporte],['Liga',p.event.liga],['LOCAL',p.event.local.name],['VISITANTE',p.event.visitor.name],['Mercado',p.market.name],['Tipo','CONVENCIONAL'],['Estado inicial y final solicitado','BORRADOR'],...p.rows.map(r=>[r.name,r.odds])])dl.append(node('dt',label),node('dd',value));
+                $('one-summary').replaceChildren(dl);planReview=true;sync();
+            }catch(e){report(e);}
+        }
+        async function checkPlan(adopt=false){
+            if(!validPlan(plan))fail('El proceso conservado no es válido; requiere revisión manual.');
+            planNeedsCheck=true;planConflict=plan.reviewRequired;sync();
+            const e=checkDetail((await request('/administrador/eventos/detalle?'+new URLSearchParams({idEvento:plan.event.idEvento}))).evento,plan.event.idEvento);
+            if(JSON.stringify(oneIdentity(e))!==JSON.stringify(plan.event))fail('La identidad, fechas o participantes del evento difieren del plan. No se enviará ninguna escritura.');
+            let m=plan.market.id===null?null:e.mercados.find(m=>m.idMercado===plan.market.id);
+            const candidates=e.mercados.filter(m=>m.tipoMercado==='CONVENCIONAL'&&m.mercado===plan.market.name&&m.descripcionMercado===(plan.market.description||null));
+            if(!m&&plan.market.id!==null)planConflict='El mercado con identidad confirmada no aparece en el detalle.';
+            if(plan.market.id===null&&candidates.length){
+                if(adopt&&candidates.length===1){m=candidates[0];plan.market.id=m.idMercado;plan.market.state='confirmed';plan.market.observed=true;}
+                else planConflict='Hay un mercado coincidente sin identidad vinculada. Revisa y vincula explícitamente las referencias observadas; el nombre no demuestra qué POST lo creó.';
+            }
+            if(!m){
+                if(plan.market.state==='uncertain')planConflict||='No hay identidad suficiente para conciliar la creación incierta. No se repetirá; requiere revisión manual.';
+                if(e.mercados.some(m=>sameName(m.mercado,plan.market.name)||oneEquivalent(m,oneTeams(e))))planConflict||='Ya hay un nombre coincidente o una configuración convencional equivalente. Revisa el mercado existente; no se creará otro.';
+            }else{
+                if(m.tipoMercado!=='CONVENCIONAL'||m.mercado!==plan.market.name||m.descripcionMercado!==(plan.market.description||null))planConflict='El mercado oficial no coincide con la modalidad y descripción revisadas.';
+                if(!['BORRADOR','ABIERTO','SUSPENDIDO'].includes(m.estadoMercado))planConflict='El mercado está '+m.estadoMercado+'; no admite continuar este proceso.';
+                const used=new Set();
+                for(const r of plan.rows){
+                    let s=r.id===null?null:m.selecciones.find(s=>s.idSeleccion===r.id);
+                    const matches=m.selecciones.filter(s=>s.seleccion===r.name&&s.idParticipante===r.person);
+                    if(!s&&r.id!==null)planConflict||='Una selección con identidad confirmada ya no aparece. No se repetirá.';
+                    if(r.id===null&&matches.length){
+                        if(adopt&&matches.length===1){s=matches[0];r.id=s.idSeleccion;r.state='confirmed';r.observed=true;}
+                        else planConflict||='Hay selecciones observadas pendientes de vinculación explícita. No se crearán duplicados.';
+                    }
+                    if(!s){if(r.state==='uncertain')planConflict||='Selección incierta sin referencia suficiente; requiere conciliación manual.';continue;}
+                    used.add(s.idSeleccion);
+                    if(s.seleccion!==r.name||s.idParticipante!==r.person||!s.seleccionActiva)planConflict||='Selección incompatible, inactiva o asociada a otro participante.';
+                    if(s.idCuota===null){if(r.quote.state!=='pending'||r.quote.id!==null)planConflict||='Cuota confirmada o incierta sin una cuota activa comprobable. No se repetirá automáticamente.';}
+                    else if(decimal(s.valor)!==decimal(r.odds))planConflict||='La cuota activa difiere de la revisada. Su sustitución requiere una decisión en administración manual.';
+                    else if(r.quote.id!==null){if(r.quote.id!==s.idCuota)planConflict||='La identidad de la cuota activa cambió; revisa su histórico antes de operar.';}
+                    else if(adopt){r.quote.id=s.idCuota;r.quote.state='confirmed';r.quote.observed=true;}
+                    else planConflict||='Existe una cuota coincidente sin referencia vinculada. Revisa y vincula el estado observado; no se registrará otra cuota.';
+                }
+                if(m.selecciones.some(s=>!used.has(s.idSeleccion)))planConflict||='El mercado tiene selecciones adicionales o incompatibles con el plan 1X2.';
+                if(m.estadoMercado==='ABIERTO'&&plan.open.state==='uncertain'){plan.open.state='confirmed';plan.open.observed=true;}
+                if(plan.open.state==='confirmed'&&m.estadoMercado!=='ABIERTO')planConflict||='El mercado ya no refleja la apertura confirmada u observada. Revisa su estado en administración manual; no se repetirá la apertura.';
+            }
+            if(!['BORRADOR','PROGRAMADO'].includes(e.estadoEvento)&&m?.estadoMercado!=='ABIERTO')planConflict||='El estado del evento no admite continuar la configuración.';
+            planNeedsCheck=false;plan.last='Detalle oficial consultado. Un GET muestra el estado observado; no demuestra qué solicitud lo produjo.';
+            savePlan();render(e,{market:plan.market.id});sync();
+            if(planConflict)fail(planConflict);
+            return m;
+        }
+        async function planPost(route,p,target){
+            const token=await request('/administrador/seguridad/csrf');
+            if(typeof token.csrfToken!=='string'||!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(token.csrfToken))fail('Token CSRF inválido. No se envió el POST.');
+            const previous=target.state,started=plan.started;target.state='uncertain';plan.started=true;planNeedsCheck=true;
+            try{savePlan(true);}catch(e){target.state=previous;plan.started=started;throw e;}
+            let data;
+            try{data=await request('/administrador/'+route,{method:'POST',headers:{'X-CSRF-Token':token.csrfToken},body:new URLSearchParams(p)});}
+            catch(e){if([400,401,403,404,405,409].includes(e.status)){target.state=previous;plan.last='Solicitud rechazada: HTTP '+e.status+'. Se conserva el progreso.';}savePlan();throw e;}
+            const r=data.resultado;confirmResponse(route,r,p);
+            if(route==='mercados/crear'){target.id=r.idMercado;target.result={idMercado:r.idMercado,idEvento:r.idEvento,idEstado:r.idEstado,estadoMercado:r.estadoMercado,nombre:r.nombre,descripcion:r.descripcion};}
+            if(route==='selecciones/crear'){target.id=r.idSeleccion;target.result={idSeleccion:r.idSeleccion,idMercado:r.idMercado,nombre:r.nombre,activo:r.activo};}
+            if(route==='cuotas/registrar'){target.id=r.idCuota;target.result={idCuota:r.idCuota,idSeleccion:r.idSeleccion,valor:r.valor,fechaInicio:r.fechaInicio,activo:r.activo,idCuotaAnterior:r.idCuotaAnterior};}
+            if(route==='mercados/estado/cambiar')target.result={idMercado:r.idMercado,estadoAnterior:r.estadoAnterior,estadoActual:r.estadoActual,sinCambios:r.sinCambios};
+            target.state='confirmed';plan.last=operationNames[route]+': respuesta oficial conservada; comprobación de detalle pendiente.';savePlan();showResult(target.result,route);
+            if(route==='cuotas/registrar'&&r.idCuotaAnterior!==null){plan.reviewRequired='El backend informa una cuota anterior inesperada. Se conserva la respuesta; detén la recuperación y revisa el histórico.';savePlan();fail(plan.reviewRequired);}
+            return r;
+        }
+        async function runPlan(work){
+            if(busy||sessionBlocked||leaving||!canWrite||uncertain||planInvalid)return;
+            busy=true;sync();
+            try{await work();}catch(e){if(plan){planNeedsCheck=true;savePlan();}report(e);}finally{busy=false;sync();}
+        }
+        async function configurePlan(){
+            let m=await checkPlan(false);
+            if(planUnknown())fail('Hay una operación incierta; comprueba y vincula las referencias observadas antes de continuar.');
+            if(!m){await planPost('mercados/crear',{idEvento:String(plan.event.idEvento),nombre:plan.market.name,tipoMercado:'CONVENCIONAL',...(plan.market.description?{descripcion:plan.market.description}:{})},plan.market);m=await checkPlan(false);}
+            if(m.estadoMercado!=='BORRADOR')fail('El mercado debe permanecer en BORRADOR para completar el asistente. Usa administración manual para otras transiciones.');
+            for(const row of plan.rows){
+                await checkPlan(false);if(row.state==='confirmed')continue;
+                if(row.state!=='pending')fail('Selección incierta; no se reenviará.');
+                await planPost('selecciones/crear',{idMercado:String(plan.market.id),nombre:row.name,...(row.person===null?{}:{idParticipante:String(row.person)})},row);
+                await checkPlan(false);
+            }
+            if(plan.rows.some(r=>r.state!=='confirmed'))fail('Faltan selecciones confirmadas; no se registrarán cuotas.');
+            for(const row of plan.rows){
+                await checkPlan(false);if(row.quote.state==='confirmed')continue;
+                if(row.quote.state!=='pending')fail('Cuota incierta; no se reenviará.');
+                await planPost('cuotas/registrar',{idSeleccion:String(row.id),valor:row.odds},row.quote);await checkPlan(false);
+            }
+            plan.last='Mercado 1X2 COMPLETO y comprobado. Permanece en BORRADOR; la apertura es una operación independiente.';savePlan();sync();
         }
         function makeForm(route,schema,help){
             const panel=node('section',undefined,'panel'),form=node('form',undefined,'live-form management-form'),fieldset=node('fieldset'),title=operationNames[route];panel.append(node('h2',title));form.dataset.operation=route;form.action=base+'/administrador/'+route;form.method='post';form.noValidate=true;fieldset.append(node('legend','Referencias tomadas del evento, mercado y selección consultados.'));
@@ -253,6 +439,31 @@ window.BetZoneMarkets = (() => {
         makeForm('selecciones/crear',[['nombre','Nombre','text',null,150],['idParticipante','Participante del evento (según modalidad)','select',[]]],'Selecciona un mercado para administrar sus selecciones. El backend confirma la asociación al participante mediante el detalle, no mediante el DTO POST.');
         makeForm('cuotas/registrar',[['valor','Valor (obligatorio para convencional)','text',null,32],['valorResultado','Valor resultado (solo marcador final, opcional)','text',null,32]],'Punto decimal, hasta cuatro posiciones, mayor que 1 y máximo 999999.9999. No se redondea. En modalidades especiales, SQL resuelve los valores omitidos y los valida; no se conocen de antemano. Para marcador final: 1 < valorResultado < valor. Crear una cuota sustituye la activa; no se precargan sus valores.');
         makeForm('mercados/estado/cambiar',[['nuevoEstado','Estado solicitado','select',[]],['motivo','Motivo (opcional)','textarea',null,250]],'Revisa los requisitos de apertura en el contexto del mercado. CERRADO y ANULADO pueden desactivar cuotas activas. LIQUIDADO corresponde al proceso autorizado de oficialización y no es una acción de este formulario.');
+        $('one-prepare').addEventListener('click',reviewPlan);
+        $('one-back').addEventListener('click',()=>{if(!busy&&!plan){planReview=false;sync();}});
+        $('one-confirm').addEventListener('click',()=>{
+            if(busy||sessionBlocked||!canWrite||uncertain||plan||planInvalid||!planReview)return;
+            let draft;try{draft=oneDraft();}catch(e){report(e);return;}
+            if(!window.confirm('Crear '+draft.market.name+' para '+draft.event.evento+' con tres selecciones y cuotas '+draft.rows.map(r=>r.code+': '+r.odds).join(', ')+'. Son siete POST independientes; el mercado permanecerá en BORRADOR. ¿Confirmar?'))return;
+            plan=draft;planNeedsCheck=true;planReview=false;runPlan(configurePlan);
+        });
+        $('one-check').addEventListener('click',()=>{if(plan)runPlan(()=>checkPlan(false));});
+        $('one-adopt').addEventListener('click',()=>{if(plan&&!busy&&window.confirm('Se consultará el detalle y se vincularán únicamente referencias oficiales con identidad y valores compatibles con este plan. El GET acredita el estado observado, no qué POST lo produjo. No se enviará ninguna escritura. ¿Confirmar la conciliación administrativa?'))runPlan(()=>checkPlan(true));});
+        $('one-resume').addEventListener('click',()=>{if(plan&&!busy&&!planNeedsCheck&&!planConflict&&!planUnknown()&&window.confirm('Continuar solo las operaciones PENDIENTES del mercado conservado. Se comprobará otra vez el detalle; no se sustituirán cuotas existentes. ¿Confirmar?'))runPlan(configurePlan);});
+        $('one-open').addEventListener('click',()=>{if(plan&&planComplete()&&!planUnknown())runPlan(async()=>{
+            const m=await checkPlan(false);
+            if(!planComplete()||plan.open.state!=='pending'||m.estadoMercado!=='BORRADOR'||event.estadoEvento!=='PROGRAMADO'||opening(m).length)fail('No se puede abrir: se exige evento PROGRAMADO, mercado BORRADOR y las tres selecciones y cuotas comprobadas.');
+            if(!window.confirm('Abrir '+m.mercado+' de '+event.evento+'. Esta operación es independiente de la configuración 1X2. ¿Confirmar ABIERTO?'))return;
+            await planPost('mercados/estado/cambiar',{idMercado:String(m.idMercado),nuevoEstado:'ABIERTO'},plan.open);
+            const opened=await checkPlan(false);if(opened.estadoMercado!=='ABIERTO')fail('El detalle no confirma ABIERTO. Conserva la respuesta oficial y concilia antes de otra operación.');
+            plan.last='ABIERTO confirmado por respuesta y detalle oficial.';savePlan();status(plan.last);
+        });});
+        $('one-release').addEventListener('click',()=>{if(!busy&&canWrite&&planComplete()&&!planUnknown()&&window.confirm('¿Ya revisaste el mercado completo y sus resultados? Finalizar este proceso no cierra ni abre el mercado y no envía POST.')){plan=null;planConflict='';planNeedsCheck=false;planReview=false;savePlan();sync();}});
+        $('one-cancel').addEventListener('click',()=>{if(!busy&&canWrite&&plan&&!plan.started&&window.confirm('No se envió ningún POST de este plan. ¿Volver a editar sus campos?')){plan=null;planNeedsCheck=false;planConflict='';savePlan();sync();}});
+        try{
+            const saved=JSON.parse(sessionStorage.getItem(planKey)||'null');
+            if(saved){if(saved.version!==1||!validPlan(saved.plan))fail('Progreso 1X2 incompatible.');plan=saved.plan;planNeedsCheck=true;}
+        }catch{planInvalid=true;status('No se pudo restaurar el proceso 1X2. Conservamos el almacenamiento original; revisa manualmente los mercados antes de iniciar otra configuración.',true);}
         const warning=node('p',undefined,'warning');warning.id='market-uncertain';warning.hidden=true;warning.setAttribute('role','status');warning.setAttribute('aria-live','polite');$('management-status').after(warning);
         $('market-picker').addEventListener('change',()=>{if(!busy&&!sessionBlocked){resetVerification();selectMarket($('market-picker').value);}});
         $('selection-picker').addEventListener('change',()=>{if(!busy&&!sessionBlocked){resetVerification();selectSelection($('selection-picker').value);}});
@@ -268,7 +479,7 @@ window.BetZoneMarkets = (() => {
         document.querySelector('[data-nav="mercados"]').setAttribute('aria-current','page');
         clearContext();sync();if(!canWrite)status('Las escrituras requieren ADMINISTRADOR u OPERADOR_EVENTOS. El backend conserva la autorización definitiva.',true);
         const initial=new URLSearchParams(location.search).get('idEvento');
-        loadSports().then(()=>{if(initial!==null){if(inputId(initial))detail(initial);else status('La referencia de evento en la URL no es válida. Selecciona un evento del listado.',true);}});
+        loadSports().then(()=>{if(plan){query(()=>checkPlan(false));return;}if(initial!==null){if(inputId(initial))detail(initial);else status('La referencia de evento en la URL no es válida. Selecciona un evento del listado.',true);}});
     }
     return {init};
 })();

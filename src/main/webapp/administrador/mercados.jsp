@@ -47,9 +47,35 @@
 <p class="muted">Listado y detalle administrativos, incluidos los borradores. Consulta el evento antes de operar.</p>
 <div id="detail-results" class="management-results"></div>
 </section>
+<section id="market-one" class="panel" aria-labelledby="one-title">
+<h2 id="one-title">Resultado final 1X2</h2>
+<ol class="one-steps"><li>Confirmar evento</li><li>Selecciones y cuotas</li><li>Revisar</li><li>Crear y comprobar</li></ol>
+<p id="one-context" class="live-status" role="status">Consulta el evento para identificar LOCAL y VISITANTE.</p>
+<div id="one-edit">
+<label for="one-type">Modalidad<select id="one-type"><option value="CONVENCIONAL">Resultado final 1X2 · CONVENCIONAL</option></select></label>
+<p class="muted">Para convencional personalizado, MARCADOR_FINAL o PRIMERA_ANOTACION utiliza la <a href="#manual-markets">administración manual existente</a>.</p>
+<label for="one-name">Nombre del mercado<input id="one-name" maxlength="150" value="Resultado final — 1X2" required></label>
+<label for="one-description">Descripción (opcional)<textarea id="one-description" maxlength="250" rows="2"></textarea></label>
+<div class="one-grid">
+<label for="one-odds-1"><strong>1 · LOCAL</strong><span id="one-person-1"></span><input id="one-odds-1" type="text" inputmode="decimal" autocomplete="off" maxlength="32" required aria-describedby="one-odds-help"></label>
+<label for="one-odds-X"><strong>X · EMPATE</strong><span id="one-person-X">Empate</span><input id="one-odds-X" type="text" inputmode="decimal" autocomplete="off" maxlength="32" required aria-describedby="one-odds-help"></label>
+<label for="one-odds-2"><strong>2 · VISITANTE</strong><span id="one-person-2"></span><input id="one-odds-2" type="text" inputmode="decimal" autocomplete="off" maxlength="32" required aria-describedby="one-odds-help"></label>
+</div>
+<p id="one-odds-help" class="muted">Introduce las tres cuotas revisadas: mayores que 1, hasta 999999.9999 y cuatro decimales. No se redondean ni se sugieren probabilidades o márgenes.</p>
+<button id="one-prepare" type="button" class="primary">Revisar configuración 1X2</button>
+</div>
+<div id="one-review" hidden><h3>Confirmación previa</h3><div id="one-summary"></div>
+<p class="warning">Se creará un mercado, después sus tres selecciones y finalmente las cuotas indicadas. Son siete operaciones independientes del servidor. El mercado permanecerá en BORRADOR.</p>
+<div class="toolbar"><button id="one-back" type="button">Volver a editar</button><button id="one-confirm" type="button" class="primary">Confirmar y configurar 1X2</button></div></div>
+<div id="one-progress" hidden><h3>Proceso conservado</h3><p id="one-state" role="status" aria-live="polite"></p><p id="one-market-state"></p><div id="one-rows"></div>
+<p class="muted">Consultar acredita el estado observado, no qué POST lo produjo. Vincular referencias requiere revisión administrativa explícita. Una operación incierta sin evidencia suficiente mantiene el bloqueo; no se reenvía automáticamente.</p>
+<div class="toolbar"><button id="one-check" type="button">Consultar y comprobar proceso</button><button id="one-adopt" type="button">Revisar y vincular referencias observadas</button><button id="one-resume" type="button">Continuar operaciones pendientes</button><button id="one-open" type="button">Revisar requisitos para abrir mercado</button><button id="one-release" type="button">Finalizar proceso revisado</button><button id="one-cancel" type="button">Editar plan todavía no enviado</button></div>
+<p class="muted">Abrir exige confirmación independiente y evento PROGRAMADO. El asistente no programa ni inicia eventos.</p>
+</div>
+</section>
 <section class="panel" aria-labelledby="market-title"><h2 id="market-title">Mercado seleccionado</h2><label for="market-picker">Mercado<select id="market-picker" disabled><option value="">Consulta primero un evento</option></select></label><div id="market-context" role="status"></div><div id="market-selections" class="management-results"></div><label for="selection-picker">Selección<select id="selection-picker" disabled><option value="">Selecciona un mercado</option></select></label><p id="selection-context" role="status"></p></section>
 <section id="operation-result" class="panel" hidden aria-labelledby="result-title"><h2 id="result-title">Respuesta oficial de la operación</h2><div id="operation-values"></div></section>
-<section class="panel"><h2>2. Elige una operación</h2><p id="management-selection" class="muted" role="status">Selecciona un evento de la tabla para trabajar con sus datos oficiales.</p><nav id="management-flow" class="operation-nav" aria-label="Operaciones del registro seleccionado"></nav></section><div id="management-forms" class="management-grid connected-forms"></div>
+<section class="panel"><h2 id="manual-markets">Administración manual de mercados</h2><p id="management-selection" class="muted" role="status">Selecciona un evento de la tabla para trabajar con sus datos oficiales.</p><nav id="management-flow" class="operation-nav" aria-label="Operaciones del registro seleccionado"></nav></section><div id="management-forms" class="management-grid connected-forms"></div>
 <noscript>Activa JavaScript para consultar y operar estos módulos.</noscript>
 </main></body></html>
 
