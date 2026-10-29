@@ -96,6 +96,29 @@
         $(id).dataset.error = String(error);
     }
     function stopPolling() { clearTimeout(timer); timer = null; }
+    function trackingStatus() {
+        const message = stopped ? 'Seguimiento detenido al salir de la página.'
+            : !eventId ? 'Selecciona un evento para consultar su estado.'
+            : uncertain ? 'Seguimiento pausado por una escritura incierta. Conserva el contexto y actualiza manualmente para conciliar.'
+            : busy || catalogBusy || refreshTask ? 'Consulta u operación en curso; no se superponen actualizaciones del mismo contexto.'
+            : !authorized || !fresh ? 'Sin lectura actual confirmada. Utiliza Actualizar / reintentar; no se repiten solicitudes en bucle.'
+            : official?.estadoEvento !== 'EN_VIVO' ? 'Seguimiento exclusivo de EN_VIVO detenido. La actualización manual sigue disponible.'
+            : document.hidden ? 'Seguimiento pausado mientras la pestaña está oculta.'
+            : timer !== null ? 'Seguimiento cada 3 segundos. Solo consulta; no ejecuta el cierre.'
+            : 'Seguimiento pendiente de la siguiente consulta autorizada.';
+        $('tracking-status').textContent = message;
+    }
+    function simulationNote(state) {
+        if (!state.esSimulado) return 'Evento no simulado. El plazo de simulación no se aplica y esta pantalla no cambia su estado automáticamente.';
+        if (state.estadoEvento === 'PENDIENTE_RESULTADO') return 'Simulación cerrada según el estado oficial. El resultado está pendiente de revisión; este panel no oficializa ni liquida apuestas.';
+        if (state.estadoEvento === 'FINALIZADO') return 'El backend informa FINALIZADO. Este panel no ha oficializado resultados ni ejecutado operaciones financieras.';
+        if (state.estadoEvento === 'CANCELADO') return 'El backend informa CANCELADO; no se reinicia ni se cierra de nuevo desde el seguimiento.';
+        if (state.estadoEvento !== 'EN_VIVO') return 'Estado oficial: '+state.estadoEvento+'. El plazo se mide desde el inicio real registrado por el servidor, no desde la fecha programada ni desde esta página.';
+        if (state.fechaInicioRealUtc === null || !integer(state.duracionSimulacionSegundos)) return 'Falta el inicio real o una duración válida en la respuesta oficial. No se deduce el vencimiento ni se solicita un cierre automático.';
+        return state.tiempoVisualCumplido
+            ? 'El backend indica que se cumplió la duración de '+state.duracionSimulacionSegundos+' segundos, pero todavía informa EN_VIVO. El cierre autónomo no está habilitado; utiliza el cierre manual autorizado y comprueba su respuesta.'
+            : 'Tiempo y duración recibidos del servidor desde el inicio real. El navegador no adelanta el reloj ni cierra la simulación.';
+    }
     function syncControls() {
         const available = canOperate && authorized && fresh && context && official && !busy && !catalogBusy && !refreshTask && !stopped && !uncertain;
         // Durante una lectura conservar la edición y el foco; los envíos siguen bloqueados.
@@ -116,6 +139,7 @@
         $('event-content').setAttribute('aria-busy', String(busy));window.BetZoneAdmin.syncPages(!canOperate||busy||catalogBusy||stopped);
         document.body.dataset.liveBusy = String(busy || catalogBusy || Boolean(refreshTask));
         $('acknowledge-live').disabled = !canOperate || !authorized || !fresh || busy || Boolean(refreshTask) || !reconciliationEvidence();
+        trackingStatus();
     }
     function report(error, target = 'live-status') {
         const text = error.name === 'AbortError' ? 'La solicitud tardó demasiado o fue interrumpida. Reintenta manualmente.'
@@ -140,6 +164,7 @@
         if (!busy && !catalogBusy && !refreshTask && !stopped && !document.hidden && authorized && fresh && !uncertain && official?.estadoEvento === 'EN_VIVO') {
             timer = setTimeout(() => refresh(), 3000);
         }
+        trackingStatus();
     }
     function option(value, label) { const node = document.createElement('option'); node.value = value; node.textContent = label; return node; }
     function transitions() {
@@ -198,7 +223,11 @@
         const progress = $('official-progress');
         progress.hidden = !(state.esSimulado && state.duracionSimulacionSegundos > 0 && Number.isInteger(state.segundosTranscurridos));
         if (!progress.hidden) { progress.max = state.duracionSimulacionSegundos; progress.value = state.segundosTranscurridos; }
-        $('time-note').textContent = state.tiempoVisualCumplido ? 'El backend indica que se cumplió el tiempo visual. La transición sigue siendo manual.' : 'Tiempo recibido del servidor; sin cronómetro ni finalización local.';
+        $('time-note').textContent = simulationNote(state);
+        $('official-start').textContent = display(state.fechaInicioRealUtc);
+        $('official-end').textContent = display(state.fechaFinRealUtc);
+        $('live-results').hidden = !['PENDIENTE_RESULTADO','FINALIZADO'].includes(state.estadoEvento);
+        if (!$('live-results').hidden) $('live-results').href = (document.body.dataset.contextPath || '')+'/administrador/resultados?idEvento='+encodeURIComponent(state.idEvento);
         $('scoreboard').replaceChildren();
         for (const participant of state.participantes) {
             const article = document.createElement('article');
@@ -277,6 +306,7 @@
         ++viewVersion; stopPolling(); refreshTask = null;
         eventId = String(Number(id)); official = null; context = null; fresh = false; authorized = false;
         $('event-content').hidden = true; $('void-form').hidden = true; voidId = null;
+        $('live-results').hidden = true;
         $('event-sport').textContent = 'Consultando deporte…'; $('event-id').value = eventId;
         $('incident-form').reset(); $('state-form').reset(); $('void-form').reset();
         $('participant').replaceChildren(option('', 'Sin participante'));
@@ -456,9 +486,9 @@
         } catch (error) { $('event-list').replaceChildren(option('', 'Sin lista disponible')); report(error, 'catalog-status'); }
         finally { catalogBusy = false; syncControls(); schedule(); }
     });
-    document.addEventListener('visibilitychange', () => { if (document.hidden) stopPolling(); else if (official?.estadoEvento === 'EN_VIVO') refresh(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { stopPolling(); trackingStatus(); } else if (official?.estadoEvento === 'EN_VIVO') refresh(); else trackingStatus(); });
     window.addEventListener('beforeunload', event => { if (uncertain || busy) { event.preventDefault(); event.returnValue = ''; } });
-    window.addEventListener('pagehide', () => { stopped = true; fresh = false; ++viewVersion; stopPolling(); });
+    window.addEventListener('pagehide', () => { stopped = true; fresh = false; ++viewVersion; stopPolling(); trackingStatus(); });
     window.addEventListener('pageshow', event => { if (event.persisted) { stopped = false; authorized = false; if (eventId) refresh(true); } });
     window.BetZoneAdmin.eventPagination($('event-search'));incidentType(); syncControls();
     const initialEvent = new URLSearchParams(location.search).get('idEvento');
