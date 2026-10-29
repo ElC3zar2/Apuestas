@@ -23,6 +23,7 @@
     let eventId = null, event = null, result = null, selectionId = null, fresh = false;
     let writing = false, reading = false, catalogBusy = false, leaving = false, sessionBlocked = false, revision = 0;
     let uncertain = null, active = 'registrar', correctionInvalidated = false, registerArmed = true, outcomeContext = null;
+    let selectionOptionsStamp='',outcomeOptionsStamp='';
     const id = v => Number.isInteger(v) && v > 0 && v <= 2147483647;
     const inputId = v => typeof v === 'string' && /^[1-9][0-9]{0,9}$/.test(v) && id(Number(v));
     const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -145,6 +146,7 @@
         $('acknowledge-result').disabled=!evidence()||!allowedRole(uncertain?.route||active);
         $('operation-note').textContent=!writable?'Modo consulta: este rol no puede emitir POST.':!fresh?'Consulta vigente necesaria; los formularios permanecen protegidos.':uncertain?'Todas las nuevas escrituras están bloqueadas por el expediente incierto.':!eligible(active)?'La operación no está disponible en este contexto. '+(active==='oficializar'?officialProblems().join(' · '):active==='registrar'&&event?.simulacion.esSimulado&&!result?'La simulación no tiene texto de resultado registrado por el backend; requiere revisión técnica.':'Revisa estado, modalidad y selección activa.'):active==='registrar'&&!registerArmed?'El registro anterior está confirmado. Para una modificación nueva, edita el formulario y revisa nuevamente la confirmación; una consulta GET no repite ni prepara otro envío.':'El servidor valida las restricciones restantes, incluidas liquidaciones previas.';
         showUncertain();
+        renderFlow();
     }
     function values(parent,entries){const dl=node('dl',undefined,'operation-values');for(const [key,value]of entries){dl.append(node('dt',key),node('dd',display(value)));}parent.append(dl);}
     function table(parent,caption,headers,rows){
@@ -153,13 +155,47 @@
         for(const cells of rows){const row=node('tr');for(const cell of cells){const td=node('td');if(cell instanceof Node)td.append(cell);else td.textContent=display(cell);row.append(td);}body.append(row);}scroll.append(t);parent.append(scroll);
     }
     function selectOptions(){
-        const select=$('result-selection');select.replaceChildren(A.option('','Selecciona una selección convencional activa'));
-        for(const m of event?.mercados||[]){const group=node('optgroup');group.label=m.mercado+' · '+m.tipoMercado;for(const s of m.selecciones){const o=A.option(s.idSeleccion,s.seleccion+(s.seleccionActiva?'':' · Inactiva'));o.disabled=m.tipoMercado!=='CONVENCIONAL'||!s.seleccionActiva;group.append(o);}select.append(group);}
-        if(!pair())selectionId=null;select.value=selectionId===null?'':String(selectionId);
+        const select=$('result-selection'),stamp=JSON.stringify((event?.mercados||[]).map(m=>[m.idMercado,m.mercado,m.tipoMercado,m.selecciones.map(s=>[s.idSeleccion,s.seleccion,s.seleccionActiva])]));
+        if(document.activeElement!==select&&stamp!==selectionOptionsStamp){
+            select.replaceChildren(A.option('','Selecciona una selección convencional activa'));
+            for(const m of event?.mercados||[]){const group=node('optgroup');group.label=m.mercado+' · '+m.tipoMercado;for(const s of m.selecciones){const o=A.option(s.idSeleccion,s.seleccion+(s.seleccionActiva?'':' · Inactiva'));o.disabled=m.tipoMercado!=='CONVENCIONAL'||!s.seleccionActiva;group.append(o);}select.append(group);}
+            selectionOptionsStamp=stamp;
+        }
+        if(!pair())selectionId=null;if(document.activeElement!==select)select.value=selectionId===null?'':String(selectionId);
         const outcome=$('selection-outcome'),context=pair()?event.idEvento+':'+result?.idResultado+':'+selectionId:null;
         if(context!==outcomeContext){outcome.value='';forms.get('selecciones/resolver').elements.namedItem('observacion').value='';}outcomeContext=context;
-        const old=outcome.value;outcome.replaceChildren(A.option('','Selecciona la resolución'));
-        for(const v of pair()?.m.estadoMercado==='ANULADO'?['ANULADA']:resolutions)outcome.append(A.option(v,v));outcome.value=[...outcome.options].some(o=>o.value===old)?old:'';
+        const allowed=pair()?.m.estadoMercado==='ANULADO'?['ANULADA']:resolutions,nextStamp=allowed.join('|');
+        if(document.activeElement!==outcome&&outcomeOptionsStamp!==nextStamp){const old=outcome.value;outcome.replaceChildren(A.option('','Selecciona la resolución'));for(const v of allowed)outcome.append(A.option(v,v));outcome.value=allowed.includes(old)?old:'';outcomeOptionsStamp=nextStamp;}
+    }
+    function pickSelection(value){
+        const next=inputId(value)?Number(value):null,form=forms.get('selecciones/resolver');
+        if(next!==selectionId&&(form.elements.namedItem('observacion').value.trim()||$('selection-outcome').value)
+            &&!window.confirm('Cambiar de selección descartará la resolución y observación de su borrador actual. ¿Continuar?')){$('result-selection').value=selectionId===null?'':String(selectionId);return false;}
+        selectionId=next;selectOptions();return true;
+    }
+    function renderFlow(){
+        const box=$('official-requirements');box.replaceChildren();
+        const settled=Boolean(fresh&&result&&(result.estadoResultado==='OFICIAL'&&event?.estadoEvento==='FINALIZADO'||result.estadoResultado==='ANULADO'&&event?.estadoEvento==='CANCELADO'));
+        $('selected-settlements').hidden=!settled||role!=='ADMINISTRADOR';
+        if(!$('selected-settlements').hidden)$('selected-settlements').href=base+'/administrador/liquidaciones?idEvento='+event.idEvento;
+        let next='Selecciona un evento y consulta su resultado oficial.';
+        if(event&&!fresh)next='La lectura anterior es histórica. Actualiza el evento antes de decidir otra operación.';
+        else if(fresh&&event){
+            const pending=[];for(const m of event.mercados)if(m.tipoMercado==='CONVENCIONAL'&&m.estadoMercado!=='ANULADO')for(const s of m.selecciones)if(s.seleccionActiva&&s.resultadoSeleccion===null)pending.push(m.mercado+' · '+s.seleccion);
+            const issues=officialProblems();
+            if(event.estadoEvento==='EN_VIVO')next='El evento sigue EN_VIVO. Su cierre se gestiona desde Control en vivo; este módulo no cambia ese estado.';
+            else if(!result)next=event.simulacion.esSimulado?'No hay resultado preliminar de la simulación: requiere revisión técnica; no se registra uno automáticamente.':'Consulta y registra expresamente el resultado preliminar cuando el evento esté PENDIENTE_RESULTADO.';
+            else if(settled)next='Resultado '+result.estadoResultado+' y evento '+event.estadoEvento+' comprobados. La liquidación financiera es independiente; los boletos compuestos pueden seguir pendientes.'+(role==='OPERADOR_EVENTOS'?' Solicita la liquidación a ADMINISTRADOR o CAJERO.':'');
+            else if(['OFICIAL','ANULADO'].includes(result.estadoResultado))next='El resultado está '+result.estadoResultado+' y el evento '+event.estadoEvento+'. Revisa la coherencia del contexto oficial antes de continuar; no se habilita la navegación financiera como si la etapa estuviera confirmada.';
+            else if(['PENDIENTE','CORREGIDO'].includes(result.estadoResultado))next=pending.length?'Revisa y resuelve individualmente las '+pending.length+' selecciones convencionales activas pendientes.':issues.length?'Revisa los requisitos deportivos antes de oficializar.':'Puedes revisar y confirmar la oficialización. La decisión definitiva pertenece al backend.';
+            if(['PENDIENTE','CORREGIDO'].includes(result?.estadoResultado)){
+                for(const issue of issues)box.append(node('li',issue));
+                for(const name of pending)box.append(node('li','Resolución pendiente: '+name));
+                if(!issues.length)box.append(node('li','Requisitos visibles de oficialización completos; no garantizan aceptación SQL.'));
+                if(event.mercados.some(m=>m.tipoMercado!=='CONVENCIONAL'))box.append(node('li','MARCADOR_FINAL y PRIMERA_ANOTACION conservan la resolución especializada de SQL.'));
+            }
+        }
+        $('result-next').textContent=next;
     }
     function render(){
         const box=$('detail-results');box.replaceChildren();if(!event)return;
@@ -172,7 +208,7 @@
         for(const m of event.mercados){box.append(node('h3',m.mercado+' · '+m.tipoMercado+' · '+m.estadoMercado));
             const rows=m.selecciones.map(s=>{
                 let action=m.tipoMercado==='CONVENCIONAL'?'Sin acción disponible':'Resolución automática por SQL';
-                if(m.tipoMercado==='CONVENCIONAL'&&s.seleccionActiva&&writable){const b=node('button','Revisar selección');b.type='button';b.dataset.resultPick=String(s.idSeleccion);b.disabled=!fresh||writing||Boolean(uncertain);b.addEventListener('click',()=>{if(!fresh||writing||reading||uncertain||sessionBlocked)return;selectionId=s.idSeleccion;active='selecciones/resolver';selectOptions();sync();$('result-selection').focus();});action=b;}
+                if(m.tipoMercado==='CONVENCIONAL'&&s.seleccionActiva&&writable){const b=node('button',s.resultadoSeleccion===null?'Resolver pendiente':'Revisar resolución');b.type='button';b.dataset.resultPick=String(s.idSeleccion);b.disabled=!fresh||writing||Boolean(uncertain);b.addEventListener('click',()=>{if(!fresh||writing||reading||uncertain||sessionBlocked||!pickSelection(String(s.idSeleccion)))return;active='selecciones/resolver';sync();$('result-selection').focus();});action=b;}
                 return [s.idSeleccion,s.seleccion,s.seleccionActiva?'Activa':'Inactiva',correctionInvalidated?'Lectura anterior invalidada':s.resultadoSeleccion,correctionInvalidated?'Actualizar':dateText(s.fechaResolucion),action];
             });table(box,'Selecciones de '+m.mercado,['ID','Selección','Estado','Resolución oficial','Fecha de resolución','Acción'],rows);
         }
@@ -184,18 +220,24 @@
         if(registered.readOnly)registered.value=result?.resultadoTexto||'';
     }
     function hasDraft(){return [...forms.values()].some(f=>[...f.querySelectorAll('textarea')].some(n=>!n.readOnly&&n.value.trim()));}
-    async function load(idValue,expectedResult=null){
+    async function load(idValue,expectedResult=null,expected=null){
         if(!readable||writing||sessionBlocked||leaving)return;
         if(!inputId(String(idValue))){status('El ID de evento debe ser un SQL INT positivo, sin exponentes ni decimales.',true);return;}
         const next=String(Number(idValue)),changed=eventId!==next;
+        if(reading&&!changed)return;
         if(changed&&eventId&&hasDraft()&&!window.confirm('Cambiar de evento descartará los borradores. La escritura incierta se conservará separada. ¿Continuar?'))return;
         const version=++revision;eventId=next;fresh=false;reading=true;
-        if(changed){event=null;result=null;selectionId=null;correctionInvalidated=false;registerArmed=true;for(const f of forms.values())f.reset();$('detail-results').replaceChildren();$('result-context').textContent='Consultando evento #'+eventId;for(const link of ['selected-event','selected-live','selected-markets'])$(link).hidden=true;}
+        if(changed){event=null;result=null;selectionId=null;correctionInvalidated=false;registerArmed=true;selectionOptionsStamp='';outcomeOptionsStamp='';for(const f of forms.values())f.reset();$('detail-results').replaceChildren();$('result-context').textContent='Consultando evento #'+eventId;for(const link of ['selected-event','selected-live','selected-markets','selected-settlements'])$(link).hidden=true;}
         $('direct-event-id').value=eventId;$('reading-status').textContent='Consultando detalle y resultado por evento…';sync();
         try{
             const d=await request('/administrador/eventos/detalle?idEvento='+eventId);if(leaving||version!==revision)return;
             const e=validateDetail(d.evento,next),data=await request(prefix+'por-evento?idEvento='+next);if(leaving||version!==revision)return;
-            const r=validateResult(data,e);if(expectedResult!==null&&r?.idResultado!==expectedResult)fail('La lectura posterior no corresponde al resultado confirmado.');event=e;result=r;fresh=true;correctionInvalidated=false;render();$('reading-status').textContent='Lectura oficial actualizada (sin polling automático).';status('Detalle administrativo y resultado consultados.');
+            const r=validateResult(data,e);if(expectedResult!==null&&r?.idResultado!==expectedResult)fail('La lectura posterior no corresponde al resultado confirmado.');
+            if(expected&&(expected.state&&r?.estadoResultado!==expected.state||expected.eventState&&e.estadoEvento!==expected.eventState
+                ||expected.selection&&!e.mercados.some(m=>m.selecciones.some(s=>s.idSeleccion===expected.selection.id&&s.resultadoSeleccion===expected.selection.value))))fail('El POST está confirmado, pero el detalle no acredita todavía sus estados o resolución. Conserva el DTO y actualiza mediante GET; no repitas el POST.');
+            event=e;result=r;fresh=true;correctionInvalidated=false;
+            if(changed)active=r&&['PENDIENTE','CORREGIDO'].includes(r.estadoResultado)?officialProblems().length?'selecciones/resolver':'oficializar':'registrar';
+            render();$('reading-status').textContent='Lectura oficial actualizada (sin polling automático).';status('Detalle administrativo y resultado consultados.');
         }catch(error){if(leaving||version!==revision)return;fresh=false;if(error.status===403)sessionBlocked=true;report(error);$('reading-status').textContent='Lectura desactualizada; los datos anteriores son históricos. Escrituras bloqueadas.';}
         finally{if(version===revision){reading=false;sync();}}
     }
@@ -241,7 +283,8 @@
             forms.get(route).reset();
             if(route==='registrar')registerArmed=false;
             if(route==='corregir'){correctionInvalidated=true;forms.get('selecciones/resolver').reset();selectionId=null;render();}
-            writing=false;await load(String(operation.event),route==='selecciones/resolver'?operation.result:response.resultado.idResultado);
+            const dtoValue=response.resultado,expected=route==='selecciones/resolver'?{selection:{id:dtoValue.idSeleccion,value:dtoValue.resultado}}:{state:dtoValue.estadoResultado,eventState:dtoValue.estadoEvento};
+            writing=false;await load(String(operation.event),route==='selecciones/resolver'?operation.result:dtoValue.idResultado,expected);
             if(!leaving&&eventId===String(operation.event))status(fresh?'POST confirmado. Lectura oficial actualizada.':'POST confirmado; no fue posible actualizar la lectura oficial.',!fresh);
         }catch(error){
             if(sent){uncertain=Object.freeze({...operation,reason:errorText(error)});fresh=false;}
@@ -261,7 +304,8 @@
             if(route==='registrar')for(const name of ['input','change'])f.addEventListener(name,()=>{if(!writing&&!reading){registerArmed=true;sync();}});
             const b=node('button',spec.name);b.type='button';b.addEventListener('click',()=>{if(writing||reading||uncertain||sessionBlocked||!allowedRole(route))return;active=route;sync();});$('management-flow').append(b);buttons.set(route,b);
         }
-        $('result-selection').addEventListener('change',()=>{const value=$('result-selection').value;selectionId=inputId(value)?Number(value):null;selectOptions();sync();});
+        $('result-selection').addEventListener('change',()=>{pickSelection($('result-selection').value);sync();});
+        for(const key of ['result-selection','selection-outcome'])$(key).addEventListener('blur',()=>{selectOptions();sync();});
     }
     async function sports(){
         if(!readable||writing||catalogBusy||sessionBlocked||leaving)return;catalogBusy=true;sync();
