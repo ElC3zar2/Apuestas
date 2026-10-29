@@ -22,7 +22,8 @@
     const invalidNav = selectionId === null || (params.has("idEvento") && eventId === null) || (params.has("idMercado") && marketId === null);
     // Se conserva la clave v1: nunca descartar una operación anterior posiblemente enviada.
     const sessionScope = get("contenido").dataset.sessionUser || "sin-sesion";
-    const storageKey = "betzone.apuesta.v1:" + contextPath + ":" + sessionScope + ":" + selectionId;
+    const storagePrefix = "betzone.apuesta.v1:" + contextPath + ":" + sessionScope + ":";
+    const storageKey = storagePrefix + selectionId;
     let context = null, quote = null, operation = null, phase = "idle", busy = false, blocked = false, ready = false;
 
     function node(tag, value) { const e = document.createElement(tag); if (value !== undefined) e.textContent = value; return e; }
@@ -39,7 +40,12 @@
         input.disabled = locked;
         inputs.slice(1).forEach(field => { field.disabled = locked || !context || context.tipoMercado !== "MARCADOR_FINAL"; });
         quoteButton.disabled = locked;
-        confirmButton.disabled = blocked || busy || phase === "confirmed" || !(quote || phase === "uncertain");
+        confirmButton.disabled = blocked || busy || phase === "confirmed" || !(phase === "uncertain" || quote && get("revision-aceptada").checked);
+        get("revision-aceptada").disabled = blocked || busy || !quote || phase === "confirmed" || phase === "uncertain";
+        get("paso-apuesta").textContent = phase === "confirmed" ? "Boleto confirmado · Consulta tus apuestas y movimientos."
+            : phase === "uncertain" ? "Confirmación pendiente · Conserva la misma referencia."
+            : phase === "quoted" ? "Revisa la selección y los importes antes de confirmar."
+            : busy ? "Consultando al servidor…" : "Selección → Monto y pronóstico → Cotización → Revisión → Confirmación → Boleto";
         quoteButton.textContent = busy && phase === "quoting" ? "Cotizando…" : "Cotizar apuesta";
         confirmButton.textContent = busy && phase === "confirming" ? "Confirmando…" : phase === "uncertain" ? "Reintentar misma confirmación" : "Confirmar apuesta";
     }
@@ -68,7 +74,7 @@
             (token, number) => number === undefined ? token : JSON.stringify(number)));
         return {data, exact};
     }
-    async function request(route, fields) {
+    async function request(route, fields, csrf = null) {
         const controller = new AbortController(); let timeout;
         try {
             const run = async () => {
@@ -76,6 +82,7 @@
                     headers:{Accept:"application/json"}, signal:controller.signal};
                 if (fields) {
                     options.headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
+                    if (csrf !== null) options.headers["X-CSRF-Token"] = csrf;
                     options.body = new URLSearchParams(fields).toString();
                 }
                 const response = await fetch(contextPath + route, options);
@@ -135,18 +142,19 @@
         const {market,selection} = matches[0];
         if (!knownType(market.tipoMercado) || (expectedMarket !== null && market.idMercado !== expectedMarket)
                 || (expectedType && market.tipoMercado !== expectedType)) throw fault("No se pudo verificar la modalidad y el mercado de la selección. Vuelve a Eventos.");
-        if (event.puedeApostar !== true || selection.puedeSeleccionar !== true || selection.seleccionActiva !== true
+        if (market.estadoMercado !== "ABIERTO" || event.puedeApostar !== true || selection.puedeSeleccionar !== true || selection.seleccionActiva !== true
                 || selection.cuotaActiva !== true || !validId(selection.idCuota) || !numeric(selection.cuota) || selection.cuota <= 0) {
             throw fault("La selección no está disponible según la consulta del servidor. Vuelve a Eventos.");
         }
         return {idEvento:id,idMercado:market.idMercado,tipoMercado:market.tipoMercado,
             participantes:market.tipoMercado === "MARCADOR_FINAL" ? participants(event) : [],
+            nombreEvento:text(event.nombre) || "Evento", cuotaInformada:String(selection.cuota),
             nombreSeleccion:text(selection.seleccion) || "Selección", nombreMercado:text(market.mercado) || "Mercado"};
     }
     function showContext() {
         get("pronosticos").hidden = !context || context.tipoMercado !== "MARCADOR_FINAL";
         if (!context) return;
-        get("seleccion-recibida").textContent = (context.nombreSeleccion || "Selección verificada") + " · " + types[context.tipoMercado];
+        get("seleccion-recibida").textContent = [context.nombreEvento,context.nombreMercado,context.nombreSeleccion || "Selección verificada",types[context.tipoMercado],context.cuotaInformada ? "Cuota consultada: " + context.cuotaInformada : null].filter(Boolean).join(" · ");
         get("volver-evento").href = contextPath + "/eventos/detalle-evento.jsp?idEvento=" + encodeURIComponent(context.idEvento);
         get("volver-evento").hidden = false;
         if (context.tipoMercado === "MARCADOR_FINAL") {
@@ -189,6 +197,7 @@
     }
     function clearQuote() {
         quote = null; get("cotizacion").hidden = true; get("cotizacion-vacia").hidden = false;
+        get("revision-apuesta").hidden = true; get("revision-aceptada").checked = false;
         get("importes-cotizacion").replaceChildren(); get("detalle-seleccion").replaceChildren();
     }
     const moneyFields = ["montoApostado","comisionServicio","totalCargo","cuotaTotal","gananciaPotencial"];
@@ -223,14 +232,14 @@
         const d = result.data, exact = result.exact;
         const entries = [["Tipo de boleto",d.tipoBoleto],["Selecciones",String(d.cantidadSelecciones)],
             ["Monto apostado",exact.montoApostado],["Comisión (%)",d.comisionServicioPorcentaje === null ? null : exact.comisionServicioPorcentaje],
-            ["Comisión",exact.comisionServicio],["Total a cargar",exact.totalCargo],["Cuota total",exact.cuotaTotal],["Ganancia potencial",exact.gananciaPotencial]];
+            ["Comisión de servicio",exact.comisionServicio],[quoteResult ? "Total a cargar" : "Total cargado informado",exact.totalCargo],["Cuota total",exact.cuotaTotal],["Premio potencial (no acreditado)",exact.gananciaPotencial]];
         if (quoteResult && d.tipoMercado === "MARCADOR_FINAL") entries.push(
             ["Cuota por resultado",d.cuotaResultado === null ? null : exact.cuotaResultado],
             ["Premio potencial por resultado",d.premioResultadoPotencial === null ? null : exact.premioResultadoPotencial],
             ["Premio exacto o máximo potencial",d.premioExactoOMaximo === null ? null : exact.premioExactoOMaximo]);
         const fragment = document.createDocumentFragment();
         for (const [title,value] of entries) {
-            const item = node("div"); if (title === "Total a cargar") item.className = "total";
+            const item = node("div"); if (title.startsWith("Total ")) item.className = "total";
             item.append(node("dt",title),node("dd",value === null ? "No disponible" : value)); fragment.append(item);
         }
         target.replaceChildren(fragment);
@@ -245,6 +254,7 @@
         if (d.tipoMercado === "MARCADOR_FINAL") target.append(node("p",context.participantes[0].nombre + ": " + d.pronosticoA),
             node("p",context.participantes[1].nombre + ": " + d.pronosticoB));
         summary(get("importes-cotizacion"),result,true); get("cotizacion").hidden = false; get("cotizacion-vacia").hidden = true;
+        get("revision-apuesta").hidden = false;
     }
     function validateConfirmation(result,value,reference) {
         validateSummary(result,value);
@@ -261,6 +271,8 @@
             : d.solicitudIdempotente ? "El servidor devolvió el boleto existente para esta misma operación; no informa un nuevo cobro."
             : "El servidor confirmó el boleto. Esto no es un resultado deportivo ni una liquidación.";
         get("resultado-apuesta").hidden = false;
+        get("pdf-confirmado").href = contextPath + "/usuario/boletos/imprimir?idBoleto=" + encodeURIComponent(d.idBoleto);
+        get("pdf-confirmado").hidden = false;
     }
     function uuid() {
         const crypto = window.crypto;
@@ -276,6 +288,22 @@
             window.sessionStorage.setItem(storageKey,saved);
             if (window.sessionStorage.getItem(storageKey) !== saved) throw new Error();
         } catch (error) { throw fault("No se pudo conservar la operación antes del envío. No se enviará una confirmación nueva."); }
+    }
+    // Reutiliza las claves existentes v1/v2 de esta cuenta y pestaña. No elimina pendientes.
+    function otherPending() {
+        const storage = window.sessionStorage;
+        for (let i = 0; i < storage.length; i++) {
+            const key = storage.key(i);
+            if (!key || !key.startsWith(storagePrefix) || key === storageKey) continue;
+            const saved = JSON.parse(storage.getItem(key));
+            if (!object(saved) || !["pending","confirmed","rejected"].includes(saved.status)) throw fault("Hay una operación guardada que requiere revisión. Se conserva sin cambios.");
+            if (saved.status !== "pending") continue;
+            const id = key.slice(storagePrefix.length);
+            if (!/^[1-9][0-9]*$/.test(id) || !validId(Number(id)) || saved.idSeleccion !== Number(id)) throw fault("La operación pendiente guardada no puede verificarse. Se conserva sin cambios.");
+            get("recuperar-operacion").href = contextPath + "/apuestas/realizar-apuesta.jsp?idSeleccion=" + encodeURIComponent(id);
+            get("recuperar-operacion").hidden = false;
+            throw fault("Hay otra confirmación pendiente en esta pestaña. Vuelve a esa operación y conserva su referencia antes de iniciar otra apuesta.");
+        }
     }
     form.addEventListener("submit",async event => {
         event.preventDefault();
@@ -300,30 +328,47 @@
     confirmButton.addEventListener("click",async () => {
         if (busy || blocked || phase === "confirmed" || !(quote || phase === "uncertain")) return;
         const recovering = phase === "uncertain";
+        if (!recovering && !get("revision-aceptada").checked) { estado("Revisa la selección y el total a cargar antes de confirmar.",true); return; }
         const value = recovering ? operation : quote.value;
         if (!same(snapshot(),value)) { estado("Los datos actuales no coinciden con la operación. No se enviará la confirmación.",true); return; }
+        busy = true; controls(); estado(recovering ? "Preparando la misma referencia pendiente…" : "Actualizando la disponibilidad de la selección…");
+        try {
+            if (!recovering) {
+                otherPending();
+                context = await verifyEvent(context.idEvento,context.idMercado,context.tipoMercado); showContext();
+            }
+        } catch (error) {
+            busy = false; ready = false; phase = "idle"; clearQuote(); controls(); get("reintentar-contexto").hidden = false;
+            estado(error.controlled ? error.message : "No se pudo actualizar la disponibilidad. Vuelve al evento o reintenta la consulta.",true,Boolean(error.session)); return;
+        }
         try {
             if (!recovering) operation = {version:2,...value,...context,referenciaOperacion:uuid(),status:"pending"};
             persist();
-        } catch (error) { estado(error.controlled ? error.message : "No se pudo preparar la operación.",true); return; }
+        } catch (error) { busy = false; controls(); estado(error.controlled ? error.message : "No se pudo preparar la operación.",true); return; }
         busy = true; phase = "confirming"; controls(); estado("Confirmando apuesta. Espera la respuesta del servidor…");
+        let sent = false;
         try {
+            const token = await request("/usuario/seguridad/csrf");
+            if (typeof token.data.csrfToken !== "string" || !/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(token.data.csrfToken)) throw fault("No se recibió un token válido. La confirmación no se envió.");
             const fields = fieldsFor(operation); fields.referenciaOperacion = operation.referenciaOperacion;
-            const result = await request("/apuestas/realizar",fields);
+            sent = true;
+            const result = await request("/apuestas/realizar",fields,token.data.csrfToken);
             validateConfirmation(result,operation,operation.referenciaOperacion);
             operation.status = "confirmed"; operation.resultado = result.data; operation.resultadoExacto = result.exact; phase = "confirmed";
             successView(result); estado("Boleto confirmado. Conserva el código y la referencia.");
             try { persist(); } catch (error) { estado("Boleto confirmado. Conserva el código: no se pudo guardar el resultado; la referencia previa permanece pendiente."); }
         } catch (error) {
-            const rejected = error.definitive === true && !recovering;
+            const rejected = sent && error.definitive === true && !recovering;
             operation.status = rejected ? "rejected" : "pending"; phase = rejected ? "idle" : "uncertain";
             clearQuote();
             try { persist(); } catch (storageError) { /* La operación original ya se guardó antes de enviar. */ }
             estado((error.controlled ? error.message : "No se pudo verificar la respuesta.") + (rejected
                 ? " El servidor rechazó la solicitud. Revisa los datos y vuelve a cotizar."
-                : " Resultado incierto: conserva esta referencia y reintenta únicamente la misma operación."),true,Boolean(error.session));
+                : sent ? " Resultado incierto: conserva esta referencia y reintenta únicamente la misma operación."
+                : " No se envió la confirmación. Se conserva la referencia preparada; reintenta únicamente esta operación."),true,Boolean(error.session));
         } finally { busy = false; controls(); panel.setAttribute("aria-busy","false"); panel.classList.remove("is-processing"); }
     });
+    get("revision-aceptada").addEventListener("change",controls);
     inputs.forEach(field => field.addEventListener("input",() => {
         if (busy || blocked || phase === "uncertain" || phase === "confirmed") return;
         clearQuote(); phase = "idle"; inputs.forEach(e=>e.setAttribute("aria-invalid","false"));
@@ -374,6 +419,7 @@
     async function initialize() {
         get("reintentar-contexto").hidden = true; busy = true; ready = false; controls(); estado("Verificando la selección y su modalidad…");
         try {
+            otherPending();
             context = eventId !== null ? await verifyEvent(eventId,marketId) : null;
             if (context) showContext();
             ready = true; estado(context ? "Selección verificada. Introduce el monto y, si corresponde, tu pronóstico."

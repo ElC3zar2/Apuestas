@@ -53,7 +53,7 @@
                 <a id="login-billetera" class="text-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
             </div>
             <div id="datos-billetera" class="movement-list" hidden></div>
-            <p class="muted wallet-note">Se muestran los movimientos recibidos hasta el límite consultado. Las variaciones e importes provienen del backend; las fechas conservan la hora del servidor.</p>
+            <p class="muted wallet-note">Se muestran los movimientos recibidos hasta el límite consultado. El tipo y la descripción conservan su significado original. Las variaciones de saldo son las informadas por el servidor: no se deduce un premio o reembolso por el signo del monto. Las fechas conservan la hora del servidor.</p>
         </section>
         <noscript><p class="notice">Activa JavaScript para consultar y filtrar movimientos.</p></noscript>
     </main>

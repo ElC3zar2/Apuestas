@@ -18,7 +18,7 @@
     let loading = false;
     let lastEvent = null, pollTimer = null, activeController = null;
     let generation = 0, disposed = false, refreshPending = false, stopAfterError = false;
-    let sessionExpiredConfirmed = false;
+    let sessionExpiredConfirmed = false, transientFailures = 0;
     const refresh = document.getElementById("actualizar-partido");
     const follow = document.getElementById("control-seguimiento");
     const updateStatus = document.getElementById("estado-actualizacion");
@@ -103,7 +103,7 @@
             if (sequences.has(i.secuencia)) return {valid:false,rows:[],duplicate:true};
             ids.set(i.idIncidencia,i); sequences.set(i.secuencia,i.idIncidencia);
         }
-        return {valid:true,rows:[...ids.values()].sort((a,b)=>a.secuencia-b.secuencia),duplicate};
+        return {valid:true,rows:[...ids.values()].sort((a,b)=>b.secuencia-a.secuencia),duplicate};
     }
     function participantName(event, id) {
         if (!validId(id)) return "Participante no informado";
@@ -166,12 +166,12 @@
         put("cantidad-incidencias", incidents.valid ? incidents.rows.length + " incidencias recibidas (incluye anuladas)" : "Cantidad no verificable");
         put("nota-incidencias", !incidents.valid ? "La cronología no está disponible o contiene datos inconsistentes. No se reconstruye el marcador."
             : incidents.duplicate ? "Se unificaron incidencias repetidas idénticas. Se conservan las anuladas."
-            : !incidents.rows.length ? "No se recibieron incidencias." : "Orden oficial por secuencia. Las anulaciones se muestran explícitamente.");
+            : !incidents.rows.length ? "No se recibieron incidencias." : "Más recientes primero, por secuencia oficial. Se conservan las anulaciones.");
         const types = {ANOTACION:"Anotación",FALTA:"Falta",TARJETA_AMARILLA:"Tarjeta amarilla",TARJETA_ROJA:"Tarjeta roja",OTRA:"Otra incidencia"};
         const items = incidents.rows.map(i=>{
             const li = node("li", "incident" + (i.esAnulada ? " is-annulled" : ""));
             li.setAttribute("data-live-key", "incidencia-" + i.idIncidencia);
-            li.append(node("h3", "", duration(i.segundoSimulacion) + " · " + (Object.prototype.hasOwnProperty.call(types,i.tipoIncidencia) ? types[i.tipoIncidencia] : label(i.tipoIncidencia))),
+            li.append(node("h3", "", duration(i.segundoSimulacion) + " · " + (Object.prototype.hasOwnProperty.call(types,i.tipoIncidencia) ? types[i.tipoIncidencia] : label(i.tipoIncidencia))), node("p", "muted", "Secuencia oficial: " + i.secuencia),
                 node("p", "", participantName(event,i.idParticipante)));
             if (i.tipoIncidencia === "ANOTACION" && safeCount(i.valorAnotacion)) li.append(node("p", "", "Valor de anotación informado: " + i.valorAnotacion));
             if (text(i.descripcion)) li.append(node("p", "", i.descripcion));
@@ -273,7 +273,7 @@
     function seleccion(item, event, market) {
         // Solo habilita la navegación cuando el servidor informa disponibilidad.
         // No calcula vigencia ni autorización personal en el cliente.
-        const available = item.puedeSeleccionar === true && event.puedeApostar === true
+        const available = market.estadoMercado === "ABIERTO" && item.puedeSeleccionar === true && event.puedeApostar === true
                 && item.seleccionActiva === true && item.cuotaActiva === true
                 && validId(item.idSeleccion) && validId(item.idCuota) && decimal(item.cuota) && item.cuota > 0;
         const needsForecast = market.tipoMercado === "MARCADOR_FINAL";
@@ -283,7 +283,7 @@
                 && validId(matches[0].idParticipante) && text(matches[0].participante))
                 && ordered[0][0].idParticipante !== ordered[1][0].idParticipante;
         const occurrences = event.mercados.reduce((total, m) => total + m.selecciones.filter(s => s.idSeleccion === item.idSeleccion).length, 0);
-        const canNavigate = available && knownType && (!needsForecast || (verifiedOrder && validId(event.idEvento) && occurrences === 1));
+        const canNavigate = available && knownType && validId(event.idEvento) && validId(market.idMercado) && occurrences === 1 && (!needsForecast || verifiedOrder);
         const card = node("article", "selection" + (available ? "" : " is-unavailable"));
         if (validId(item.idSeleccion)) card.setAttribute("data-live-key", "seleccion-" + item.idSeleccion);
         card.append(node("h4", "", text(item.seleccion) || "Selección sin nombre disponible"), node("p", "odd-label", "CUOTA"),
@@ -303,7 +303,7 @@
         const action = node(canNavigate ? "a" : "button", "selection-action", canNavigate ? "Seleccionar cuota ↗" : available ? "Información insuficiente para continuar" : "No disponible");
         if (canNavigate) {
             action.href = contextPath + "/apuestas/realizar-apuesta.jsp?idSeleccion=" + encodeURIComponent(item.idSeleccion);
-            if (needsForecast) action.href += "&idEvento=" + encodeURIComponent(event.idEvento) + "&idMercado=" + encodeURIComponent(market.idMercado);
+            action.href += "&idEvento=" + encodeURIComponent(event.idEvento) + "&idMercado=" + encodeURIComponent(market.idMercado);
             action.setAttribute("aria-label", "Seleccionar cuota: " + (text(item.seleccion) || "selección disponible"));
         } else { action.type = "button"; action.disabled = true; }
         if (needsForecast) action.setAttribute("aria-describedby", "aviso-modalidad-" + market.idMercado);
@@ -368,10 +368,10 @@
         clearPoll();
         if (disposed || !visible() || loading || !lastEvent || stopAfterError) return;
         let delay = null;
-        if (lastEvent.estadoEvento === "EN_VIVO") delay = 25000;
+        if (lastEvent.estadoEvento === "EN_VIVO") delay = 10000;
         else if (["PROGRAMADO","PENDIENTE_RESULTADO"].includes(lastEvent.estadoEvento)
                 || (lastEvent.estadoEvento === "FINALIZADO" && lastEvent.resultadoPendiente === true)) delay = 60000;
-        if (delay !== null) pollTimer = window.setTimeout(()=>{pollTimer = null; cargar();},delay);
+        if (delay !== null) pollTimer = window.setTimeout(()=>{pollTimer = null; cargar();},Math.max(delay, transientFailures ? Math.min(120000,10000 * 2 ** Math.min(transientFailures,4)) : 0));
     }
     async function cargar() {
         if (idEvento === null || loading || disposed || !visible()) return;
@@ -386,18 +386,19 @@
         try {
             const event = await consultar(controller);
             if (version !== generation || disposed || !visible()) return;
-            render(event); lastEvent = event; stopAfterError = false; sessionExpiredConfirmed = false;
+            render(event); lastEvent = event; stopAfterError = false; sessionExpiredConfirmed = false; transientFailures = 0;
             statusPanel.setAttribute("aria-busy", "false");
             statusPanel.classList.remove("is-loading");
             statusPanel.hidden = true;
             content.hidden = false;
             follow.hidden = false; follow.classList.remove("is-stale");
             document.getElementById("login-actualizacion").hidden = true;
-            put("estado-actualizacion", event.estadoEvento === "EN_VIVO" ? "Datos oficiales recibidos. Seguimiento cada 25 segundos mientras el partido esté en vivo."
+            put("estado-actualizacion", event.estadoEvento === "EN_VIVO" ? "Datos oficiales recibidos. Seguimiento aproximadamente cada 10 segundos mientras el partido esté en vivo."
                 : event.estadoEvento === "FINALIZADO" && event.resultadoPendiente === false ? "Datos oficiales recibidos. Seguimiento automático detenido: partido finalizado."
                 : "Datos oficiales recibidos. Puedes actualizar el partido manualmente.");
         } catch (error) {
             if (version !== generation || disposed || !visible()) return;
+            transientFailures += 1;
             if (error && (error.httpStatus === 401 || error.sessionExpired === true)) {
                 ownSessionExpired = true;
                 ownClear();

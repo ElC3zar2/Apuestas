@@ -42,3 +42,4 @@
 @media (max-width: 760px) { .wallet-balances, .filter-fields { grid-template-columns: minmax(0,1fr); } .wallet-facts { grid-template-columns: repeat(2,minmax(0,1fr)); } .movement-header { flex-direction: column; gap: 12px; } .wallet-balance { padding: 24px; } }
 @media (max-width: 400px) { .wallet-facts { grid-template-columns: minmax(0,1fr); } .filter-actions { flex-direction: column; } .wallet-page .button { white-space: normal; } }
 @media (prefers-reduced-motion: reduce) { .wallet-status.is-loading .status-symbol { animation: none; } }
+.wallet-balance dd.wallet-balance-help { font: 400 12px var(--body, sans-serif); color: var(--muted); line-height: 1.7; margin-top: 12px; }

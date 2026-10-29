@@ -13,7 +13,15 @@
     eventNotice.textContent = eventId === null ? "El filtro de partido no es válido o está duplicado. Se muestra el historial normal." : "Mostrando apuestas del partido #" + eventId + ". Los importes corresponden al boleto completo; puede incluir otras selecciones.";
     removeEvent.hidden = eventId === null;
     const count = value => Number.isSafeInteger(value) && value >= 0;
-    const numeric = value => typeof value === "number" && Number.isFinite(value);
+    const numeric = value => (typeof value === "number" || typeof value === "string" && /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) && Number.isFinite(Number(value));
+    const financialKeys = new Set(["montoApostado","comisionServicio","totalCargo","cuotaTotal","premioPotencial","gananciaNetaPotencial","porcentajeGananciaPotencial","probabilidadImplicitaPorcentaje","cuotaAplicada","probabilidadImplicitaSeleccionPorcentaje","cuotaResultadoAplicada","cuotaLiquidacion"]);
+    function readFinancial(source) {
+        let key = null;
+        return JSON.parse(source.replace(/"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,(token,offset)=>{
+            if (token[0] === '"') { key = /^\s*:/.test(source.slice(offset + token.length)) ? JSON.parse(token) : null; return token; }
+            const field = key; key = null; return financialKeys.has(field) ? JSON.stringify(token) : token;
+        }));
+    }
     const text = value => typeof value === "string" && value.trim() ? value : null;
     const display = value => value === null || value === undefined ? "No disponible" : String(value);
     function node(tag, className, value) { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; }
@@ -52,7 +60,7 @@
             if (!response.ok) throw error("El servidor no pudo completar la consulta. Intenta nuevamente.");
             if ((response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase() !== "application/json") throw error("Respuesta inesperada: se esperaba JSON.");
             let data;
-            try { data = await response.json(); } catch (_) { throw error("La respuesta JSON no es válida."); }
+            try { data = readFinancial(await response.text()); } catch (_) { throw error("La respuesta JSON no es válida."); }
             if (!object(data) || data.ok !== true) throw error("La respuesta del servidor no es válida.");
             return data;
         };
@@ -113,7 +121,10 @@
         fact(facts,"Mercado",text(item.mercado) || "No disponible"); fact(facts,"Cuota aplicada",item.cuotaAplicada);
         fact(facts,"Resultado de selección",text(item.resultadoSeleccion) || "No disponible");
         fact(facts,"Probabilidad implícita (%)",item.probabilidadImplicitaSeleccionPorcentaje);
-        historico(facts,item); card.append(facts); return card;
+        historico(facts,item); card.append(facts);
+        const eventLink = node("a","text-link","Seguir este evento ↗");
+        eventLink.href = contextPath + "/eventos/detalle-evento.jsp?idEvento=" + encodeURIComponent(item.idEvento);
+        card.append(eventLink); return card;
     }
     function boleto(item,filtered) {
         const card = node("article","panel ticket");
@@ -128,14 +139,15 @@
         fact(facts,"Creación",fecha(item.fechaCreacion)); fact(facts,"Liquidación",fecha(item.fechaLiquidacion));
         fact(facts,"Monto apostado",item.montoApostado); fact(facts,"Comisión",item.comisionServicio);
         fact(facts,"Total cargado",item.totalCargo,true); fact(facts,"Cuota total",item.cuotaTotal);
-        fact(facts,"Premio potencial",item.premioPotencial); fact(facts,"Ganancia neta potencial",item.gananciaNetaPotencial);
+        fact(facts,"Premio potencial histórico",item.premioPotencial); fact(facts,"Ganancia neta potencial histórica",item.gananciaNetaPotencial);
         fact(facts,"Ganancia potencial (%)",item.porcentajeGananciaPotencial); fact(facts,"Probabilidad implícita (%)",item.probabilidadImplicitaPorcentaje);
-        card.append(facts);
+        card.append(facts,node("p","muted","El premio potencial histórico no acredita un pago. Este historial no informa un importe universal de premio efectivamente abonado; consulta los movimientos de tu billetera."));
         const actions = node("div","ticket-actions");
         const pdf = node("a","pdf-link","Ver boleto PDF ↗");
         pdf.href = contextPath + "/usuario/boletos/imprimir?idBoleto=" + encodeURIComponent(item.idBoleto);
         pdf.target = "_blank"; pdf.rel = "noopener noreferrer"; pdf.setAttribute("aria-label","Ver boleto PDF " + item.codigoBoleto + " (otra pestaña)");
-        actions.append(node("p","","Selecciones totales del boleto: " + item.cantidadSelecciones),pdf); card.append(actions);
+        const wallet = node("a","text-link","Consultar movimientos"); wallet.href = contextPath + "/billetera/movimientos.jsp";
+        actions.append(node("p","","Selecciones totales del boleto: " + item.cantidadSelecciones),pdf,wallet); card.append(actions);
         const expanded = node("details","ticket-details");
         expanded.append(node("summary","",filtered ? "Ver selecciones que coinciden con los filtros (" + item.detalles.length + ")" : "Ver selecciones (" + item.detalles.length + ")"));
         if (!item.detalles.length) expanded.append(node("p","empty-details",filtered ? "No se recibieron detalles para este deporte." : "Este boleto no tiene detalles informados."));

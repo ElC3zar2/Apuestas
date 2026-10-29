@@ -6,7 +6,15 @@
     const section = get("consulta-billetera"), status = get("estado-billetera"), content = get("datos-billetera");
     let controller, version = 0, applied = {params: new URLSearchParams(), limit: 100};
     const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
-    const number = value => typeof value === "number" && Number.isFinite(value);
+    const number = value => (typeof value === "number" || typeof value === "string" && /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) && Number.isFinite(Number(value));
+    const financialKeys = new Set(["saldoDisponible","saldoComprometido","saldoVirtualTotal","monto","saldoDisponibleAnterior","saldoDisponiblePosterior","variacionSaldoDisponible","saldoComprometidoAnterior","saldoComprometidoPosterior","variacionSaldoComprometido"]);
+    function readFinancial(source) {
+        let key = null;
+        return JSON.parse(source.replace(/"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,(token,offset)=>{
+            if (token[0] === '"') { key = /^\s*:/.test(source.slice(offset + token.length)) ? JSON.parse(token) : null; return token; }
+            const field = key; key = null; return financialKeys.has(field) ? JSON.stringify(token) : token;
+        }));
+    }
     const id = value => Number.isSafeInteger(value) && value > 0;
     const string = value => typeof value === "string";
     const text = value => string(value) && value.trim().length > 0;
@@ -49,7 +57,7 @@
             const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
             if (type !== "application/json") throw fault(type === "text/html" ? "Se recibió HTML en lugar de JSON. Si tu sesión expiró, vuelve a iniciar sesión." : "El servidor devolvió un formato inesperado.",type === "text/html");
             let data;
-            try { data = await response.json(); }
+            try { data = readFinancial(await response.text()); }
             catch (error) { if (currentController.signal.aborted) throw error; throw fault("La respuesta JSON del servidor no es válida."); }
             if (!object(data) || data.ok !== true) throw fault("La respuesta del servidor no contiene un resultado válido.");
             return data;
@@ -76,8 +84,8 @@
     }
     function resumen(data) {
         const fragment = document.createDocumentFragment(), balances = node("dl","wallet-balances");
-        [["Saldo disponible","saldoDisponible"],["Saldo comprometido","saldoComprometido"],["Saldo virtual total","saldoVirtualTotal"]].forEach(([label,key]) => {
-            const item = node("div","wallet-balance"); item.append(node("dt","",label),node("dd","",String(data[key]))); balances.append(item);
+        [["Saldo disponible","saldoDisponible","Disponible según esta consulta; no garantiza la aprobación de una próxima apuesta."],["Saldo comprometido","saldoComprometido","Importe informado como comprometido por el servidor."],["Saldo virtual total","saldoVirtualTotal","Total virtual informado por el servidor."]].forEach(([label,key,help]) => {
+            const item = node("div","wallet-balance"); item.append(node("dt","",label),node("dd","",String(data[key])),node("dd","muted wallet-balance-help",help)); balances.append(item);
         });
         const info = node("section","panel wallet-info"), facts = node("dl","wallet-facts");
         info.append(node("h2","","Información de la billetera"));
@@ -111,7 +119,13 @@
         const balances = node("dl","wallet-facts movement-saldos");
         fact(balances,"Disponible anterior",item.saldoDisponibleAnterior); fact(balances,"Disponible posterior",item.saldoDisponiblePosterior); fact(balances,"Variación disponible",item.variacionSaldoDisponible);
         fact(balances,"Comprometido anterior",item.saldoComprometidoAnterior); fact(balances,"Comprometido posterior",item.saldoComprometidoPosterior); fact(balances,"Variación comprometida",item.variacionSaldoComprometido);
-        card.append(balances); return card;
+        card.append(balances);
+        if (item.idBoleto !== null) {
+            const link = node("a","text-link","Abrir comprobante del boleto relacionado ↗");
+            link.href = contextPath + "/usuario/boletos/imprimir?idBoleto=" + encodeURIComponent(item.idBoleto);
+            link.target = "_blank"; link.rel = "noopener noreferrer"; card.append(link);
+        }
+        return card;
     }
     function filtros() {
         const error = get("error-filtros");

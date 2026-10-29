@@ -59,7 +59,7 @@
                 <p id="fechas-simulacion" class="muted"></p>
                 <p id="resultado-partido" class="match-result"></p>
                 <p class="muted personal-note">El marcador es información deportiva, no un resultado de apuestas ni un premio abonado. La duración de referencia no finaliza el partido automáticamente.</p>
-                <a class="text-link" href="#cronologia-partido">Ver cronología ↓</a>
+                <div class="own-actions"><a class="text-link" href="#cronologia-partido">Ver cronología ↓</a><a class="text-link" href="#mercados">Ver cuotas disponibles ↓</a></div>
             </section>
             <section class="panel match-timeline" id="cronologia-partido" aria-labelledby="titulo-cronologia">
                 <div class="section-heading"><h2 id="titulo-cronologia">Cronología de incidencias</h2><span id="cantidad-incidencias" class="muted"></span></div>

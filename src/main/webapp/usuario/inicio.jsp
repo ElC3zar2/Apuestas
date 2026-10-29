@@ -42,7 +42,7 @@
             <div class="section-heading"><div><p class="eyebrow">TUS SALDOS</p><h2 id="titulo-billetera">Resumen de billetera</h2></div><a class="text-link" href="${pageContext.request.contextPath}/billetera/mi-billetera.jsp">Ver billetera ↗</a></div>
             <p class="data-status muted" role="status">Cargando saldos…</p>
             <dl class="wallet-grid is-loading">
-                <div class="balance balance-primary"><dt>Saldo disponible</dt><dd data-field="saldoDisponible">—</dd><dd class="balance-note">Saldo disponible en tu billetera.</dd></div>
+                <div class="balance balance-primary"><dt>Saldo disponible</dt><dd data-field="saldoDisponible">—</dd><dd class="balance-note">Saldo consultado; no garantiza la aprobación de otra apuesta.</dd></div>
                 <div class="balance"><dt>Saldo comprometido</dt><dd data-field="saldoComprometido">—</dd><dd class="balance-note">Saldo comprometido en apuestas.</dd></div>
                 <div class="balance"><dt>Saldo virtual total</dt><dd data-field="saldoVirtualTotal">—</dd><dd class="balance-note">Total informado por tu billetera.</dd></div>
             </dl>
@@ -67,7 +67,7 @@
                     <div><dt>Cargo histórico total</dt><dd data-field="totalCargoHistorico">—</dd><dd class="analytics-help">Importe informado bajo este concepto.</dd></div>
                     <div><dt>Premio potencial pendiente</dt><dd data-field="premioPotencialPendiente">—</dd><dd class="analytics-help">Es potencial; no significa dinero ya ganado.</dd></div>
                     <div><dt>Ganancia neta potencial pendiente</dt><dd data-field="gananciaNetaPotencialPendiente">—</dd><dd class="analytics-help">Es potencial; no es saldo disponible ni resultado realizado.</dd></div>
-                    <div><dt>Premios de boletos ganadores</dt><dd data-field="totalPremiosGanadores">—</dd><dd class="analytics-help">Información oficial de boletos ganadores.</dd></div>
+                    <div><dt>Premios de boletos ganadores</dt><dd data-field="totalPremiosGanadores">—</dd><dd class="analytics-help">Agregado del servidor. Consulta los abonos en movimientos; no acredita el pago de un boleto individual.</dd></div>
                     <div><dt>Total devuelto por anulación</dt><dd data-field="totalDevueltoPorAnulacion">—</dd><dd class="analytics-help">Devoluciones, distintas de los premios ganados.</dd></div>
                     <div><dt>Resultado neto realizado</dt><dd data-field="resultadoNetoRealizado">—</dd><dd class="analytics-help">Resultado registrado por el backend.</dd></div>
                     <div><dt>Porcentaje de efectividad</dt><dd data-field="porcentajeEfectividad">—</dd></div>
@@ -84,6 +84,7 @@
                     <a href="${pageContext.request.contextPath}/eventos/listar-eventos.jsp"><span><strong>Ver eventos</strong><small>Explora el catálogo de eventos.</small></span><span aria-hidden="true">↗</span></a>
                     <a href="${pageContext.request.contextPath}/apuestas/mis-boletos.jsp"><span><strong>Mis apuestas</strong><small>Accede a tus boletos.</small></span><span aria-hidden="true">↗</span></a>
                     <a href="${pageContext.request.contextPath}/billetera/mi-billetera.jsp"><span><strong>Mi billetera</strong><small>Accede al espacio de tu billetera.</small></span><span aria-hidden="true">↗</span></a>
+                    <a href="${pageContext.request.contextPath}/billetera/movimientos.jsp"><span><strong>Movimientos</strong><small>Consulta transacciones y variaciones de saldo.</small></span><span aria-hidden="true">↗</span></a>
                 </div>
             </section>
             <section class="panel account" id="mi-cuenta" aria-labelledby="titulo-cuenta">

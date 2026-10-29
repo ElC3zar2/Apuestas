@@ -29,6 +29,7 @@
     <main id="contenido" class="dashboard bet-page" data-session-user="<%= session.getAttribute("idUsuario") instanceof Integer ? session.getAttribute("idUsuario") : "" %>">
         <a class="back-link" href="${pageContext.request.contextPath}/eventos/listar-eventos.jsp">← Volver a eventos</a>
         <div class="bet-heading"><p class="eyebrow">REVISA ANTES DE CONFIRMAR</p><h1>Tu próxima apuesta.</h1><p class="muted">Consulta los importes del servidor y confirma cuando hayas revisado el resumen.</p></div>
+        <p id="paso-apuesta" class="muted" role="status">Elegir cuota → Indicar monto → Cotizar → Revisar → Confirmar → Ver boleto</p>
         <div class="bet-layout">
             <section class="panel bet-input" aria-labelledby="titulo-monto">
                 <p class="eyebrow">01 / COTIZACIÓN</p><h2 id="titulo-monto">Elige tu monto</h2>
@@ -55,6 +56,12 @@
                 <p class="eyebrow">02 / REVISIÓN</p><h2 id="titulo-resumen">Resumen de cotización</h2>
                 <p id="cotizacion-vacia" class="empty-quote">Ingresa un monto y cotiza para ver la selección y los importes reales.</p>
                 <div id="cotizacion" hidden><div id="detalle-seleccion" class="selection-detail"></div><dl id="importes-cotizacion" class="amount-summary"></dl></div>
+                <p class="muted field-help">El monto apostado se destina a la apuesta. La comisión de servicio es adicional y el total a cargar es el importe de la operación. El premio potencial es hipotético: no es dinero acreditado.</p>
+                <div id="revision-apuesta" hidden>
+                    <h3>Revisión antes de confirmar</h3>
+                    <p class="muted field-help">Comprueba el evento, la selección, los pronósticos y los importes de la cotización anterior. Cotizar no reserva la cuota. El servidor decide la cuota y la elegibilidad definitivas.</p>
+                    <label class="review-check"><input id="revision-aceptada" type="checkbox"> He revisado la selección y el total a cargar.</label>
+                </div>
                 <p class="muted field-help">La habilitación de tu cuenta, el saldo y la disponibilidad se validan en el servidor.</p>
                 <button id="confirmar" class="button button-primary bet-button" type="button" disabled>Confirmar apuesta</button>
             </section>
@@ -62,6 +69,7 @@
         <section id="estado-apuesta" class="panel operation-status" aria-busy="false" aria-label="Estado de la operación">
             <p id="mensaje-apuesta" role="status">Esperando selección y monto.</p>
             <button id="reintentar-contexto" class="retry" type="button" hidden>Reintentar información del evento</button>
+            <a id="recuperar-operacion" class="text-link" hidden>Volver a la operación pendiente</a>
             <a id="login-apuesta" class="text-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
         </section>
         <section id="resultado-apuesta" class="panel result-panel" hidden aria-labelledby="titulo-resultado">
@@ -69,6 +77,13 @@
             <p class="muted">Código del boleto</p><p id="codigo-boleto" class="ticket-code"></p>
             <dl id="importes-resultado" class="amount-summary"></dl>
             <p id="idempotencia" class="muted"></p>
+            <nav class="result-actions" aria-label="Después de confirmar">
+                <a id="pdf-confirmado" class="text-link" hidden target="_blank" rel="noopener noreferrer">Abrir comprobante PDF del servidor ↗</a>
+                <a href="${pageContext.request.contextPath}/apuestas/mis-boletos.jsp">Mis apuestas</a>
+                <a href="${pageContext.request.contextPath}/billetera/mi-billetera.jsp">Mi billetera</a>
+                <a href="${pageContext.request.contextPath}/billetera/movimientos.jsp">Movimientos</a>
+            </nav>
+            <p class="muted field-help">El comprobante corresponde al boleto confirmado. No demuestra que haya ganado ni que exista un premio abonado.</p>
         </section>
         <noscript><p class="notice">Activa JavaScript para cotizar y confirmar. Puedes regresar a Eventos con el enlace superior.</p></noscript>
     </main>

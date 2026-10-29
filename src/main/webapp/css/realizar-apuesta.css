@@ -1,4 +1,8 @@
 .bet-page { min-height: calc(100vh - 160px); }
+.review-check { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.7; margin: 18px 0; }
+.review-check input { flex: 0 0 auto; margin-top: 5px; accent-color: var(--green); }
+.review-check input:focus-visible, .result-actions a:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+.result-actions { display: flex; flex-wrap: wrap; gap: 16px 24px; line-height: 1.8; font-size: 13px; }
 .back-link { display: inline-flex; color: var(--muted); font-size: 13px; padding: 8px 0; margin-bottom: 26px; }
 .back-link:hover { color: var(--cyan); }
 .bet-heading { margin-bottom: 32px; }
