@@ -112,6 +112,19 @@
     }
     function renderLive(event) {
         const sim = object(event.simulacion) ? event.simulacion : null;
+        const live = event.estadoEvento === "EN_VIVO";
+        const preliminary = event.estadoEvento === "PENDIENTE_RESULTADO";
+        const suspended = event.estadoEvento === "SUSPENDIDO";
+        const official = event.estadoEvento === "FINALIZADO" && event.estadoResultado === "OFICIAL";
+        document.querySelector(".live-match").dataset.eventState = event.estadoEvento || "";
+        document.querySelector(".score-numbers").hidden = !(live || preliminary || suspended);
+        document.querySelector(".match-facts").hidden = !live;
+        document.getElementById("incidencias-recientes").hidden = !live;
+        put("fase-partido", live ? "Partido en vivo" : preliminary ? "Partido finalizado; resultado pendiente de oficialización."
+            : official ? "Resultado final" : event.estadoEvento === "FINALIZADO" ? "Partido finalizado; resultado oficial no confirmado."
+            : event.estadoEvento === "CANCELADO" ? "Evento cancelado. No se presenta un resultado deportivo definitivo."
+            : suspended ? "Encuentro suspendido; último marcador verificable, sin seguimiento activo."
+            : event.estadoEvento === "PROGRAMADO" ? "Encuentro programado · " + fecha(event.fechaInicio) : "Información del evento");
         put("competicion-partido", [text(event.deporte),text(event.liga)].filter(Boolean).join(" / ") || "Competición no informada");
         put("titulo-partido", text(event.nombre) || "Seguimiento deportivo");
         put("estado-partido", "Estado oficial: " + label(event.estadoEvento));
@@ -130,19 +143,22 @@
         }) : [null,null];
         put("marcador-a", !conflict && scores[0] !== null ? String(scores[0]) : "—");
         put("marcador-b", !conflict && scores[1] !== null ? String(scores[1]) : "—");
-        put("nota-marcador", conflict ? "Las fuentes del marcador no coinciden. Marcador no verificable."
+        put("nota-marcador", !(live || preliminary || suspended) ? (official ? "Resultado oficial informado: " + (text(event.resultadoTexto) || "Texto no disponible") : "")
+            : conflict ? "Las fuentes del marcador no coinciden. Marcador no verificable."
             : !pair ? "No se puede verificar la correspondencia de los participantes y el marcador."
-            : scores.some(s=>s===null) ? "Marcador parcial o no informado; no se supone un empate." : "Marcador informado por el servidor; no implica un resultado definitivo.");
+            : scores.some(s=>s===null) ? "Marcador pendiente de confirmación" : preliminary ? "Marcador PRELIMINAR; pendiente de oficialización."
+            : suspended ? "Último marcador informado antes de la suspensión; no es definitivo." : "Marcador informado por el servidor; no implica un resultado definitivo.");
         put("tiempo-partido", duration(sim && sim.segundosTranscurridos));
         put("duracion-partido", sim && safeCount(sim.duracionSimulacionSegundos) ? duration(sim.duracionSimulacionSegundos) : "No disponible");
         put("configuracion-partido", sim && typeof sim.esSimulado === "boolean" ? (sim.esSimulado ? "Simulación manual configurada" : "Simulación no configurada") : "No informada");
         const timeNotice = document.getElementById("tiempo-cumplido");
-        timeNotice.hidden = !sim || sim.tiempoVisualCumplido !== true;
+        timeNotice.hidden = !live || !sim || sim.tiempoVisualCumplido !== true;
         put("tiempo-cumplido", "La duración visual de referencia se cumplió. El estado del partido solo cambia cuando lo informa el backend.");
         const dates = [];
         if (sim && utc(sim.fechaInicioRealUtc)) dates.push("Inicio registrado: " + utc(sim.fechaInicioRealUtc));
         if (sim && utc(sim.fechaFinRealUtc)) dates.push("Fin registrado: " + utc(sim.fechaFinRealUtc));
         put("fechas-simulacion", dates.join(" · "));
+        document.getElementById("fechas-simulacion").hidden = !live;
         const incidents = incidentData(event);
         let first = "Primera anotación no informada";
         if (sim && (sim.idPrimeraAnotacion !== null && sim.idPrimeraAnotacion !== undefined)) {
@@ -159,7 +175,7 @@
         else if (event.estadoEvento === "FINALIZADO") result.push("Partido finalizado según el servidor.");
         else if (event.estadoEvento === "PENDIENTE_RESULTADO") result.push("Partido con resultado pendiente.");
         if (event.resultadoPendiente === true) result.push("Resultado deportivo pendiente.");
-        if (text(event.resultadoTexto)) result.push("Resultado informado: " + event.resultadoTexto);
+        if (text(event.resultadoTexto)) result.push((official ? "Resultado final OFICIAL: " : "Texto del resultado consultado: ") + event.resultadoTexto);
         else if (event.resultadoPendiente !== true) result.push("Resultado oficial no informado.");
         if (text(event.estadoResultado)) result.push("Estado del resultado: " + label(event.estadoResultado));
         put("resultado-partido", result.join(" "));
@@ -168,6 +184,16 @@
             : incidents.duplicate ? "Se unificaron incidencias repetidas idénticas. Se conservan las anuladas."
             : !incidents.rows.length ? "No se recibieron incidencias." : "Más recientes primero, por secuencia oficial. Se conservan las anulaciones.");
         const types = {ANOTACION:"Anotación",FALTA:"Falta",TARJETA_AMARILLA:"Tarjeta amarilla",TARJETA_ROJA:"Tarjeta roja",OTRA:"Otra incidencia"};
+        put("nota-recientes", !incidents.valid ? "Información de incidencias no verificable." : !incidents.rows.length ? "Sin incidencias registradas."
+            : incidents.duplicate ? "Últimas incidencias; duplicados idénticos unificados." : "Más recientes primero, por secuencia oficial.");
+        const recent = incidents.valid ? incidents.rows.slice(0,3).map(i=>{
+            const li=node("li",i.esAnulada ? "is-annulled" : "");
+            li.setAttribute("data-live-key","reciente-"+i.idIncidencia);
+            li.textContent=duration(i.segundoSimulacion)+" · "+(Object.prototype.hasOwnProperty.call(types,i.tipoIncidencia)?types[i.tipoIncidencia]:label(i.tipoIncidencia))
+                +(i.idParticipante===null?"":" · "+participantName(event,i.idParticipante))+(i.esAnulada?" · ANULADA":"");
+            return li;
+        }) : [];
+        reconcile(document.getElementById("lista-recientes"),recent);
         const items = incidents.rows.map(i=>{
             const li = node("li", "incident" + (i.esAnulada ? " is-annulled" : ""));
             li.setAttribute("data-live-key", "incidencia-" + i.idIncidencia);
@@ -368,7 +394,7 @@
         clearPoll();
         if (disposed || !visible() || loading || !lastEvent || stopAfterError) return;
         let delay = null;
-        if (lastEvent.estadoEvento === "EN_VIVO") delay = 10000;
+        if (lastEvent.estadoEvento === "EN_VIVO") delay = 3000;
         else if (["PROGRAMADO","PENDIENTE_RESULTADO"].includes(lastEvent.estadoEvento)
                 || (lastEvent.estadoEvento === "FINALIZADO" && lastEvent.resultadoPendiente === true)) delay = 60000;
         if (delay !== null) pollTimer = window.setTimeout(()=>{pollTimer = null; cargar();},Math.max(delay, transientFailures ? Math.min(120000,10000 * 2 ** Math.min(transientFailures,4)) : 0));
@@ -382,7 +408,7 @@
         refresh.disabled = true;
         follow.setAttribute("aria-busy","true");
         if (!lastEvent) estado("Cargando evento…", true);
-        else put("estado-actualizacion", "Consultando datos oficiales; se conservan los últimos datos recibidos mientras se actualiza.");
+        else if (transientFailures || lastEvent.estadoEvento !== "EN_VIVO") put("estado-actualizacion", "Consultando datos oficiales; se conservan los últimos datos recibidos mientras se actualiza.");
         try {
             const event = await consultar(controller);
             if (version !== generation || disposed || !visible()) return;
@@ -393,12 +419,16 @@
             content.hidden = false;
             follow.hidden = false; follow.classList.remove("is-stale");
             document.getElementById("login-actualizacion").hidden = true;
-            put("estado-actualizacion", event.estadoEvento === "EN_VIVO" ? "Datos oficiales recibidos. Seguimiento aproximadamente cada 10 segundos mientras el partido esté en vivo."
+            refresh.hidden = event.estadoEvento === "EN_VIVO";
+            refresh.textContent = "Actualizar partido";
+            put("estado-actualizacion", event.estadoEvento === "EN_VIVO" ? "Actualización automática aproximadamente cada 3 segundos."
+                : ["PROGRAMADO","PENDIENTE_RESULTADO"].includes(event.estadoEvento) || event.estadoEvento === "FINALIZADO" && event.resultadoPendiente === true ? "Datos oficiales recibidos. Consulta automática aproximadamente cada 60 segundos."
                 : event.estadoEvento === "FINALIZADO" && event.resultadoPendiente === false ? "Datos oficiales recibidos. Seguimiento automático detenido: partido finalizado."
                 : "Datos oficiales recibidos. Puedes actualizar el partido manualmente.");
         } catch (error) {
             if (version !== generation || disposed || !visible()) return;
             transientFailures += 1;
+            refresh.hidden = false; refresh.textContent = "Reintentar actualización";
             if (error && (error.httpStatus === 401 || error.sessionExpired === true)) {
                 ownSessionExpired = true;
                 ownClear();
@@ -412,14 +442,20 @@
             if (!lastEvent) estado(error && error.controlled ? error.message : "No fue posible cargar el evento.", false, true, needsLogin);
             else {
                 follow.hidden = false; follow.classList.add("is-stale");
-                put("estado-actualizacion", "No se pudo actualizar el partido. Se muestran los últimos datos recibidos; no se consideran actuales."
+                // La lectura anterior conserva su valor informativo, pero no acredita disponibilidad actual.
+                document.querySelectorAll("#mercados a.selection-action").forEach(action=>{
+                    action.removeAttribute("href");action.setAttribute("aria-disabled","true");
+                    action.setAttribute("role","button");action.setAttribute("tabindex","-1");
+                    if(action.textContent!=="Actualiza para verificar disponibilidad")action.textContent="Actualiza para verificar disponibilidad";
+                });
+                put("estado-actualizacion", "No se pudo actualizar. Se muestran los últimos datos recibidos; pueden estar desactualizados."
                     + (needsLogin ? " Inicia sesión para continuar." : " Puedes reintentar manualmente."));
                 document.getElementById("login-actualizacion").hidden = !needsLogin;
             }
         } finally {
             if (activeController === controller) {
                 loading = false; activeController = null; refresh.disabled = false; follow.setAttribute("aria-busy","false");
-                if (refreshPending && visible() && !disposed) { refreshPending = false; cargar(); }
+                if (refreshPending && visible() && !disposed && !stopAfterError) { refreshPending = false; cargar(); }
                 else schedule();
             }
         }
@@ -430,7 +466,7 @@
             generation += 1; refreshPending = true;
             if (activeController) activeController.abort();
             if (lastEvent) { follow.classList.add("is-stale"); put("estado-actualizacion","Seguimiento pausado con la pestaña oculta. Se conservan los últimos datos recibidos."); }
-        } else if (!disposed) {
+        } else if (!disposed && !stopAfterError) {
             if (loading) refreshPending = true;
             else { refreshPending = false; cargar(); }
         }
@@ -571,7 +607,7 @@
     window.addEventListener("pageshow",event=>{
         if (event.persisted && disposed && idEvento !== null) {
             disposed = false; document.addEventListener("visibilitychange",visibilityChanged);
-            if (loading) refreshPending = true; else cargar();
+            if (!stopAfterError) { if (loading) refreshPending = true; else cargar(); }
         }
     });
     if (idEvento === null) estado("El identificador del evento falta o no es un entero positivo válido. Vuelve al listado para elegir un evento.");

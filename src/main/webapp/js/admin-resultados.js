@@ -94,13 +94,47 @@
         return r;
     }
     const pair = () => {for(const m of event?.mercados||[]){const s=m.selecciones.find(s=>s.idSeleccion===selectionId);if(s)return {m,s};}return null;};
+    function classify(m){
+        const activeRows=m.selecciones.filter(s=>s.seleccionActiva),issues=[],forecast=new Map();
+        const pending=result&&['PENDIENTE','CORREGIDO'].includes(result.estadoResultado)&&event.estadoEvento==='PENDIENTE_RESULTADO';
+        const score=Boolean(result&&nonnegative(result.marcadorFinalA)&&nonnegative(result.marcadorFinalB));
+        if(!['CERRADO','LIQUIDADO','ANULADO'].includes(m.estadoMercado))return {kind:'ESTADO NO APTO',issues:[m.mercado+': debe estar CERRADO antes de oficializar (actual: '+m.estadoMercado+').'],forecast};
+        if(m.tipoMercado!=='CONVENCIONAL'&&!score)issues.push(m.mercado+': el marcador estructurado es insuficiente para la modalidad especializada.');
+        if(m.estadoMercado==='ANULADO')return {kind:'ANULADO · resolución del servidor',issues,forecast};
+        if(m.tipoMercado!=='CONVENCIONAL')return {kind:m.tipoMercado+' · reglas especializadas de SQL',issues,forecast};
+        const people=event.participantes,a=people.find(p=>p.ordenParticipante===1),b=people.find(p=>p.ordenParticipante===2);
+        const associations=people.length===2&&a&&b&&a.idParticipante!==b.idParticipante&&people.filter(p=>p.esLocal===true).length===1&&people.filter(p=>p.esLocal===false).length===1;
+        const structure=associations&&activeRows.length===3&&[a.idParticipante,null,b.idParticipante].every(person=>activeRows.filter(s=>s.idParticipante===person).length===1);
+        if(!structure||!score||!pending){
+            if(pending&&activeRows.some(s=>s.resultadoSeleccion===null))issues.push(m.mercado+': requiere resolución manual de sus selecciones pendientes.'+(!score?' El marcador estructurado es insuficiente.':!associations?' Las asociaciones LOCAL/VISITANTE y órdenes 1/2 no son inequívocas.':''));
+            return {kind:structure&&!pending?'CONVENCIONAL · resoluciones consultadas':'CONVENCIONAL · revisión manual',issues,forecast};
+        }
+        if(event.simulacion.esSimulado&&nonnegative(a.marcadorActual)&&nonnegative(b.marcadorActual)&&
+            (a.marcadorActual!==result.marcadorFinalA||b.marcadorActual!==result.marcadorFinalB)){
+            return {kind:'1X2 · datos contradictorios',issues:[m.mercado+': el marcador de los participantes difiere del resultado preliminar. Actualiza y revisa antes de oficializar.'],forecast};
+        }
+        // Solo previsión de presentación. A/B siguen el orden oficial, no LOCAL/VISITANTE ni etiquetas.
+        for(const s of activeRows){
+            const wins=result.marcadorFinalA>result.marcadorFinalB?s.idParticipante===a.idParticipante:result.marcadorFinalB>result.marcadorFinalA?s.idParticipante===b.idParticipante:s.idParticipante===null;
+            const expected=wins?'GANADA':'PERDIDA';forecast.set(s.idSeleccion,expected);
+            if(s.resultadoSeleccion!==null&&s.resultadoSeleccion!==expected)issues.push(m.mercado+' · '+s.seleccion+': conflicto entre resolución registrada '+s.resultadoSeleccion+' y previsión '+expected+'. Requiere revisión; no se sobrescribe.');
+        }
+        return {kind:issues.length?'1X2 · CONFLICTO':'1X2 automático compatible · sujeto a SQL',issues,forecast};
+    }
     function officialProblems(){
         const issues=[];
-        for(const m of event?.mercados||[]){
-            if(!['CERRADO','LIQUIDADO','ANULADO'].includes(m.estadoMercado))issues.push(m.mercado+': mercado todavía '+m.estadoMercado);
-            if(m.tipoMercado==='CONVENCIONAL'&&m.estadoMercado!=='ANULADO'&&m.selecciones.some(s=>s.seleccionActiva&&s.resultadoSeleccion===null))issues.push(m.mercado+': faltan resoluciones convencionales activas');
-        }
+        for(const m of event?.mercados||[])issues.push(...classify(m).issues);
         return issues;
+    }
+    function renderSportSummary(){
+        const box=$('sports-review');box.replaceChildren();
+        if(!fresh||!event){box.append(node('p','Lectura oficial pendiente o desactualizada. No hay previsión vigente.'));return;}
+        const people=[...event.participantes].sort((a,b)=>a.ordenParticipante-b.ordenParticipante);
+        box.append(node('h3',event.evento));
+        values(box,people.map(p=>[(p.esLocal===true?'LOCAL':p.esLocal===false?'VISITANTE':'Participante')+' · orden '+p.ordenParticipante,p.participante]));
+        box.append(node('p',result&&nonnegative(result.marcadorFinalA)&&nonnegative(result.marcadorFinalB)?'Marcador estructurado A/B (órdenes 1 y 2): '+result.marcadorFinalA+' - '+result.marcadorFinalB:'El marcador estructurado es insuficiente.'));
+        if(result&&['OFICIAL','ANULADO'].includes(result.estadoResultado))box.append(node('p','Las resoluciones oficiales fueron consultadas. Resultado '+result.estadoResultado+' · Evento '+event.estadoEvento+'.'));
+        else box.append(node('p','Previsión basada en el marcador estructurado. El servidor confirmará las resoluciones al oficializar. PermiteMarcadorFinal, UnidadMarcador y la pertenencia de resoluciones anteriores al resultado no se exponen íntegramente en estos GET: la elegibilidad definitiva corresponde a SQL.','muted'));
     }
     function eligible(route){
         if(!event)return false;
@@ -146,6 +180,7 @@
         $('acknowledge-result').disabled=!evidence()||!allowedRole(uncertain?.route||active);
         $('operation-note').textContent=!writable?'Modo consulta: este rol no puede emitir POST.':!fresh?'Consulta vigente necesaria; los formularios permanecen protegidos.':uncertain?'Todas las nuevas escrituras están bloqueadas por el expediente incierto.':!eligible(active)?'La operación no está disponible en este contexto. '+(active==='oficializar'?officialProblems().join(' · '):active==='registrar'&&event?.simulacion.esSimulado&&!result?'La simulación no tiene texto de resultado registrado por el backend; requiere revisión técnica.':'Revisa estado, modalidad y selección activa.'):active==='registrar'&&!registerArmed?'El registro anterior está confirmado. Para una modificación nueva, edita el formulario y revisa nuevamente la confirmación; una consulta GET no repite ni prepara otro envío.':'El servidor valida las restricciones restantes, incluidas liquidaciones previas.';
         showUncertain();
+        renderSportSummary();
         renderFlow();
     }
     function values(parent,entries){const dl=node('dl',undefined,'operation-values');for(const [key,value]of entries){dl.append(node('dt',key),node('dd',display(value)));}parent.append(dl);}
@@ -181,7 +216,7 @@
         let next='Selecciona un evento y consulta su resultado oficial.';
         if(event&&!fresh)next='La lectura anterior es histórica. Actualiza el evento antes de decidir otra operación.';
         else if(fresh&&event){
-            const pending=[];for(const m of event.mercados)if(m.tipoMercado==='CONVENCIONAL'&&m.estadoMercado!=='ANULADO')for(const s of m.selecciones)if(s.seleccionActiva&&s.resultadoSeleccion===null)pending.push(m.mercado+' · '+s.seleccion);
+            const pending=[];for(const m of event.mercados)if(m.tipoMercado==='CONVENCIONAL'&&m.estadoMercado!=='ANULADO'){const c=classify(m);for(const s of m.selecciones)if(s.seleccionActiva&&s.resultadoSeleccion===null&&!c.forecast.has(s.idSeleccion))pending.push(m.mercado+' · '+s.seleccion);}
             const issues=officialProblems();
             if(event.estadoEvento==='EN_VIVO')next='El evento sigue EN_VIVO. Su cierre se gestiona desde Control en vivo; este módulo no cambia ese estado.';
             else if(!result)next=event.simulacion.esSimulado?'No hay resultado preliminar de la simulación: requiere revisión técnica; no se registra uno automáticamente.':'Consulta y registra expresamente el resultado preliminar cuando el evento esté PENDIENTE_RESULTADO.';
@@ -190,7 +225,6 @@
             else if(['PENDIENTE','CORREGIDO'].includes(result.estadoResultado))next=pending.length?'Revisa y resuelve individualmente las '+pending.length+' selecciones convencionales activas pendientes.':issues.length?'Revisa los requisitos deportivos antes de oficializar.':'Puedes revisar y confirmar la oficialización. La decisión definitiva pertenece al backend.';
             if(['PENDIENTE','CORREGIDO'].includes(result?.estadoResultado)){
                 for(const issue of issues)box.append(node('li',issue));
-                for(const name of pending)box.append(node('li','Resolución pendiente: '+name));
                 if(!issues.length)box.append(node('li','Requisitos visibles de oficialización completos; no garantizan aceptación SQL.'));
                 if(event.mercados.some(m=>m.tipoMercado!=='CONVENCIONAL'))box.append(node('li','MARCADOR_FINAL y PRIMERA_ANOTACION conservan la resolución especializada de SQL.'));
             }
@@ -205,13 +239,14 @@
         else box.append(node('p','El evento existe y no tiene resultado registrado.'));
         if(event.simulacion.esSimulado)box.append(node('p','SQL conserva el marcador y puede recalcular el texto. Si ya existe resultado, se utiliza su texto oficial sin construir un marcador en el navegador. Una diferencia con el texto recalculado puede causar rechazo del contrato y requerir conciliación.','integration-note'));
         if(correctionInvalidated)box.append(node('p','Corrección confirmada: las resoluciones de la lectura anterior están invalidadas. Actualiza para consultar nuevas resoluciones oficiales.','warning'));
-        for(const m of event.mercados){box.append(node('h3',m.mercado+' · '+m.tipoMercado+' · '+m.estadoMercado));
+        for(const m of event.mercados){const classification=classify(m);box.append(node('h3',m.mercado+' · '+m.tipoMercado+' · '+m.estadoMercado),node('p',classification.kind,'result-classification'));
             const rows=m.selecciones.map(s=>{
                 let action=m.tipoMercado==='CONVENCIONAL'?'Sin acción disponible':'Resolución automática por SQL';
-                if(m.tipoMercado==='CONVENCIONAL'&&s.seleccionActiva&&writable){const b=node('button',s.resultadoSeleccion===null?'Resolver pendiente':'Revisar resolución');b.type='button';b.dataset.resultPick=String(s.idSeleccion);b.disabled=!fresh||writing||Boolean(uncertain);b.addEventListener('click',()=>{if(!fresh||writing||reading||uncertain||sessionBlocked||!pickSelection(String(s.idSeleccion)))return;active='selecciones/resolver';sync();$('result-selection').focus();});action=b;}
-                return [s.idSeleccion,s.seleccion,s.seleccionActiva?'Activa':'Inactiva',correctionInvalidated?'Lectura anterior invalidada':s.resultadoSeleccion,correctionInvalidated?'Actualizar':dateText(s.fechaResolucion),action];
-            });table(box,'Selecciones de '+m.mercado,['ID','Selección','Estado','Resolución oficial','Fecha de resolución','Acción'],rows);
+                if(m.tipoMercado==='CONVENCIONAL'&&s.seleccionActiva&&writable){const b=node('button',s.resultadoSeleccion!==null?'Revisar resolución':classification.forecast.has(s.idSeleccion)?'Revisión manual opcional':'Resolver pendiente');b.type='button';b.dataset.resultPick=String(s.idSeleccion);b.disabled=!fresh||writing||Boolean(uncertain);b.addEventListener('click',()=>{if(!fresh||writing||reading||uncertain||sessionBlocked||!pickSelection(String(s.idSeleccion)))return;active='selecciones/resolver';sync();$('result-selection').focus();});action=b;}
+                return [s.idSeleccion,s.seleccion,s.seleccionActiva?'Activa':'Inactiva',correctionInvalidated?'Lectura anterior invalidada':s.resultadoSeleccion,classification.forecast.has(s.idSeleccion)?classification.forecast.get(s.idSeleccion)+' prevista':'Sin previsión 1X2',correctionInvalidated?'Actualizar':dateText(s.fechaResolucion),action];
+            });table(box,'Selecciones de '+m.mercado,['ID','Selección','Estado','Resolución oficial','Previsión, no almacenada','Fecha de resolución','Acción'],rows);
         }
+        renderSportSummary();
         $('result-context').textContent='Evento #'+event.idEvento+' · Deporte #'+event.idDeporte+' · Liga #'+event.idLiga+' · '+(result?'Resultado #'+result.idResultado+' · '+result.estadoResultado:'Sin resultado registrado');
         $('management-selection').textContent=$('result-context').textContent;
         for(const [link,page]of [['selected-event','eventos'],['selected-live','en-vivo'],['selected-markets','mercados']]){$(link).hidden=!writable;$(link).href=base+'/administrador/'+page+'?idEvento='+event.idEvento;}
@@ -233,6 +268,7 @@
             const d=await request('/administrador/eventos/detalle?idEvento='+eventId);if(leaving||version!==revision)return;
             const e=validateDetail(d.evento,next),data=await request(prefix+'por-evento?idEvento='+next);if(leaving||version!==revision)return;
             const r=validateResult(data,e);if(expectedResult!==null&&r?.idResultado!==expectedResult)fail('La lectura posterior no corresponde al resultado confirmado.');
+            if(expected?.state==='OFICIAL'&&e.mercados.some(m=>m.tipoMercado==='CONVENCIONAL'&&m.selecciones.some(s=>s.seleccionActiva&&s.resultadoSeleccion===null)))fail('POST confirmado, pero faltan resoluciones convencionales en la lectura posterior. Conserva el DTO y revisa; no repitas la oficialización.');
             if(expected&&(expected.state&&r?.estadoResultado!==expected.state||expected.eventState&&e.estadoEvento!==expected.eventState
                 ||expected.selection&&!e.mercados.some(m=>m.selecciones.some(s=>s.idSeleccion===expected.selection.id&&s.resultadoSeleccion===expected.selection.value))))fail('El POST está confirmado, pero el detalle no acredita todavía sus estados o resolución. Conserva el DTO y actualiza mediante GET; no repitas el POST.');
             event=e;result=r;fresh=true;correctionInvalidated=false;
@@ -265,9 +301,16 @@
         if(r.estadoResultado!==expected[0]||r.estadoEvento!==expected[1]||(route==='corregir'?r.requiereNuevaResolucion!==true:typeof r.sinCambios!=='boolean'))fail();
     }
     async function submit(route){
+        if(route==='oficializar'){
+            if(!ready(route))return;
+            const original=eventId,originalResult=result.idResultado;
+            await load(original,originalResult);
+            if(eventId!==original||!ready(route))return;
+        }
         let p;try{p=payloadFor(route);}catch(error){report(error);return;}
         const impact=route==='oficializar'?'Oficializar aplica reglas deportivas y resoluciones automáticas, propaga resoluciones y finaliza el evento. No paga premios ni liquida boletos.':route==='corregir'?'Corregir elimina resoluciones anteriores, devuelve el evento a PENDIENTE_RESULTADO y exige resolver nuevamente. SQL rechaza si existen boletos liquidados.':route==='anular'?'ANULAR cancela el evento, anula resoluciones y mercados y cierra cuotas; SQL rechaza si existen boletos liquidados. No confirma pagos.':'El servidor valida cada dato y sus condiciones.';
-        if(!window.confirm(specs[route].name+' · Evento '+event.idEvento+' ('+event.evento+') · Resultado '+display(result?.idResultado)+' · '+JSON.stringify(p)+'\n'+impact+' ¿Confirmar?'))return;
+        const review=route==='oficializar'?'\nEstado: '+event.estadoEvento+' · Resultado: '+result.estadoResultado+' · Marcador A/B: '+(nonnegative(result.marcadorFinalA)?result.marcadorFinalA+' - '+result.marcadorFinalB:'insuficiente')+'\n'+event.mercados.map(m=>{const c=classify(m);return m.mercado+': '+c.kind+'\n'+m.selecciones.filter(s=>s.seleccionActiva).map(s=>s.seleccion+': '+(s.resultadoSeleccion?'registrada '+s.resultadoSeleccion:c.forecast.has(s.idSeleccion)?c.forecast.get(s.idSeleccion)+' prevista':'validación especializada SQL')).join('; ');}).join('\n'):'';
+        if(!window.confirm(specs[route].name+' · Evento '+event.idEvento+' ('+event.evento+') · Resultado '+display(result?.idResultado)+' · '+JSON.stringify(p)+review+'\n'+impact+' ¿Confirmar?'))return;
         if(!ready(route))return;
         const operation={route,path:prefix+route,payload:Object.freeze({...p}),event:event.idEvento,result:result?.idResultado||null,selection:route==='selecciones/resolver'?selectionId:null,sport:event.idDeporte,league:event.idLiga,at:new Date().toLocaleString()};
         writing=true;fresh=false;++revision;$('reading-status').textContent='Lectura suspendida durante la escritura; datos anteriores históricos.';sync();status('Enviando una única solicitud desde JavaScript. Espera la respuesta.');let sent=false;

@@ -218,8 +218,15 @@ progress::-moz-progress-bar { background: var(--accent); }
 }
 
 /* MEJORA-03: distribución exclusiva del asistente 1X2. */
+.preparation-steps { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 12px 28px; padding-left: 24px; }
+.preparation-steps li { padding: 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+#wizard-next-action, #one-preparation { padding: 12px; background: var(--surface); border-radius: 8px; }
 #market-one .one-steps { display: flex; flex-wrap: wrap; gap: 24px; padding-left: 24px; }
 #market-one .one-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; margin: 20px 0; }
 #market-one label { display: grid; gap: 8px; margin: 12px 0; overflow-wrap: anywhere; }
 #market-one input, #market-one textarea, #market-one select { width: 100%; min-width: 0; }
 @media (max-width: 760px) { #market-one .one-grid { grid-template-columns: minmax(0,1fr); } }
+
+/* Corrección 02: revisión deportiva y elegibilidad, sin alterar asistentes existentes. */
+#sports-review, .settlement-eligibility { padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow-wrap: anywhere; }
+.result-classification { color: var(--muted); margin-bottom: 12px; }

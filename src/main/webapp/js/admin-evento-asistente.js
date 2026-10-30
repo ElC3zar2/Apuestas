@@ -11,6 +11,7 @@ window.BetZoneEventWizard = function (options) {
     const idValid = id => /^[0-9]{1,10}$/.test(String(id)) && Number(id) > 0 && Number(id) <= 2147483647;
     let participantPage=1,participantTotal=0,leaving=false,catalogRevision=0,suggestedName='';
     let recoveryPage=1,recoveryTotal=0,configurationConflict=false;
+    let officialDetail=null,contextConflict=false;
     const participantTypes=new Set();
     const states=['BORRADOR','PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO','FINALIZADO','CANCELADO'];
     function stamp(value,precision=9){
@@ -43,7 +44,7 @@ window.BetZoneEventWizard = function (options) {
         try {if(snapshot)sessionStorage.setItem(key,JSON.stringify({version:1,snapshot,eventId,createUncertain}));else sessionStorage.removeItem(key);}
         catch {if(required)throw new Error('No se pudo guardar el progreso en esta pestaña; no se envió la operación.');message('El progreso permanece en esta pantalla, pero no pudo guardarse para una recarga. Conserva la referencia del evento.',true);}
     }
-    function complete() {return Boolean(eventId)&&!needsCheck&&!configurationConflict&&officialParticipantCount===2&&snapshot?.participants.length===2&&snapshot.participants.every(p=>p.status==='confirmed');}
+    function complete() {return Boolean(eventId)&&!contextConflict&&!needsCheck&&!configurationConflict&&officialParticipantCount===2&&snapshot?.participants.length===2&&snapshot.participants.every(p=>p.status==='confirmed');}
     function sync(disabled=false) {
         blocked=disabled;
         root.querySelectorAll('button,input,select').forEach(el=>{el.disabled=disabled||!canWrite;});
@@ -69,9 +70,12 @@ window.BetZoneEventWizard = function (options) {
         $('wizard-resume').disabled=disabled||!canWrite||!eventId||needsCheck||configurationConflict||snapshot?.estadoEvento!=='BORRADOR'||!snapshot?.participants.some(p=>p.status==='pending')||snapshot?.participants.some(p=>p.status==='conflict');
         $('wizard-recovery-prev').disabled=disabled||!canWrite||recoveryPage<=1;
         $('wizard-recovery-next').disabled=disabled||!canWrite||recoveryPage*100>=recoveryTotal;
-        $('wizard-new').disabled=disabled||!canWrite||!complete();
+        $('wizard-new').disabled=disabled||!canWrite||!complete()||snapshot?.programming?.state==='uncertain';
         $('wizard-markets').hidden=!complete();
-        if(complete())$('wizard-markets').href=base+'/administrador/mercados?idEvento='+encodeURIComponent(eventId);
+        $('wizard-program').disabled=disabled||!canWrite||!complete()||snapshot?.estadoEvento!=='BORRADOR'||Boolean(snapshot?.programming);
+        if(complete())$('wizard-markets').href=base+'/administrador/mercados?idEvento='+encodeURIComponent(eventId)+'#market-one';
+        if(contextConflict)root.querySelectorAll('button,input,select').forEach(el=>{el.disabled=true;});
+        if(snapshot&&step===5)preparation();
         root.setAttribute('aria-busy',String(disabled));
     }
     function showStep(next,focus=true) {
@@ -83,7 +87,7 @@ window.BetZoneEventWizard = function (options) {
         if(focus)$('wizard-title').focus();
     }
     async function task(work) {
-        if(blocked||!canWrite)return;
+        if(blocked||!canWrite||contextConflict)return;
         return run(async()=>{try{await work();}catch(error){failure(error);}finally{sync(true);}});
     }
     function validateStep(number) {
@@ -230,11 +234,37 @@ window.BetZoneEventWizard = function (options) {
         await eligibleParticipants(draft);
     }
     function publishEvent(){onSport(snapshot.sportId,snapshot.sportName);onEvent(eventId);}
+    function preparation(){
+        const e=!needsCheck?officialDetail:null,list=$('wizard-preparation');list.replaceChildren();
+        const add=(label,state)=>list.append(node('li',label+' · '+state));
+        const pending=blocked?'EN PROCESO':'PENDIENTE';
+        add('Evento creado',e?'CONFIRMADO':'REQUIERE REVISIÓN');
+        add('Participantes asociados',complete()?'CONFIRMADO':needsCheck||configurationConflict?'REQUIERE REVISIÓN':pending);
+        add('Evento programado',!e?'REQUIERE REVISIÓN':e.estadoEvento==='PROGRAMADO'?'CONFIRMADO':e.estadoEvento==='BORRADOR'?pending:'NO APLICA');
+        const people=e?.participantes||[],local=people.find(p=>p.esLocal===true),visitor=people.find(p=>p.esLocal===false);
+        const compatible=people.length===2&&people.every(p=>p.tipoParticipante==='EQUIPO')&&people.some(p=>p.ordenParticipante===1)&&people.some(p=>p.ordenParticipante===2)&&local&&visitor&&local.idParticipante!==visitor.idParticipante;
+        const candidates=compatible&&Array.isArray(e.mercados)?e.mercados.filter(m=>m.tipoMercado==='CONVENCIONAL'&&Array.isArray(m.selecciones)&&
+            (m.mercado==='Resultado final — 1X2'||m.selecciones.length===3&&[local.idParticipante,null,visitor.idParticipante].every(id=>m.selecciones.filter(s=>s.idParticipante===id).length===1))):[];
+        const m=candidates.length===1?candidates[0]:null;
+        const selections=m?.selecciones.length===3&&[local?.idParticipante,null,visitor?.idParticipante].every(id=>m.selecciones.filter(s=>s.idParticipante===id&&s.seleccionActiva===true&&idValid(s.idSeleccion)).length===1);
+        const quotes=selections&&new Set(m.selecciones.map(s=>s.idCuota)).size===3&&m.selecciones.every(s=>idValid(s.idCuota)&&s.cuotaActiva===true&&s.fechaFinCuota===null&&Number(s.valor)>1&&Number(s.valor)<=999999.9999);
+        const unknown=!e||candidates.length>1?'REQUIERE REVISIÓN':!compatible?'NO APLICA':'PENDIENTE';
+        add('Mercado 1X2 configurado',selections?'CONFIRMADO':unknown);
+        add('Cuotas registradas',quotes?'CONFIRMADO':unknown);
+        add('Mercado abierto',quotes&&m.estadoMercado==='ABIERTO'?'CONFIRMADO':unknown);
+        $('wizard-next-action').textContent=!e?'Verificación oficial pendiente. Se conserva el progreso; consulta la configuración antes de continuar.':
+            !compatible?'El asistente 1X2 requiere dos EQUIPOS con LOCAL y VISITANTE inequívocos. Revisa la administración avanzada.':
+            e.estadoEvento==='BORRADOR'?(snapshot.programming?'La programación tiene una respuesta conservada o incierta. No se repetirá; consulta el detalle y solicita revisión si continúa BORRADOR.':'Programa el evento para permitir la apertura de mercados.'):
+            e.estadoEvento!=='PROGRAMADO'?'El evento está '+e.estadoEvento+'; no corresponde una nueva programación.':
+            candidates.length>1?'Hay mercados equivalentes ambiguos. Requiere revisión manual.':!selections?'Configura el mercado 1X2.':!quotes?'Registra y revisa las tres cuotas.':m.estadoMercado==='ABIERTO'?'Evento preparado para apuestas.':m.estadoMercado==='BORRADOR'?'Abre el mercado cuando el evento esté programado.':'El mercado está '+m.estadoMercado+'; revisa la administración manual.';
+        if(contextConflict&&eventId){const back=node('a','Volver al evento del proceso conservado');back.href=base+'/administrador/eventos?idEvento='+encodeURIComponent(eventId)+'#event-wizard';$('wizard-next-action').append(document.createTextNode(' '),back);}
+    }
     function outcome() {
-        $('wizard-created-reference').textContent=eventId?'Evento confirmado: '+snapshot.payload.nombre+' · referencia #'+eventId+' · Liga: '+(snapshot.leagueName||'Consulta el detalle')+' · Estado: '+(needsCheck?'pendiente de reconsulta':snapshot.estadoEvento||'pendiente de reconsulta')+' · Inicio: '+snapshot.payload.fechaInicio+' · '+(snapshot.payload.esSimulado==='true'?'Simulado':'No simulado'):'La creación todavía no tiene un ID confirmado.';
-        $('wizard-outcome-title').textContent=complete()?'Evento configurado':'Configuración pendiente o parcial';
+        $('wizard-created-reference').textContent=eventId?'Evento confirmado: '+snapshot.payload.nombre+' · referencia #'+eventId+' · Deporte: '+(snapshot.sportName||'Consulta el detalle')+' · Liga: '+(snapshot.leagueName||'Consulta el detalle')+' · Estado: '+(needsCheck?'pendiente de reconsulta':snapshot.estadoEvento||'pendiente de reconsulta')+' · Inicio: '+snapshot.payload.fechaInicio+' · '+(snapshot.payload.esSimulado==='true'?'Simulado':'No simulado'):'La creación todavía no tiene un ID confirmado.';
+        $('wizard-outcome-title').textContent=needsCheck?'Verificación oficial pendiente':complete()?'Preparación para apuestas':'Configuración pendiente o parcial';
+        preparation();
         const list=node('ul');for(const p of snapshot?.participants||[]){
-            const row=node('li',(p.name||'Referencia manual #'+p.id)+' · '+({pending:'asociación pendiente',confirmed:'asociación confirmada',uncertain:'respuesta pendiente de comprobación',conflict:'la configuración oficial difiere de la solicitada'}[p.status]||'pendiente'));
+            const row=node('li',(p.local==='true'?'LOCAL · ':p.local==='false'?'VISITANTE · ':'')+(p.name||'Referencia manual #'+p.id)+' · '+(needsCheck?'pendiente de revalidación':({pending:'asociación pendiente',confirmed:'asociación confirmada',uncertain:'respuesta pendiente de comprobación',conflict:'la configuración oficial difiere de la solicitada'}[p.status]||'pendiente')));
             list.append(row);
         }
         if(configurationConflict)list.append(node('li','Hay participantes oficiales ajenos al plan conservado. Revisa el evento en administración avanzada; no se sobrescribirá su configuración.'));
@@ -270,10 +300,11 @@ window.BetZoneEventWizard = function (options) {
         }
         save();publishEvent();outcome();message(complete()?'Evento y ambas asociaciones comprobados en el detalle oficial. Puedes continuar con mercados y cuotas.':'La configuración permanece parcial. Consulta su detalle oficial antes de continuar.');
     }
-    async function reconcile(id,recovery=false) {
+    async function reconcile(id,recovery=false,observed=null) {
+        if(contextConflict)throw new Error('El enlace y el proceso conservado no corresponden al mismo evento. Revisa el proceso anterior; no se mezclará ni borrará.');
         if(!validSnapshot(snapshot))throw new Error('El progreso conservado no permite comprobar la identidad del evento. No se enviarán escrituras.');
-        needsCheck=true;sync(blocked);
-        const data=await request('/administrador/eventos/detalle?'+new URLSearchParams({idEvento:String(id)}));
+        needsCheck=true;outcome();sync(blocked);
+        const data=observed?{evento:observed}:await request('/administrador/eventos/detalle?'+new URLSearchParams({idEvento:String(id)}));
         const official=data.evento;
         if(!official||official.idEvento!==Number(id)||official.idLiga!==Number(snapshot.payload.idLiga)||official.idDeporte!==Number(snapshot.sportId)||(official.evento??official.nombre)!==snapshot.payload.nombre||!states.includes(official.estadoEvento)||!sameDate(official.fechaInicio,snapshot.payload.fechaInicio)||(snapshot.payload.fechaFin?!sameDate(official.fechaFin,snapshot.payload.fechaFin):official.fechaFin!==null)
             ||typeof official.simulacion?.esSimulado!=='boolean'||official.simulacion.esSimulado!==(snapshot.payload.esSimulado==='true')
@@ -281,17 +312,21 @@ window.BetZoneEventWizard = function (options) {
             ||(snapshot.payload.duracionSimulacionSegundos&&official.simulacion.duracionSimulacionSegundos!==Number(snapshot.payload.duracionSimulacionSegundos))
             ||(snapshot.durationConfirmed!==undefined&&official.simulacion.duracionSimulacionSegundos!==snapshot.durationConfirmed)
             ||!Array.isArray(official.participantes)||official.cantidadParticipantes!==official.participantes.length||official.participantes.some(p=>!p||!Number.isInteger(p.idParticipante)||!idValid(p.idParticipante)||!Number.isInteger(p.ordenParticipante)||p.ordenParticipante<1||p.ordenParticipante>255||![true,false,null].includes(p.esLocal))||new Set(official.participantes.map(p=>p.idParticipante)).size!==official.participantes.length||new Set(official.participantes.map(p=>p.ordenParticipante)).size!==official.participantes.length)throw new Error('El evento consultado no coincide con la identidad, fechas o simulación de este proceso. No se vinculó ni se envió ninguna asociación.');
+        if(!Array.isArray(official.mercados)||official.cantidadMercados!==official.mercados.length||official.mercados.some(m=>!idValid(m.idMercado)||!Array.isArray(m.selecciones)||m.selecciones.some(s=>!idValid(s.idSeleccion))))throw new Error('Mercados oficiales inconsistentes; preparación pendiente de revisión.');
         official.nombre=official.evento??official.nombre;
         if(recovery&&!window.confirm('El servidor devuelve '+official.nombre+' (#'+official.idEvento+'). ¿Vincular este evento real al proceso conservado, sin crearlo nuevamente?'))return;
+        officialDetail=official;
         eventId=official.idEvento;createUncertain=false;officialParticipantCount=official.participantes.length;snapshot.estadoEvento=official.estadoEvento;
+        snapshot.sportName=official.deporte;snapshot.leagueName=official.liga;
         snapshot.durationConfirmed=official.simulacion.duracionSimulacionSegundos;
         configurationConflict=official.participantes.some(p=>!snapshot.participants.some(planned=>planned.id===p.idParticipante));
         for(const participant of snapshot.participants){
             const found=official.participantes.find(p=>p.idParticipante===participant.id);
+            if(found&&typeof found.participante==='string')participant.name=found.participante;
             participant.status=found?(found.ordenParticipante===participant.order&&found.esLocal===(participant.local===''?null:participant.local==='true')?'confirmed':'conflict'):
                 participant.status==='confirmed'||official.participantes.some(p=>p.ordenParticipante===participant.order)?'conflict':'pending';
         }
-        needsCheck=false;save();publishEvent();outcome();message((complete()?'Configuración confirmada en la consulta oficial. Puedes continuar con mercados y cuotas.':'Configuración oficial consultada. Revisa las asociaciones pendientes o diferentes; esta consulta no envió ningún POST.')+(recovery?' La consulta demuestra el estado observado, pero no identifica qué petición creó el evento.':''));
+        needsCheck=false;save();if(!observed)publishEvent();outcome();message((complete()?'Configuración confirmada en la consulta oficial. Puedes continuar con mercados y cuotas.':'Configuración oficial consultada. Revisa las asociaciones pendientes o diferentes; esta consulta no envió ningún POST.')+(recovery?' La consulta demuestra el estado observado, pero no identifica qué petición creó el evento.':''));
     }
     async function recoveryEvents(page=1){
         if(!snapshot||!createUncertain||eventId||blocked||!canWrite)return;
@@ -346,14 +381,40 @@ window.BetZoneEventWizard = function (options) {
             }
         });
     });
-    $('wizard-reconcile').addEventListener('click',()=>{if(eventId&&snapshot)task(()=>reconcile(eventId));});
+    $('wizard-reconcile').addEventListener('click',()=>{if(eventId&&snapshot)task(async()=>{
+        await reconcile(eventId);
+        if(snapshot.programming?.state==='uncertain'&&snapshot.estadoEvento==='PROGRAMADO'&&window.confirm('El detalle muestra PROGRAMADO para '+snapshot.payload.nombre+'. No demuestra qué solicitud produjo el cambio. ¿Aceptar el estado observado para finalizar la revisión, conservando la referencia incierta y sin enviar POST?')){
+            snapshot.programming.state='observed';snapshot.programming.uncertainRequest=true;save();outcome();
+        }
+    });});
+    $('wizard-program').addEventListener('click',()=>task(async()=>{
+        await reconcile(eventId);
+        if(!complete()||snapshot.estadoEvento!=='BORRADOR'||snapshot.programming)throw new Error('No corresponde programar nuevamente. Revisa el estado oficial y cualquier operación conservada.');
+        if(!window.confirm('Evento: '+snapshot.payload.nombre+'. Estado actual: BORRADOR. Estado solicitado: PROGRAMADO. Permitirá abrir mercados elegibles; no inicia la simulación. ¿Confirmar?'))return;
+        try{
+            const data=await post('/administrador/eventos/estado/cambiar',{idEvento:String(eventId),nuevoEstado:'PROGRAMADO'},()=>{
+                snapshot.programming={state:'uncertain'};needsCheck=true;save(true);outcome();
+            });
+            const r=data.resultado;
+            if(!r||r.idEvento!==eventId||!states.includes(r.estadoAnterior)||r.estadoActual!=='PROGRAMADO'||typeof r.sinCambios!=='boolean'||r.sinCambios!==(r.estadoAnterior===r.estadoActual))throw new Error('Respuesta de programación incompatible; requiere conciliación.');
+            snapshot.programming={state:'confirmed',resultado:{idEvento:r.idEvento,estadoAnterior:r.estadoAnterior,estadoActual:r.estadoActual,sinCambios:r.sinCambios}};save();
+        }catch(error){
+            // Incluso sin respuesta válida conservamos la intención: un GET no prueba causalidad.
+            if([400,401,403,404,405,409].includes(error.status))delete snapshot.programming;
+            save();try{await reconcile(eventId);}catch{needsCheck=true;outcome();}
+            throw error;
+        }
+        await reconcile(eventId);
+        if(snapshot.estadoEvento!=='PROGRAMADO')throw new Error('La respuesta se conserva, pero el detalle no confirma PROGRAMADO. No se repetirá la solicitud.');
+        message('PROGRAMADO confirmado por respuesta y detalle oficial. Continúa con el mercado 1X2.');
+    }));
     $('wizard-resume').addEventListener('click',()=>{if(eventId&&snapshot&&!needsCheck&&!snapshot.participants.some(p=>p.status==='conflict')&&window.confirm('¿Asociar únicamente los participantes pendientes al evento ya creado #'+eventId+'? No se creará otro evento.'))task(associate);});
     $('wizard-recover').addEventListener('click',()=>{if(snapshot&&createUncertain&&idValid($('wizard-recovery-id').value))task(()=>reconcile(Number($('wizard-recovery-id').value),true));else message('Selecciona el evento localizado en el listado.',true);});
     $('wizard-recovery-query').addEventListener('click',()=>recoveryEvents(1));
     for(const [id,delta] of [['wizard-recovery-prev',-1],['wizard-recovery-next',1]])$(id).addEventListener('click',()=>{if(!$(id).disabled)recoveryEvents(recoveryPage+delta);});
     $('wizard-advanced').addEventListener('click',()=>{if(eventId)publishEvent();$('advanced-event-management').open=true;});
     $('wizard-recovery-advanced').addEventListener('click',()=>{$('advanced-event-management').open=true;});
-    $('wizard-new').addEventListener('click',()=>{if(complete()&&window.confirm('El evento #'+eventId+' está confirmado. ¿Preparar otro evento?')){snapshot=null;eventId=null;createUncertain=false;needsCheck=false;configurationConflict=false;officialParticipantCount=0;selected=[];recoveryPage=1;recoveryTotal=0;save();$('wizard-form').reset();leagues.clear();candidates.clear();$('wizard-league').replaceChildren(option('','Selecciona una liga'));clearParticipants();participantRows();showStep(1);message('Puedes preparar un nuevo evento.');}});
+    $('wizard-new').addEventListener('click',()=>{if(complete()&&!snapshot.programming?.state?.includes('uncertain')&&window.confirm('El evento #'+eventId+' está confirmado. ¿Preparar otro evento?')){snapshot=null;officialDetail=null;eventId=null;createUncertain=false;needsCheck=false;configurationConflict=false;officialParticipantCount=0;selected=[];recoveryPage=1;recoveryTotal=0;save();$('wizard-form').reset();leagues.clear();candidates.clear();$('wizard-league').replaceChildren(option('','Selecciona una liga'));clearParticipants();participantRows();showStep(1);message('Puedes preparar un nuevo evento.');}});
     try{
         const saved=JSON.parse(sessionStorage.getItem(key)||'null');
         if(saved){
@@ -363,6 +424,32 @@ window.BetZoneEventWizard = function (options) {
     }catch(error){createUncertain=true;snapshot={payload:{nombre:'Proceso no recuperable'},participants:[]};outcome();message('No se pudo recuperar el progreso guardado. Se conserva el almacenamiento original y se bloquea otra creación. Revisa manualmente el evento en administración avanzada.',true);}
     if(!snapshot){showStep(1,false);participantRows();}sync(false);
     window.addEventListener('pagehide',()=>{leaving=true;});
+    window.addEventListener('pageshow',event=>{if(event.persisted)location.reload();});
     if(!canWrite)message('La creación requiere ADMINISTRADOR u OPERADOR_EVENTOS. El backend conserva la autorización definitiva.',true);
-    return {sync,loadSports};
+    async function refresh(id=eventId){
+        if(id===null&&!snapshot)return loadSports();
+        if(!idValid(id))return;
+        if(snapshot&&Number(eventId)!==Number(id)){
+            contextConflict=true;needsCheck=true;sync(false);message('El enlace o la consulta corresponde a otro evento. Se conserva el proceso anterior y se bloquean escrituras del asistente. Revisa ese proceso desde su referencia original.',true);return;
+        }
+        return task(async()=>{
+            if(!snapshot){
+                // Una referencia contextual nunca debe terminar habilitando otra creación.
+                contextConflict=true;
+                const e=(await request('/administrador/eventos/detalle?'+new URLSearchParams({idEvento:String(id)}))).evento;
+                if(e?.idEvento===Number(id)){options.onDetail(e);$('advanced-event-management').open=false;}
+                if(e?.idEvento===Number(id)&&e.participantes?.length!==2)$('advanced-event-management').open=true;
+                if(!e||e.idEvento!==Number(id)||!Array.isArray(e.participantes)||e.participantes.length!==2)throw new Error('El evento requiere revisión en administración avanzada: se necesitan dos asociaciones para recuperar el asistente.');
+                const people=[...e.participantes].sort((a,b)=>a.ordenParticipante-b.ordenParticipante);
+                const draft={sportId:String(e.idDeporte),sportName:e.deporte,leagueName:e.liga,payload:{idLiga:String(e.idLiga),nombre:e.evento,fechaInicio:e.fechaInicio,esSimulado:String(e.simulacion?.esSimulado),...(e.fechaFin?{fechaFin:e.fechaFin}:{})},participants:people.map(p=>({id:p.idParticipante,name:p.participante,type:p.tipoParticipante,order:p.ordenParticipante,local:p.esLocal===null?'':String(p.esLocal),status:'pending'}))};
+                if(!validSnapshot(draft)){$('advanced-event-management').open=true;throw new Error('El detalle no es compatible con el asistente. Usa administración avanzada; no se modificó el proceso.');}
+                snapshot=draft;eventId=Number(id);needsCheck=true;contextConflict=false;
+            }
+            await reconcile(Number(id));
+        });
+    }
+    function observe(e){
+        if(snapshot&&eventId===e.idEvento&&!contextConflict)reconcile(eventId,false,e).catch(error=>{needsCheck=true;outcome();failure(error);});
+    }
+    return {sync,loadSports,refresh,observe};
 };

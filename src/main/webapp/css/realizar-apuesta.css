@@ -1,4 +1,10 @@
 .bet-page { min-height: calc(100vh - 160px); }
+.bet-page .financial-heading { display: block; padding-top: 12px; }
+.bet-page .financial-heading dt { color: var(--cyan); font-weight: 600; font-size: 14px; }
+.bet-page .financial-heading dd { display: none; }
+.result-panel, .result-actions, .ticket-code { min-width: 0; max-width: 100%; }
+.ticket-code { white-space: normal; word-break: break-word; user-select: text; }
+.amount-summary .total { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,255,102,.04); }
 .review-check { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.7; margin: 18px 0; }
 .review-check input { flex: 0 0 auto; margin-top: 5px; accent-color: var(--green); }
 .review-check input:focus-visible, .result-actions a:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }

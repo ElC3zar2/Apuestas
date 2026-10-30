@@ -48,7 +48,9 @@
 <div id="detail-results" class="management-results"></div>
 </section>
 <section id="market-one" class="panel" aria-labelledby="one-title">
-<h2 id="one-title">Resultado final 1X2</h2>
+<h2 id="one-title" tabindex="-1">Resultado final 1X2</h2>
+<p id="one-preparation" role="status" aria-live="polite"></p>
+<div class="toolbar"><a id="one-event-back" hidden>Volver a preparación del evento</a><a id="one-event-program" hidden>Programar evento antes de abrir</a></div>
 <ol class="one-steps"><li>Confirmar evento</li><li>Selecciones y cuotas</li><li>Revisar</li><li>Crear y comprobar</li></ol>
 <p id="one-context" class="live-status" role="status">Consulta el evento para identificar LOCAL y VISITANTE.</p>
 <div id="one-edit">
@@ -69,7 +71,7 @@
 <div class="toolbar"><button id="one-back" type="button">Volver a editar</button><button id="one-confirm" type="button" class="primary">Confirmar y configurar 1X2</button></div></div>
 <div id="one-progress" hidden><h3>Proceso conservado</h3><p id="one-state" role="status" aria-live="polite"></p><p id="one-market-state"></p><div id="one-rows"></div>
 <p class="muted">Consultar acredita el estado observado, no qué POST lo produjo. Vincular referencias requiere revisión administrativa explícita. Una operación incierta sin evidencia suficiente mantiene el bloqueo; no se reenvía automáticamente.</p>
-<div class="toolbar"><button id="one-check" type="button">Consultar y comprobar proceso</button><button id="one-adopt" type="button">Revisar y vincular referencias observadas</button><button id="one-resume" type="button">Continuar operaciones pendientes</button><button id="one-open" type="button">Revisar requisitos para abrir mercado</button><button id="one-release" type="button">Finalizar proceso revisado</button><button id="one-cancel" type="button">Editar plan todavía no enviado</button></div>
+<div class="toolbar"><button id="one-check" type="button">Consultar y comprobar proceso</button><button id="one-adopt" type="button">Revisar y vincular referencias observadas</button><button id="one-resume" type="button">Continuar operaciones pendientes</button><button id="one-open" type="button">Revisar y abrir mercado</button><button id="one-release" type="button">Finalizar proceso revisado</button><button id="one-cancel" type="button">Editar plan todavía no enviado</button></div>
 <p class="muted">Abrir exige confirmación independiente y evento PROGRAMADO. El asistente no programa ni inicia eventos.</p>
 </div>
 </section>

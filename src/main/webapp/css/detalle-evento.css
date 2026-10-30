@@ -1,4 +1,10 @@
 /* Base visual compartida con Inicio; reglas exclusivas del detalle. */
+.live-match [hidden], .follow-controls [hidden] { display: none !important; }
+.recent-incidents { margin: 18px 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+.recent-incidents h3 { font-size: 14px; margin: 0 0 10px; }
+.recent-incidents p, .recent-incidents li, .recent-incidents a { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.recent-incidents ol { list-style: none; padding: 0; display: grid; gap: 8px; }
+.recent-incidents .is-annulled { color: #FFBDCF; border-left: 2px dashed currentColor; padding-left: 10px; }
 .own-bets { margin-top: 28px; min-width: 0; }
 .own-bets p, .own-bets h3, .own-bets h4, .own-bets dd, .own-bets a { overflow-wrap: anywhere; line-height: 1.7; }
 .own-bets p, .own-bets dt, .own-bets dd { font-size: 13px; }

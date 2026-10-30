@@ -43,12 +43,18 @@
         <div id="datos-detalle" hidden>
             <section class="panel live-match" aria-labelledby="titulo-partido">
                 <div class="event-heading"><div><p id="competicion-partido" class="eyebrow"></p><h2 id="titulo-partido">Seguimiento deportivo</h2></div><span id="estado-partido" class="status-badge"></span></div>
+                <p id="fase-partido" class="match-result"></p>
                 <div class="scoreboard" aria-label="Participantes y marcador informado">
                     <div class="score-team"><h3 id="participante-a">Participante A no disponible</h3><p id="condicion-a" class="muted"></p></div>
                     <div class="score-numbers"><span id="marcador-a" aria-label="Marcador A">—</span><span aria-hidden="true">:</span><span id="marcador-b" aria-label="Marcador B">—</span></div>
                     <div class="score-team"><h3 id="participante-b">Participante B no disponible</h3><p id="condicion-b" class="muted"></p></div>
                 </div>
                 <p id="nota-marcador" class="muted"></p>
+                <div id="incidencias-recientes" class="recent-incidents" hidden>
+                    <h3>Últimas incidencias</h3><p id="nota-recientes" class="muted"></p>
+                    <ol id="lista-recientes"></ol>
+                    <a class="text-link" href="#cronologia-partido">Ver cronología completa</a>
+                </div>
                 <dl class="match-facts">
                     <div><dt>Tiempo informado</dt><dd id="tiempo-partido">Tiempo no disponible</dd></div>
                     <div><dt>Duración de referencia</dt><dd id="duracion-partido">No disponible</dd></div>

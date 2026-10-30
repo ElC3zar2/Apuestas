@@ -56,7 +56,7 @@
                 <p class="eyebrow">02 / REVISIÓN</p><h2 id="titulo-resumen">Resumen de cotización</h2>
                 <p id="cotizacion-vacia" class="empty-quote">Ingresa un monto y cotiza para ver la selección y los importes reales.</p>
                 <div id="cotizacion" hidden><div id="detalle-seleccion" class="selection-detail"></div><dl id="importes-cotizacion" class="amount-summary"></dl></div>
-                <p class="muted field-help">El monto apostado se destina a la apuesta. La comisión de servicio es adicional y el total a cargar es el importe de la operación. El premio potencial es hipotético: no es dinero acreditado.</p>
+                <p class="muted field-help">El total a cargar incluye el monto apostado y la comisión adicional. El premio potencial es hipotético, no dinero acreditado. La ganancia sobre el monto apostado compara premio y apuesta; el beneficio potencial después del cargo total también descuenta la comisión. Esta estimación usa el premio potencial informado y no garantiza el pago de ninguna modalidad.</p>
                 <div id="revision-apuesta" hidden>
                     <h3>Revisión antes de confirmar</h3>
                     <p class="muted field-help">Comprueba el evento, la selección, los pronósticos y los importes de la cotización anterior. Cotizar no reserva la cuota. El servidor decide la cuota y la elegibilidad definitivas.</p>
@@ -73,7 +73,7 @@
             <a id="login-apuesta" class="text-link" href="${pageContext.request.contextPath}/usuario/login" hidden>Iniciar sesión</a>
         </section>
         <section id="resultado-apuesta" class="panel result-panel" hidden aria-labelledby="titulo-resultado">
-            <p class="eyebrow">RESULTADO RECIBIDO</p><h2 id="titulo-resultado">Apuesta confirmada</h2>
+            <p class="eyebrow">CONFIRMACIÓN DE COMPRA</p><h2 id="titulo-resultado">Boleto confirmado</h2>
             <p class="muted">Código del boleto</p><p id="codigo-boleto" class="ticket-code"></p>
             <dl id="importes-resultado" class="amount-summary"></dl>
             <p id="idempotencia" class="muted"></p>

@@ -33,7 +33,31 @@
     function restore(){try{const probe=key+':prueba';sessionStorage.setItem(probe,'1');if(sessionStorage.getItem(probe)!=='1')fail();sessionStorage.removeItem(probe);const saved=sessionStorage.getItem(key),legacy=JSON.parse(sessionStorage.getItem(legacyKey)||'[]');if(!Array.isArray(legacy)||legacy.some(v=>!inputId(String(v))))fail();if(saved!==null){const p=JSON.parse(saved);if(!object(p)||Object.keys(p).sort().join()!==['at','base','id','kind','role','v'].sort().join()||p.v!==1||p.base!==base||!['ADMINISTRADOR','CAJERO'].includes(p.role)||!['boleto','evento'].includes(p.kind)||!inputId(p.id)||typeof p.at!=='string'||!/^\d{4}-\d\d-\d\dT/.test(p.at))fail();uncertain=Object.freeze(p);}else if(legacy.length)uncertain=Object.freeze({kind:'legacy',ids:legacy.map(String),role:null});}catch{storage=false;uncertain=Object.freeze({kind:'desconocida',role:null});}}
     function showUncertain(){ $('settlement-uncertain').hidden=!uncertain&&storage;$('uncertain-title').textContent=uncertain?'Operación financiera sin confirmación':'Persistencia no fiable';if(!uncertain&&!storage){$('uncertain-values').textContent='Las confirmaciones oficiales recibidas se conservan como confirmadas. No se pudo conservar o retirar el marcador local: nuevas escrituras bloqueadas por persistencia no fiable; requiere revisión técnica.';return;}if(uncertain||!storage){const reference=uncertain?.role===role?uncertain.kind+' #'+uncertain.id+' · Envío local '+uncertain.at:'Marcador heredado, ilegible o de identidad no verificable.';$('uncertain-values').textContent=reference+' No acredita una liquidación ni ausencia de pagos. Escrituras bloqueadas: conciliación técnica obligatoria. Un GET individual puede confirmar boletos conocidos, pero no acredita el lote completo ni la causalidad del envío. No hay reenvío o desbloqueo genérico.';}}
     const canWrite=()=>operate&&!writing&&!reads&&!expired&&!denied&&!leaving&&storage&&!uncertain&&!refreshNeeded;
-    function sync(){document.body.dataset.settlementsBusy=String(writing||reads>0);$('operation-sections').hidden=!operate;$('single-operation').hidden=!operate;$('ready-section').hidden=!operate;$('audit-section').hidden=!readable;document.querySelectorAll('#contenido input,#contenido select,#contenido button').forEach(n=>n.disabled=writing||expired||leaving||!readable);$('settlement-event').disabled=writing||expired||leaving||!operate||!events.size;$('eligible-ticket').disabled=writing||expired||leaving||!operate||!tickets.size;$('settle-ticket-button').disabled=!canWrite()||!ticketFresh||!ticketId||confirmedRefs.has('boleto:'+ticketId);$('settle-button').disabled=!canWrite()||!eventFresh||!eventId||confirmedRefs.has('evento:'+eventId);$('refresh-event-context').disabled=!operate||writing||reads>0||expired||leaving||!(refreshNeeded?.kind==='evento'||eventId||linkedEvent);A.syncPages(writing||reads>0||expired||leaving||!operate);$('read-guard').textContent=refreshNeeded?'POST confirmado e histórico. Falló la actualización: consulta el mismo '+refreshNeeded.kind+' #'+refreshNeeded.id+' antes de nuevas escrituras.':denied?'Permiso rechazado: no se renueva mediante otra consulta.':!operate?'Modo consulta: AUDITOR solo puede consultar liquidaciones individuales.':'Importes, decisiones e idempotencia provienen exclusivamente del servidor.';showUncertain();}
+    const candidate=e=>Boolean(e&&['FINALIZADO','CANCELADO'].includes(e.estadoEvento));
+    function eventAllowed(){
+        const e=events.get(eventId);
+        return Boolean(operate&&eventFresh&&candidate(e)&&$('settlement-event').value===eventId&&
+            (role==='CAJERO'||role==='ADMINISTRADOR'&&eventResult&&
+                (e.estadoEvento==='FINALIZADO'&&eventResult.estadoResultado==='OFICIAL'||e.estadoEvento==='CANCELADO'&&eventResult.estadoResultado==='ANULADO')));
+    }
+    function eligibilityMessage(){
+        const e=events.get(eventId);
+        if(!e)return 'Selecciona un evento de la página consultada; no hay contexto financiero verificado.';
+        if(!candidate(e))return 'Evento no elegible para liquidación: '+e.estadoEvento+'. La consulta permanece disponible.';
+        if(!eventFresh)return 'Evento '+e.estadoEvento+'; verificación pendiente o fallida. No se habilita el lote con datos anteriores.';
+        if(role==='CAJERO')return 'El rol CAJERO no consulta el resultado específico; el estado '+e.estadoEvento+' no demuestra '+(e.estadoEvento==='FINALIZADO'?'OFICIAL':'ANULADO')+'. El servidor realizará la validación definitiva.';
+        if(!eventAllowed())return 'Lote bloqueado: evento '+e.estadoEvento+' requiere resultado '+(e.estadoEvento==='FINALIZADO'?'OFICIAL':'ANULADO')+'. Consultado: '+(eventResult?.estadoResultado||'sin resultado')+'.';
+        return 'Evento y resultado compatibles; SQL validará los boletos.'+(e.estadoEvento==='CANCELADO'?' Recorrido de devolución por anulación.':' No garantiza que todos estén listos.');
+    }
+    function eventChoices(rows){
+        const select=$('settlement-event');select.replaceChildren(A.option('','Selecciona un evento por nombre'));
+        for(const [potential,label]of [[true,'Candidatos por estado · requieren verificación'],[false,'Solo consulta · estado no apto para lote']]){
+            const group=node('optgroup');group.label=label;
+            rows.filter(e=>candidate(e)===potential).forEach(e=>group.append(A.option(e.idEvento,A.eventLabel(e))));
+            if(group.children.length)select.append(group);
+        }
+    }
+    function sync(){document.body.dataset.settlementsBusy=String(writing||reads>0);$('operation-sections').hidden=!operate;$('single-operation').hidden=!operate;$('ready-section').hidden=!operate;$('audit-section').hidden=!readable;document.querySelectorAll('#contenido input,#contenido select,#contenido button').forEach(n=>n.disabled=writing||expired||leaving||!readable);$('settlement-event').disabled=writing||expired||leaving||!operate||!events.size;$('eligible-ticket').disabled=writing||expired||leaving||!operate||!tickets.size;$('settle-ticket-button').disabled=!canWrite()||!ticketFresh||!ticketId||confirmedRefs.has('boleto:'+ticketId);$('settle-button').disabled=!canWrite()||!eventAllowed()||confirmedRefs.has('evento:'+eventId);$('settlement-eligibility').textContent=eligibilityMessage();$('refresh-event-context').disabled=!operate||writing||reads>0||expired||leaving||!(refreshNeeded?.kind==='evento'||eventId||linkedEvent);A.syncPages(writing||reads>0||expired||leaving||!operate);$('read-guard').textContent=refreshNeeded?'POST confirmado e histórico. Falló la actualización: consulta el mismo '+refreshNeeded.kind+' #'+refreshNeeded.id+' antes de nuevas escrituras.':denied?'Permiso rechazado: no se renueva mediante otra consulta.':!operate?'Modo consulta: AUDITOR solo puede consultar liquidaciones individuales.':'Importes, decisiones e idempotencia provienen exclusivamente del servidor.';showUncertain();}
     async function reading(work){reads++;sync();try{await work();}catch(error){if(!leaving)report(error);}finally{reads--;sync();}}
     function coherent(r,key='resultadoBoleto'){return results.includes(r[key])&&r.estadoBoleto===(r[key]==='ANULADO'?'ANULADO':'LIQUIDADO');}
     function validateReady(r){if(!object(r)||!id(r.idBoleto)||!id(r.idUsuario)||!str(r.codigoBoleto)||!str(r.correo)||!['SIMPLE','COMPUESTO'].includes(r.tipoBoleto)||!date(r.fechaCreacion)||!id(r.cantidadSelecciones)||!['seleccionesGanadas','seleccionesPerdidas','seleccionesAnuladas'].every(k=>integer(r[k]))||r.seleccionesGanadas+r.seleccionesPerdidas+r.seleccionesAnuladas!==r.cantidadSelecciones||!results.includes(r.resultadoPropuesto)||!decimal(r.montoApostado)||!decimal(r.gananciaPotencial)||!decimal(r.cuotaTotal,12,4))fail();return r;}
@@ -65,6 +89,7 @@
     async function queryTicket(value,expected=null){if(!readable||expired||leaving||!inputId(value)){status('idBoleto debe ser SQL INT positivo, sin decimales ni exponentes.',true);return false;}const version=++ticketVersion;ticketId=value;ticketFresh=false;$('eligible-ticket').value=tickets.has(value)?value:'';$('ticket-id').value=value;$('ticket-context').textContent='Consultando boleto #'+value;$('ticket-results').replaceChildren();let success=false;await reading(async()=>{const data=await request(prefix+'consultar?idBoleto='+value);if(version!==ticketVersion)return;const r=validateQuery(data.resultado,Number(value));if(expected!==null&&(r.idLiquidacion!==expected||r.estadoLiquidacion!=='COMPLETADA'))fail('La consulta no corresponde a la liquidación confirmada.');renderOfficial($('ticket-results'),r);if(r.estadoLiquidacion==='COMPLETADA')confirmedRefs.add('boleto:'+value);success=true;$('ticket-context').textContent='Consulta oficial · Boleto #'+value+' · Liquidación #'+r.idLiquidacion+' · '+r.estadoLiquidacion+' · Consulta histórica: no prepara un envío.';if(refreshNeeded?.kind==='boleto'&&refreshNeeded.id===value&&r.idLiquidacion===refreshNeeded.liquidation&&r.estadoLiquidacion==='COMPLETADA')refreshNeeded=null;status('Consulta individual oficial; fechas LocalDateTime sin zona asignada.');});return success;}
     function validateEvent(e,sport=null,expected=null){if(!object(e)||!id(e.idEvento)||!id(e.idDeporte)||!id(e.idLiga)||sport!==null&&e.idDeporte!==sport||expected!==null&&e.idEvento!==expected||!str(e.evento)||!str(e.liga)||!states.includes(e.estadoEvento)||!date(e.fechaInicio))fail();return e;}
     function renderEventContext(e){
+        $('settlement-eligibility').textContent=eligibilityMessage();
         $('settlement-event-info').textContent=e?e.evento+' · '+(e.deporte||sportNames.get(String(e.idDeporte))||'Deporte #'+e.idDeporte)+' · '+e.liga+' · '+e.estadoEvento+' · '+e.fechaInicio.replace('T',' ')
             +(role==='ADMINISTRADOR'?' · Resultado: '+(eventResult?.estadoResultado||'sin resultado apto comprobado'):' · Este rol no consulta el resultado específico. SQL validará la elegibilidad definitiva; el estado del evento no acredita pagos ni preparación financiera.'):'Selecciona un evento de una consulta administrativa vigente.';
         const back=$('settlement-results');back.hidden=!e||!['ADMINISTRADOR','AUDITOR'].includes(role);if(!back.hidden)back.href=base+'/administrador/resultados?idEvento='+e.idEvento;
@@ -82,14 +107,14 @@
         if(role==='ADMINISTRADOR'){
             let valid=false;await reading(async()=>{
                 const data=await request('/administrador/resultados/por-evento?idEvento='+value);if(version!==contextVersion||eventId!==value)return;
-                eventResult=validateEventResult(data,e);eventFresh=Boolean(eventResult&&['OFICIAL','ANULADO'].includes(eventResult.estadoResultado));valid=true;renderEventContext(e);
+                eventResult=validateEventResult(data,e);eventFresh=true;valid=true;renderEventContext(e);
                 if(refreshNeeded?.kind==='evento'&&refreshNeeded.id===value)refreshNeeded=null;
-                status(eventFresh?'Resultado oficial o anulado consultado. SQL todavía comprueba boletos compuestos y restricciones financieras.':'El resultado no está OFICIAL ni ANULADO: el lote permanece bloqueado.');
+                status(eligibilityMessage(),!eventAllowed());
             });return valid;
         }
         eventFresh=true; // Referencia del catálogo autorizado; no se atribuye lectura de resultados a CAJERO.
         if(refreshNeeded?.kind==='evento'&&refreshNeeded.id===value)refreshNeeded=null;
-        sync();return true;
+        renderEventContext(e);sync();return true;
     }
     async function loadEvents(expected=null){
         if(!operate||expired||leaving)return false;const sport=$('settlement-sport').value;
@@ -101,7 +126,7 @@
             if(data.pagina!==page||data.tamanoPagina!==100||!Number.isSafeInteger(data.total)||data.total<0||!Array.isArray(data.eventos)
                 ||data.eventos.length!==Math.min(100,Math.max(0,data.total-(page-1)*100))||new Set(data.eventos.map(e=>e.idEvento)).size!==data.eventos.length)fail('Página administrativa incompleta o inconsistente.');
             data.eventos.forEach(e=>validateEvent(e,sport?Number(sport):null));A.pageData(data);data.eventos.forEach(e=>events.set(String(e.idEvento),e));
-            A.choices($('settlement-event'),data.eventos,'idEvento',e=>A.eventLabel(e)+' · '+e.liga+' · '+e.estadoEvento);
+            eventChoices(data.eventos);
             $('event-page-info').textContent='Página '+data.pagina+' · Recibidos '+data.eventos.length+' de '+data.total+' eventos. Esta página no es el catálogo completo.';
             if(target&&events.has(target)){$('settlement-event').value=target;success=await chooseEvent(target);}
             else {await chooseEvent('');success=!expected;}
@@ -118,13 +143,23 @@
     }
     async function refreshEvent(value){return role==='ADMINISTRADOR'?directEvent(value):loadEvents(value);}
     async function send(kind){
+        if(kind==='evento'){
+            const original=eventId;
+            if(!canWrite()||!eventAllowed()||!inputId(original||'')||confirmedRefs.has('evento:'+original)){status('Lote bloqueado. '+eligibilityMessage(),true);return;}
+            // Solo GET antes de confirmar: la lectura previa y el atributo disabled no autorizan el POST.
+            const updated=await refreshEvent(original);
+            if(!updated||eventId!==original||!canWrite()||!eventAllowed()||confirmedRefs.has('evento:'+original)){status('No se pudo revalidar el evento seleccionado para el lote. No se envió ningún POST. '+eligibilityMessage(),true);return;}
+        }
         const selected=kind==='boleto'?ticketId:eventId,fresh=kind==='boleto'?ticketFresh:eventFresh;
         if(!canWrite()||!fresh||!inputId(selected||'')||confirmedRefs.has(kind+':'+selected)||kind==='evento'&&(!events.has(selected)||$('settlement-event').value!==selected)||kind==='boleto'&&$('ticket-id').value!==selected){status('Referencia oficial vigente necesaria; operación bloqueada.',true);return;}
         const label=kind==='evento'?A.eventLabel(events.get(selected)):$('ticket-context').textContent;
         const eventSnapshot=kind==='evento'?{...events.get(selected)}:null;
-        if(!window.confirm('Liquidar '+kind+' #'+selected+' · '+label+'\n'+(kind==='evento'?'Se enviará UN POST para el lote. Puede efectuar pagos reales y omitir boletos. No es una transacción global: una interrupción puede dejar pagos parciales.':'El servidor decide elegibilidad, pago e idempotencia financiera.')+' No reenviar ante respuesta incierta. ¿Confirmar expresamente?'))return;
+        if(kind==='evento'&&!eventAllowed()){status(eligibilityMessage(),true);return;}
+        if(!window.confirm('Liquidar '+kind+' #'+selected+' · '+label+'\n'+(kind==='evento'?'Estado: '+eventSnapshot.estadoEvento+' · Resultado: '+(role==='ADMINISTRADOR'?eventResult.estadoResultado:'no consultable según rol CAJERO')+'\nTipo de operación: liquidación por lote. El servidor determinará los boletos elegibles. Puede omitir boletos compuestos y confirmar pagos individualmente. La solicitud no es una transacción financiera global. Una interrupción puede dejar pagos parciales.':'El servidor decide elegibilidad, pago e idempotencia financiera.')+' No reenviar ante respuesta incierta. ¿Confirmar expresamente?'))return;
         if(!canWrite())return;const operation=Object.freeze({v:1,base,role,kind,id:selected,at:new Date().toISOString()}),path=prefix+(kind==='boleto'?'liquidar':'liquidar-evento');let sent=false,confirmed=false;writing=true;sync();status('Envío financiero en curso; una invocación JavaScript, sin reintentos.');
-        try{const token=await request('/administrador/seguridad/csrf');if(typeof token.csrfToken!=='string'||!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(token.csrfToken))fail('Token CSRF no canónico. No se envió el POST.');try{sessionStorage.setItem(key,JSON.stringify(operation));if(sessionStorage.getItem(key)!==JSON.stringify(operation))fail();}catch{storage=false;fail('No se pudo conservar el marcador mínimo. No se envió el POST.');}
+        try{const token=await request('/administrador/seguridad/csrf');if(typeof token.csrfToken!=='string'||!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(token.csrfToken))fail('Token CSRF no canónico. No se envió el POST.');
+            if(kind==='evento'&&(eventId!==selected||!eventAllowed()||confirmedRefs.has('evento:'+selected)))fail('El contexto del evento cambió después de confirmar. No se envió el POST.');
+            try{sessionStorage.setItem(key,JSON.stringify(operation));if(sessionStorage.getItem(key)!==JSON.stringify(operation))fail();}catch{storage=false;fail('No se pudo conservar el marcador mínimo. No se envió el POST.');}
             sent=true;const data=await request(path,{method:'POST',headers:{'X-CSRF-Token':token.csrfToken},body:new URLSearchParams({[kind==='boleto'?'idBoleto':'idEvento']:selected})}),r=kind==='boleto'?validateSingle(data.resultado,Number(selected)):validateBatch(data.resultado,Number(selected));
             const article=node('article');article.append(node('h3','POST confirmado · '+(eventSnapshot?eventSnapshot.evento+' · ':'')+kind+' #'+selected+' · '+(kind==='evento'?'Nuevos: '+r.boletosLiquidadosNuevos+' · Ya liquidados: '+r.boletosYaLiquidados:r.solicitudIdempotente?'Liquidación existente: respuesta idempotente; no acredita un pago nuevo':'Liquidación nueva confirmada')));if(kind==='evento')renderBatch(article,r,eventSnapshot);else renderOfficial(article,r);const details=node('details');details.append(node('summary','DTO oficial (importes e IDs exactos)'),node('p',JSON.stringify(r),'live-status'));article.append(details);$('settlement-values').append(article);$('settlement-result').hidden=false;confirmed=true;confirmedRefs.add(kind+':'+selected);if(kind==='evento')for(const d of r.detalles)confirmedRefs.add('boleto:'+d.idBoleto);
             try{sessionStorage.removeItem(key);if(sessionStorage.getItem(key)!==null)fail();}catch{storage=false;}

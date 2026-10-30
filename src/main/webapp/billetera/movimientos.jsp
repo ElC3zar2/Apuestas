@@ -47,6 +47,7 @@
         <section id="consulta-billetera" aria-labelledby="titulo-resultados" aria-busy="true">
             <div class="section-heading"><h2 id="titulo-resultados">Tu historial</h2><span id="cantidad-movimientos" class="muted" role="status"></span></div>
             <p id="filtros-aplicados" class="muted" role="status"></p>
+            <p class="muted wallet-note">Saldo disponible: importe que el servidor informa como disponible para uso. Saldo comprometido: importe que el servidor mantiene reservado. Cada movimiento muestra sus saldos anterior y posterior y la variación oficial, sin reconstruir el saldo del período.</p>
             <div id="estado-billetera" class="panel wallet-status is-loading">
                 <span class="status-symbol" aria-hidden="true">◇</span><p id="mensaje-billetera" role="status">Cargando movimientos…</p>
                 <button id="reintentar-billetera" class="retry" type="button" hidden>Volver a intentar</button>

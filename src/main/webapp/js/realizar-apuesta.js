@@ -230,9 +230,18 @@
     }
     function summary(target,result,quoteResult = false) {
         const d = result.data, exact = result.exact;
+        const cents = value => typeof value === "string" && value.length <= 40 && /^\d+(?:\.\d{1,2})?$/.test(value)
+            ? BigInt(value.split(".")[0])*100n+BigInt((value.split(".")[1]||"").padEnd(2,"0")) : null;
+        const prize=cents(exact.gananciaPotencial),charge=cents(exact.totalCargo);
+        const benefit=prize===null||charge===null?null:prize-charge;
+        const format=value=>{const abs=value<0n?-value:value;return (value<0n?"-":"")+String(abs/100n)+"."+String(abs%100n).padStart(2,"0");};
         const entries = [["Tipo de boleto",d.tipoBoleto],["Selecciones",String(d.cantidadSelecciones)],
-            ["Monto apostado",exact.montoApostado],["Comisión (%)",d.comisionServicioPorcentaje === null ? null : exact.comisionServicioPorcentaje],
-            ["Comisión de servicio",exact.comisionServicio],[quoteResult ? "Total a cargar" : "Total cargado informado",exact.totalCargo],["Cuota total",exact.cuotaTotal],["Premio potencial (no acreditado)",exact.gananciaPotencial]];
+            ["Monto y cargos",""],["Monto apostado",exact.montoApostado],["Comisión de servicio",exact.comisionServicio],
+            ["Porcentaje de comisión",d.comisionServicioPorcentaje === null ? null : exact.comisionServicioPorcentaje],
+            [quoteResult ? "Total a cargar" : "Total cargado informado",exact.totalCargo],
+            [quoteResult ? "Resultado potencial" : "Resultado potencial histórico",""],
+            ["Cuota total",exact.cuotaTotal],[quoteResult ? "Premio potencial (no acreditado)" : "Premio potencial histórico (no acredita un pago)",exact.gananciaPotencial]];
+        entries.push(["Beneficio potencial después del cargo total",benefit===null?"Consulta el premio, monto apostado y cargo total. La liquidación definitiva corresponde al servidor.":format(benefit)+" · Estimación informativa, no saldo disponible."]);
         if (quoteResult && d.tipoMercado === "MARCADOR_FINAL") entries.push(
             ["Cuota por resultado",d.cuotaResultado === null ? null : exact.cuotaResultado],
             ["Premio potencial por resultado",d.premioResultadoPotencial === null ? null : exact.premioResultadoPotencial],
@@ -240,6 +249,7 @@
         const fragment = document.createDocumentFragment();
         for (const [title,value] of entries) {
             const item = node("div"); if (title.startsWith("Total ")) item.className = "total";
+            if (value === "") item.className = "financial-heading";
             item.append(node("dt",title),node("dd",value === null ? "No disponible" : value)); fragment.append(item);
         }
         target.replaceChildren(fragment);

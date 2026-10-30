@@ -60,6 +60,7 @@ window.BetZoneMarkets = (() => {
         let busy=false,sessionBlocked=false,leaving=false,revision=0,event=null,marketId=null,selectionId=null,uncertain=null,verified=false,activeRoute='mercados/crear';
         const planKey='betzone-market-1x2:'+base;
         let plan=null,planNeedsCheck=false,planConflict='',planReview=false,planInvalid=false;
+        let contextMismatch=false;
         const node=(tag,value,className)=>{const e=document.createElement(tag);if(value!==undefined)e.textContent=value;if(className)e.className=className;return e;};
         const show=v=>v===null||v===undefined?'Sin dato':typeof v==='boolean'?v?'Sí':'No':String(v);
         const market=()=>event?.mercados.find(m=>m.idMercado===marketId)||null;
@@ -97,6 +98,7 @@ window.BetZoneMarkets = (() => {
         }
         function available(route){
             const m=market(),s=selection();
+            if(contextMismatch||plan&&event?.idEvento!==plan.event.idEvento)return false;
             if(!event)return false;
             if(route==='mercados/crear')return ['BORRADOR','PROGRAMADO'].includes(event.estadoEvento);
             if(route==='selecciones/crear')return m?.estadoMercado==='BORRADOR'&&(m.tipoMercado!=='MARCADOR_FINAL'||m.selecciones.length===0);
@@ -161,7 +163,9 @@ window.BetZoneMarkets = (() => {
             if(![...$('detail-id').options].some(o=>o.value===String(e.idEvento)))$('detail-id').append(A.option(e.idEvento,A.eventLabel(e)));
             $('detail-id').value=String(e.idEvento);A.choices($('market-picker'),e.mercados,'idMercado',m=>m.mercado+' · '+m.tipoMercado+' · '+m.estadoMercado);
             $('selected-live').href=base+'/administrador/en-vivo?idEvento='+e.idEvento;$('selected-live').hidden=false;$('selected-markets').hidden=true;
-            selectMarket(preferred.market,preferred.selection);
+            let selected=preferred.market;
+            if(!selected&&!plan){try{const matches=e.mercados.filter(m=>oneEquivalent(m,oneTeams(e))||sameName(m.mercado,'Resultado final — 1X2'));if(matches.length===1)selected=matches[0].idMercado;}catch{/* Otras modalidades conservan su selección manual. */}}
+            selectMarket(selected,preferred.selection);
         }
         async function readDetail(eventId,preferred={},verify){
             const stamp=revision;
@@ -304,10 +308,23 @@ window.BetZoneMarkets = (() => {
             &&plan.rows.every(r=>r.state==='confirmed'&&r.quote.state==='confirmed'));}
         function planUnknown(){return plan&&(plan.market.state==='uncertain'||plan.rows.some(r=>r.state==='uncertain'||r.quote.state==='uncertain')||plan.open.state==='uncertain');}
         function syncPlan(){
-            const locked=busy||sessionBlocked||!canWrite||Boolean(uncertain)||planInvalid;
+            const locked=busy||sessionBlocked||!canWrite||Boolean(uncertain)||planInvalid||contextMismatch||Boolean(plan&&event&&event.idEvento!==plan.event.idEvento);
+            for(const name of ['one-event-back','one-event-program']){
+                $(name).hidden=!event||name==='one-event-program'&&event.estadoEvento!=='BORRADOR';
+                if(event)$(name).href=base+'/administrador/eventos?idEvento='+encodeURIComponent(event.idEvento)+'#event-wizard';
+            }
+            $('one-preparation').textContent=contextMismatch?'REQUIERE REVISIÓN: el enlace y el plan guardado pertenecen a eventos distintos. Se conserva el plan; vuelve a su evento antes de operar.':event?'Evento: '+event.evento+' · '+event.estadoEvento+'. Configura y verifica las tres selecciones y cuotas antes de abrir.':'Verificación oficial pendiente: consulta el evento.';
             $('one-edit').hidden=Boolean(plan)||planReview;$('one-review').hidden=Boolean(plan)||!planReview;$('one-progress').hidden=!plan;
             let compatible=false,reason='Consulta un evento para preparar su resultado final 1X2.';
-            try{if(event){oneTeams(event);compatible=['BORRADOR','PROGRAMADO'].includes(event.estadoEvento);reason=compatible?'LOCAL y VISITANTE identificados mediante sus asociaciones oficiales.':'El estado del evento no admite crear mercados.';
+            try{if(event){const teams=oneTeams(event);compatible=['BORRADOR','PROGRAMADO'].includes(event.estadoEvento);reason=compatible?'LOCAL y VISITANTE identificados mediante sus asociaciones oficiales.':'El estado del evento no admite crear mercados.';
+                const existing=event.mercados.filter(m=>oneEquivalent(m,teams)||sameName(m.mercado,$('one-name').value.trim()));
+                if(!plan&&existing.length){
+                    compatible=false;reason=existing.length===1?'Ya existe '+existing[0].mercado+' · '+existing[0].estadoMercado+'. Revisa sus selecciones y cuotas en Mercado seleccionado; no se creará otro.':'Hay varios mercados coincidentes o equivalentes. Requiere revisión manual.';
+                    if(existing.length===1){
+                        const m=existing[0],missing=m.selecciones.filter(s=>!s.seleccionActiva||s.idCuota===null||s.cuotaActiva!==true).map(s=>s.seleccion);
+                        $('one-preparation').textContent='Evento: '+event.evento+' · '+event.estadoEvento+' · Mercado: '+m.estadoMercado+'. '+(!oneEquivalent(m,teams)?'Configuración 1X2 parcial: revisa las selecciones en administración manual.':missing.length?'Selecciones o cuotas pendientes: '+missing.join(', ')+'.':m.estadoMercado==='ABIERTO'&&event.estadoEvento==='PROGRAMADO'?'Evento preparado para apuestas.':'Tres selecciones y cuotas verificadas. '+(event.estadoEvento==='BORRADOR'?'Programa el evento antes de abrir.':'Revisa la apertura en administración manual.'));
+                    }
+                }
                 const rows=oneRows(event);for(const r of rows)$('one-person-'+r.code).textContent=r.personName;}}
             catch(e){reason=e.message;}
             $('one-context').textContent=planInvalid?'El progreso guardado es incompatible. Se conserva el almacenamiento original; requiere revisión manual antes de otro proceso.':plan?'Proceso conservado: '+plan.event.evento+' · '+plan.market.name:reason;
@@ -317,9 +334,14 @@ window.BetZoneMarkets = (() => {
             $('one-cancel').disabled||=plan?.started===true;
             $('one-resume').disabled||=planNeedsCheck||Boolean(planConflict)||Boolean(planUnknown())||planComplete()||event?.idEvento!==plan?.event.idEvento;
             const m=event?.mercados.find(m=>m.idMercado===plan?.market.id);
-            $('one-open').disabled||=!planComplete()||m?.estadoMercado!=='BORRADOR'||event?.estadoEvento!=='PROGRAMADO'||plan?.open.state!=='pending';
+            $('one-open').disabled||=!planComplete()||m?.estadoMercado!=='BORRADOR'||event?.estadoEvento!=='PROGRAMADO'||plan?.open.state!=='pending'||Boolean(m&&opening(m).length);
             $('one-release').disabled||=!planComplete()||Boolean(planUnknown());
             if(plan){
+                if(contextMismatch||event&&event.idEvento!==plan.event.idEvento){
+                    const back=node('a','Volver al proceso conservado: '+plan.event.evento);
+                    back.href=base+'/administrador/mercados?idEvento='+encodeURIComponent(plan.event.idEvento)+'#market-one';
+                    $('one-preparation').append(document.createTextNode(' '),back);
+                }
                 const state=planConflict?'CONFLICTO':planUnknown()?'INCIERTO':planNeedsCheck?'PENDIENTE DE COMPROBACIÓN':planComplete()?(m?.estadoMercado==='ABIERTO'?'ABIERTO':'COMPLETO · mercado '+(m?.estadoMercado||'sin comprobar')):'INCOMPLETO';
                 $('one-state').textContent=state+' · '+(planConflict||plan.last);
                 if(planComplete()&&event.estadoEvento==='BORRADOR')$('one-state').textContent+=' Programa primero el evento mediante administración de eventos; el asistente no cambia su estado.';
@@ -328,6 +350,10 @@ window.BetZoneMarkets = (() => {
                     ?(target.observed?'REFERENCIA OBSERVADA':'RESPUESTA CONSERVADA')+' · comprobar detalle'
                     :target.observed?'OBSERVADO Y VINCULADO':stateName(target.state);
                 $('one-market-state').textContent='Mercado: '+evidence(plan.market)+(plan.market.id?' · referencia #'+plan.market.id:' · sin ID oficial')+'. Estado de apertura: '+evidence(plan.open)+'.';
+                if(event?.idEvento===plan.event.idEvento&&!planNeedsCheck&&!planConflict){
+                    const missing=plan.rows.filter(r=>r.quote.state!=='confirmed').map(r=>r.code+' · '+r.personName);
+                    $('one-preparation').textContent='Evento: '+event.evento+' · '+event.estadoEvento+' · Mercado: '+(m?.estadoMercado||'PENDIENTE')+'. '+(missing.length?'Cuotas pendientes: '+missing.join(', ')+'.':planComplete()?'Tres selecciones y tres cuotas verificadas. ':'Verificación de selecciones pendiente. ')+(planComplete()&&m?.estadoMercado==='ABIERTO'&&event.estadoEvento==='PROGRAMADO'?'Evento preparado para apuestas.':event.estadoEvento==='BORRADOR'?'Programa el evento antes de abrir.':'Revisa el siguiente paso del proceso.');
+                }
                 $('one-rows').replaceChildren();table($('one-rows'),'Progreso conservado del proceso 1X2',['Resultado','Selección','Cuota revisada','Selección oficial','Cuota oficial'],plan.rows.map(r=>[r.code+' · '+r.personName,r.name,r.odds,evidence(r)+(r.id?' · #'+r.id:''),evidence(r.quote)+(r.quote.id?' · #'+r.quote.id:'')]));
             }
         }
@@ -339,6 +365,7 @@ window.BetZoneMarkets = (() => {
             }catch(e){report(e);}
         }
         async function checkPlan(adopt=false){
+            if(contextMismatch||event&&event.idEvento!==plan?.event.idEvento)fail('El evento consultado y el plan conservado no coinciden. Vuelve al evento del plan para conciliarlo; no se enviarán escrituras.');
             if(!validPlan(plan))fail('El proceso conservado no es válido; requiere revisión manual.');
             planNeedsCheck=true;planConflict=plan.reviewRequired;sync();
             const e=checkDetail((await request('/administrador/eventos/detalle?'+new URLSearchParams({idEvento:plan.event.idEvento}))).evento,plan.event.idEvento);
@@ -402,7 +429,7 @@ window.BetZoneMarkets = (() => {
             return r;
         }
         async function runPlan(work){
-            if(busy||sessionBlocked||leaving||!canWrite||uncertain||planInvalid)return;
+            if(busy||sessionBlocked||leaving||!canWrite||uncertain||planInvalid||contextMismatch||event&&event.idEvento!==plan?.event.idEvento)return;
             busy=true;sync();
             try{await work();}catch(e){if(plan){planNeedsCheck=true;savePlan();}report(e);}finally{busy=false;sync();}
         }
@@ -476,10 +503,17 @@ window.BetZoneMarkets = (() => {
             query(async()=>{const data=await request(path);if(data.pagina!==page||data.tamanoPagina!==100||!Number.isSafeInteger(data.total)||data.total<0||!Array.isArray(data.eventos)||data.eventos.length!==Math.min(100,Math.max(0,data.total-(page-1)*100))||data.eventos.some(e=>!id(e.idEvento)||e.idDeporte!==Number(sport)||!id(e.idLiga)||!text(e.evento,200)||!eventStates.includes(e.estadoEvento)||!date(e.fechaInicio))||new Set(data.eventos.map(e=>e.idEvento)).size!==data.eventos.length)fail('Página administrativa de eventos inconsistente.');A.pageData(data);A.choices($('detail-id'),data.eventos,'idEvento',A.eventLabel);table($('browse-results'),'Eventos administrativos',['Evento','Liga','Estado','Inicio','Acción'],data.eventos.map(e=>[e.evento,e.liga,e.estadoEvento,e.fechaInicio,action('Abrir '+e.evento,()=>detail(e.idEvento))]));});});
         $('detail-form').addEventListener('submit',e=>{e.preventDefault();detail($('detail-id').value);});$('detail-id').addEventListener('change',()=>detail($('detail-id').value));A.eventPagination($('browse-form'));
         window.addEventListener('pagehide',()=>{leaving=true;revision++;});
+        window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
         document.querySelector('[data-nav="mercados"]').setAttribute('aria-current','page');
         clearContext();sync();if(!canWrite)status('Las escrituras requieren ADMINISTRADOR u OPERADOR_EVENTOS. El backend conserva la autorización definitiva.',true);
         const initial=new URLSearchParams(location.search).get('idEvento');
-        loadSports().then(()=>{if(plan){query(()=>checkPlan(false));return;}if(initial!==null){if(inputId(initial))detail(initial);else status('La referencia de evento en la URL no es válida. Selecciona un evento del listado.',true);}});
+        loadSports().then(async()=>{
+            if(initial!==null&&!inputId(initial)){contextMismatch=true;sync();status('La referencia de evento en la URL no es válida. Se bloquean escrituras; vuelve al listado administrativo.',true);return;}
+            contextMismatch=Boolean(plan&&initial!==null&&plan.event.idEvento!==Number(initial));
+            if(contextMismatch){await query(()=>readDetail(initial));status('El enlace corresponde a otro evento. El plan de '+plan.event.evento+' se conserva y las escrituras permanecen bloqueadas. Regresa al evento del plan para revisarlo.',true);return;}
+            if(plan)await query(()=>checkPlan(false));else if(initial!==null)await query(()=>readDetail(initial));
+            if(event&&initial!==null){$('one-title').focus();$('market-one').scrollIntoView({block:'start'});}
+        });
     }
     return {init};
 })();

@@ -112,14 +112,21 @@
         header.append(title,node("span","movement-state","Estado: " + item.estadoTransaccion));
         card.append(header,node("p","movement-description",display(item.descripcion)));
         const facts = node("dl","wallet-facts");
-        fact(facts,"Monto",item.monto); fact(facts,"Referencia",item.referenciaOperacion); fact(facts,"Tipo de transacción",item.tipoTransaccion);
-        fact(facts,"Movimiento",item.idMovimiento); fact(facts,"Transacción",item.idTransaccion); fact(facts,"Boleto asociado",item.idBoleto);
-        fact(facts,"Solicitud",date(item.fechaSolicitud)); fact(facts,"Procesamiento",date(item.fechaProcesamiento)); fact(facts,"Procesado por",item.usuarioProceso);
-        card.append(facts);
-        const balances = node("dl","wallet-facts movement-saldos");
-        fact(balances,"Disponible anterior",item.saldoDisponibleAnterior); fact(balances,"Disponible posterior",item.saldoDisponiblePosterior); fact(balances,"Variación disponible",item.variacionSaldoDisponible);
-        fact(balances,"Comprometido anterior",item.saldoComprometidoAnterior); fact(balances,"Comprometido posterior",item.saldoComprometidoPosterior); fact(balances,"Variación comprometida",item.variacionSaldoComprometido);
-        card.append(balances);
+        fact(facts,"Monto informado",item.monto); fact(facts,"Referencia de operación",item.referenciaOperacion); fact(facts,"Boleto asociado",item.idBoleto);
+        card.append(node("h4","movement-group-title","Movimiento"),facts);
+        for(const [title,previous,variation,next] of [
+            ["Saldo disponible",item.saldoDisponibleAnterior,item.variacionSaldoDisponible,item.saldoDisponiblePosterior],
+            ["Saldo comprometido",item.saldoComprometidoAnterior,item.variacionSaldoComprometido,item.saldoComprometidoPosterior]]){
+            const balances=node("dl","wallet-facts movement-saldos");
+            fact(balances,"Anterior",previous);fact(balances,"Variación informada",variation);fact(balances,"Posterior",next);
+            card.append(node("h4","movement-group-title",title),balances);
+        }
+        const technical=node("details","movement-technical"),details=node("dl","wallet-facts");
+        technical.append(node("summary","","Detalle de la transacción"));
+        fact(details,"Tipo oficial",item.tipoTransaccion);fact(details,"Estado",item.estadoTransaccion);
+        fact(details,"Movimiento",item.idMovimiento);fact(details,"Transacción",item.idTransaccion);
+        fact(details,"Solicitud",date(item.fechaSolicitud));fact(details,"Procesamiento",date(item.fechaProcesamiento));fact(details,"Procesado por",item.usuarioProceso);
+        technical.append(details);card.append(technical);
         if (item.idBoleto !== null) {
             const link = node("a","text-link","Abrir comprobante del boleto relacionado ↗");
             link.href = contextPath + "/usuario/boletos/imprimir?idBoleto=" + encodeURIComponent(item.idBoleto);
@@ -146,6 +153,8 @@
     }
     function notaFiltros() {
         const labels = [];
+        if (!applied.params.has("fechaDesde")) labels.push("Desde: sin límite inferior solicitado");
+        if (!applied.params.has("fechaHasta")) labels.push("Hasta: sin límite superior solicitado");
         if (applied.params.has("fechaDesde")) labels.push("Desde " + date(applied.params.get("fechaDesde")));
         if (applied.params.has("fechaHasta")) labels.push("Hasta " + date(applied.params.get("fechaHasta")));
         labels.push("Máximo " + applied.limit + " movimientos");
@@ -165,7 +174,8 @@
             if (movements) {
                 validarMovimientos(data,applied.limit);
                 if (!data.cantidad) {
-                    estado(applied.params.size ? "No hay movimientos para los filtros aplicados. Puedes limpiar los filtros." : "Todavía no hay movimientos en tu billetera.");
+                    estado("No se recibieron movimientos para el período y los filtros consultados. Puedes ajustar las fechas.");
+                    get("cantidad-movimientos").textContent="0 movimientos recibidos";
                     return;
                 }
                 const fragment = document.createDocumentFragment(); data.movimientos.forEach(item => fragment.append(movimiento(item))); content.replaceChildren(fragment);

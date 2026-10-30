@@ -556,7 +556,7 @@
             ||event.participantes.some(p=>!Number.isInteger(p.idParticipante)||!validId(p.idParticipante)||typeof p.participante!=='string'||!['EQUIPO','ATLETA'].includes(p.tipoParticipante)||!Number.isInteger(p.ordenParticipante)||p.ordenParticipante<1||p.ordenParticipante>255||![true,false,null].includes(p.esLocal))
             ||new Set(event.participantes.map(p=>p.idParticipante)).size!==event.participantes.length||new Set(event.participantes.map(p=>p.ordenParticipante)).size!==event.participantes.length||event.mercados.some(m=>!Array.isArray(m.selecciones))))throw new Error('Detalle administrativo inconsistente. No se habilitaron operaciones.');
         const target = $('detail-results'); target.replaceChildren(); selectEvent(event.idEvento);
-        if(page==='eventos')officialEvent4=event;
+        if(page==='eventos'){officialEvent4=event;eventWizard?.observe(event);}
         if(connected){connectedEvent=event;manualReferences=false;selectionMessage();if(page==='mercados')participantPicker(event);}
         target.append(node('h3',display(event.nombre)));
         if($('detail-id')){const choice=[...$('detail-id').options].find(o=>o.value===String(event.idEvento));if(choice)choice.textContent=window.BetZoneAdmin.eventLabel(event);}
@@ -690,7 +690,7 @@
     }
     renderForms();
     if (page === 'eventos' && $('event-wizard') && window.BetZoneEventWizard) {
-        eventWizard = window.BetZoneEventWizard({request:api,base,role,onEvent:selectEvent,onError:report,onSport:(id,name) => {
+        eventWizard = window.BetZoneEventWizard({request:api,base,role,onEvent:selectEvent,onDetail:renderDetail,onError:report,onSport:(id,name) => {
             const sport=$('browse-sport');
             if(sport.value===String(id))return;
             if(validId(id)&&typeof name==='string'&&![...sport.options].some(o=>o.value===String(id)))sport.append(window.BetZoneAdmin.option(id,name));
@@ -801,7 +801,10 @@
         populate('idPais',data.paises,'idPais','nombre');sync();
     }).catch(report);
     const initial = new URLSearchParams(location.search).get('idEvento');
-    if ($('detail-form') && initial && /^[0-9]+$/.test(initial) && Number(initial)>0 && Number(initial)<=2147483647) { if(page==='eventos')$('advanced-event-management').open=true; $('detail-id').value=initial; detail(initial); }
+    if(page==='eventos'&&eventWizard){
+        if(initial!==null&&!validId(initial))status('Referencia de evento inválida. No se cargó otro evento.',true);
+        else eventWizard.refresh(initial===null?undefined:initial);
+    }else if ($('detail-form') && initial && /^[0-9]+$/.test(initial) && Number(initial)>0 && Number(initial)<=2147483647) { $('detail-id').value=initial; detail(initial); }
     else if (eventWizard) eventWizard.loadSports().then(()=>$('load-sports').click());
     else $('load-sports').click();
 })();

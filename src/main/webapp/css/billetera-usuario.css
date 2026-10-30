@@ -1,4 +1,9 @@
 .wallet-page { min-height: calc(100vh - 155px); }
+.movement-group-title { font-size: 14px; color: var(--cyan); margin: 22px 0 12px; }
+.movement-technical { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 16px; }
+.movement-technical summary { cursor: pointer; font-size: 13px; line-height: 1.7; }
+.movement-technical summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+.movement-saldos { margin-bottom: 20px; }
 .wallet-page .section-heading { margin-bottom: 18px; }
 .wallet-page .welcome > div, .wallet-page .panel, .wallet-page dl > div { min-width: 0; }
 .wallet-status { margin: 18px 0; text-align: center; padding: 36px 24px; }
