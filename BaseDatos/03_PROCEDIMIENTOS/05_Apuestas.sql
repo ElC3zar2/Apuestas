@@ -1065,6 +1065,25 @@ BEGIN
             THROW 60042, 'No se pueden seleccionar dos resultados del mismo mercado en un boleto.', 1;
 
 
+        /* Un boleto previo de cualquier estado impide otra compra del mismo
+           usuario y evento. El cerrojo transaccional sigue vigente hasta COMMIT. */
+        IF EXISTS
+        (
+            SELECT 1
+            FROM @Detalle AS Nueva
+            INNER JOIN dbo.Seleccion AS AnteriorSeleccion WITH (UPDLOCK, HOLDLOCK)
+                ON AnteriorSeleccion.IdEvento = Nueva.IdEvento
+            INNER JOIN dbo.DetalleBoleto AS AnteriorDetalle WITH (UPDLOCK, HOLDLOCK)
+                ON AnteriorDetalle.IdSeleccion = AnteriorSeleccion.IdSeleccion
+            INNER JOIN dbo.Boleto AS AnteriorBoleto WITH (UPDLOCK, HOLDLOCK)
+                ON AnteriorBoleto.IdBoleto = AnteriorDetalle.IdBoleto
+               AND AnteriorBoleto.IdUsuario = @IdUsuario
+        )
+            THROW 60066,
+                'Ya tienes una apuesta registrada para este evento. No puedes realizar otra apuesta al mismo partido.',
+                1;
+
+
         /* ====================================================
            CALCULAR CUOTA TOTAL Y GANANCIA POTENCIAL
            ==================================================== */

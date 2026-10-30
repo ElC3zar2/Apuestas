@@ -13,6 +13,7 @@
     const types = {CONVENCIONAL:"Convencional", PRIMERA_ANOTACION:"Primera anotación", MARCADOR_FINAL:"Marcador final"};
     const knownType = value => typeof value === "string" && Object.prototype.hasOwnProperty.call(types, value);
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const duplicateEventMessage = "Ya tienes una apuesta registrada para este evento. No puedes realizar otra apuesta al mismo partido.";
     const params = new URLSearchParams(window.location.search);
     function navId(name) {
         const values = params.getAll(name);
@@ -104,11 +105,15 @@
                     const rejected409 = object(data) && [
                         "Una o más selecciones ya no están disponibles o el periodo de apuestas cerró.",
                         "El saldo disponible es insuficiente para cubrir la apuesta y su comisión.",
-                        "No fue posible aceptar la apuesta con la disponibilidad actual."
+                        "No fue posible aceptar la apuesta con la disponibilidad actual.",
+                        duplicateEventMessage
                     ].includes(data.mensaje);
                     const definitive = object(data) && data.ok === false
                         && ([400,401,403].includes(response.status) || (response.status === 409 && rejected409));
-                    throw fault(messages[response.status] || "No fue posible procesar la solicitud.",definitive,response.status === 401);
+                    const duplicateEvent = definitive && response.status === 409 && data.mensaje === duplicateEventMessage;
+                    const error = fault(duplicateEvent ? duplicateEventMessage : messages[response.status] || "No fue posible procesar la solicitud.",definitive,response.status === 401);
+                    error.duplicateEvent = duplicateEvent;
+                    throw error;
                 }
                 if (!object(data) || data.ok !== true || ![200,201].includes(response.status)) throw fault("La respuesta del servidor no contiene un resultado válido.");
                 return result;
@@ -368,11 +373,15 @@
             successView(result); estado("Boleto confirmado. Conserva el código y la referencia.");
             try { persist(); } catch (error) { estado("Boleto confirmado. Conserva el código: no se pudo guardar el resultado; la referencia previa permanece pendiente."); }
         } catch (error) {
-            const rejected = sent && error.definitive === true && !recovering;
+            // Solo el nuevo rechazo exacto permite concluir este reintento pendiente.
+            const rejected = sent && error.definitive === true && (!recovering || error.duplicateEvent === true);
+            const duplicateEvent = rejected && error.duplicateEvent === true;
+            if (duplicateEvent) blocked = true;
             operation.status = rejected ? "rejected" : "pending"; phase = rejected ? "idle" : "uncertain";
             clearQuote();
             try { persist(); } catch (storageError) { /* La operación original ya se guardó antes de enviar. */ }
-            estado((error.controlled ? error.message : "No se pudo verificar la respuesta.") + (rejected
+            estado((error.controlled ? error.message : "No se pudo verificar la respuesta.") + (duplicateEvent
+                ? " Puedes consultar tu boleto existente en \"Mis apuestas\"." : rejected
                 ? " El servidor rechazó la solicitud. Revisa los datos y vuelve a cotizar."
                 : sent ? " Resultado incierto: conserva esta referencia y reintenta únicamente la misma operación."
                 : " No se envió la confirmación. Se conserva la referencia preparada; reintenta únicamente esta operación."),true,Boolean(error.session));

@@ -29,7 +29,7 @@ final class ApuestaHttp {
             case 60033:return 401;
             case 60034:case 60035:case 60036:case 60037:case 60038:case 60039:return 403;
             case 60029:case 60030:case 60031:case 60032:case 60040:case 60046:case 60056:
-            case 76104:case 76106:return 409;
+            case 60066:case 76104:case 76106:return 409;
             case 76900:return 503;
             // 76105 y catalogos/invariantes financieras son internos, no errores del cliente.
             default:return 500;

@@ -167,6 +167,8 @@ public class RealizarApuestaServlet extends HttpServlet {
                 return "Una o más selecciones ya no están disponibles o el periodo de apuestas cerró.";
             case 60046:
                 return "El saldo disponible es insuficiente para cubrir la apuesta y su comisión.";
+            case 60066:
+                return "Ya tienes una apuesta registrada para este evento. No puedes realizar otra apuesta al mismo partido.";
             case 60022:
                 return "El monto es menor al mínimo permitido para apostar.";
             default:
