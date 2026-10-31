@@ -1770,6 +1770,119 @@ GO
    FINALIZADO y CANCELADO son terminales.
    ============================================================ */
 
+/* FASE 3. Auxiliar interno: sin transaccion propia ni ResultSets.
+   El llamador conserva el cerrojo comun, actualiza el evento y confirma todo
+   junto. SUSPENSION conserva cuotas; CIERRE nunca reabre estados terminales. */
+CREATE OR ALTER PROCEDURE dbo.sp_SincronizarCierreMercadosEvento
+    @IdUsuarioProceso INT, @IdEvento INT, @Modo VARCHAR(10), @IpOrigen VARCHAR(45),
+    @CantidadMercados INT OUTPUT, @MercadosAjustados INT OUTPUT,
+    @CuotasDesactivadas INT OUTPUT, @IncompatiblesRestantes INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    IF @@TRANCOUNT=0 OR XACT_STATE()<>1
+       OR ISNULL(APPLOCK_MODE('public','PlataformaApuestas:Operacion','Transaction'),'NoLock')<>'Exclusive'
+        THROW 76890,'La sincronizacion requiere transaccion y cerrojo exclusivo de operacion.',1;
+    EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+    DECLARE @EstadoEvento VARCHAR(40);
+    SELECT @EstadoEvento=E.Codigo FROM dbo.Evento EV WITH (UPDLOCK,HOLDLOCK)
+      JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+      WHERE EV.IdEvento=@IdEvento AND T.Codigo='EVENTO';
+    IF @EstadoEvento IS NULL OR @Modo IS NULL OR @Modo NOT IN ('CIERRE','SUSPENSION')
+       OR (@Modo='CIERRE' AND @EstadoEvento NOT IN ('EN_VIVO','PENDIENTE_RESULTADO','SUSPENDIDO'))
+       OR (@Modo='SUSPENSION' AND @EstadoEvento<>'SUSPENDIDO')
+        THROW 76890,'Precondicion de sincronizacion de mercados invalida.',1;
+    IF EXISTS(SELECT 1 FROM dbo.Mercado M WITH (UPDLOCK,HOLDLOCK)
+      JOIN dbo.Estado E ON E.IdEstado=M.IdEstado JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+      WHERE M.IdEvento=@IdEvento AND (T.Codigo<>'MERCADO'
+        OR E.Codigo NOT IN ('BORRADOR','ABIERTO','SUSPENDIDO','CERRADO','LIQUIDADO','ANULADO')))
+        THROW 76890,'El evento contiene un estado de mercado no reconocido.',1;
+    DECLARE @Destino VARCHAR(40)=CASE WHEN @Modo='CIERRE' THEN 'CERRADO' ELSE 'SUSPENDIDO' END,@IdDestino INT;
+    SELECT @IdDestino=E.IdEstado FROM dbo.Estado E JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+      WHERE T.Codigo='MERCADO' AND E.Codigo=@Destino AND E.Activo=1;
+    IF @IdDestino IS NULL THROW 76890,'No existe un estado de mercado activo para sincronizar.',1;
+    DECLARE @Ajustados TABLE(IdMercado INT PRIMARY KEY,IdEstadoAnterior INT);
+    UPDATE M SET IdEstado=@IdDestino
+      OUTPUT inserted.IdMercado,deleted.IdEstado INTO @Ajustados
+      FROM dbo.Mercado M WITH (UPDLOCK,HOLDLOCK) JOIN dbo.Estado E ON E.IdEstado=M.IdEstado
+      WHERE M.IdEvento=@IdEvento AND ((@Modo='CIERRE' AND E.Codigo IN ('BORRADOR','ABIERTO','SUSPENDIDO'))
+        OR (@Modo='SUSPENSION' AND E.Codigo='ABIERTO'));
+    SET @MercadosAjustados=@@ROWCOUNT;
+    SET @CuotasDesactivadas=0;
+    IF @Modo='CIERRE'
+    BEGIN
+        DECLARE @Ahora DATETIME2=SYSDATETIME();
+        UPDATE C SET Activo=0,FechaFin=CASE WHEN C.FechaFin>C.FechaInicio THEN C.FechaFin
+          WHEN @Ahora>C.FechaInicio THEN @Ahora ELSE DATEADD(NANOSECOND,100,C.FechaInicio) END
+          FROM dbo.Cuota C WITH (UPDLOCK,HOLDLOCK)
+          JOIN dbo.Seleccion S ON S.IdSeleccion=C.IdSeleccion JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado
+          WHERE M.IdEvento=@IdEvento AND C.Activo=1;
+        SET @CuotasDesactivadas=@@ROWCOUNT;
+    END;
+    SELECT @CantidadMercados=COUNT(*) FROM dbo.Mercado WHERE IdEvento=@IdEvento;
+    SELECT @IncompatiblesRestantes=COUNT(*) FROM dbo.Mercado M JOIN dbo.Estado E ON E.IdEstado=M.IdEstado
+      WHERE M.IdEvento=@IdEvento AND ((@Modo='CIERRE' AND E.Codigo IN ('BORRADOR','ABIERTO','SUSPENDIDO'))
+        OR (@Modo='SUSPENSION' AND E.Codigo='ABIERTO'));
+    IF @IncompatiblesRestantes<>0 OR (@Modo='CIERRE' AND EXISTS(SELECT 1 FROM dbo.Cuota C
+      JOIN dbo.Seleccion S ON S.IdSeleccion=C.IdSeleccion JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado
+      WHERE M.IdEvento=@IdEvento AND C.Activo=1))
+        THROW 76890,'La sincronizacion no consiguio desactivar los mercados y cuotas incompatibles.',1;
+    INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
+      SELECT @IdUsuarioProceso,'ESTADO_MERCADO_SINCRONIZADO','Mercado',A.IdMercado,@IpOrigen,
+        CONCAT('Evento=',@IdEvento,'; estado ',E.Codigo,' -> ',@Destino,'.')
+      FROM @Ajustados A JOIN dbo.Estado E ON E.IdEstado=A.IdEstadoAnterior;
+    IF @MercadosAjustados>0 OR @CuotasDesactivadas>0
+      INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
+        VALUES(@IdUsuarioProceso,'CIERRE_MERCADOS_EVENTO','Evento',@IdEvento,@IpOrigen,
+          CONCAT('Modo=',@Modo,'; estado evento=',@EstadoEvento,'; mercados ajustados=',@MercadosAjustados,
+            '; cuotas desactivadas=',@CuotasDesactivadas,'. Sin modificar resultados ni boletos.'));
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_ReconciliarCierreMercadosEvento
+    @IdUsuarioProceso INT, @IdEvento INT, @IpOrigen VARCHAR(45)=NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    IF @IdEvento IS NULL OR @IdEvento<=0 THROW 76800,'IdEvento debe ser positivo.',1;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        DECLARE @Lock INT;
+        EXEC @Lock=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+          @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @Lock<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+        EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+        IF NOT EXISTS(SELECT 1 FROM dbo.Usuario U JOIN dbo.Rol R ON R.IdRol=U.IdRol
+          WHERE U.IdUsuario=@IdUsuarioProceso AND R.Nombre='ADMINISTRADOR')
+          THROW 76804,'Solo ADMINISTRADOR puede reconciliar mercados historicos.',1;
+        DECLARE @Estado VARCHAR(40);
+        SELECT @Estado=E.Codigo FROM dbo.Evento EV WITH (UPDLOCK,HOLDLOCK)
+          JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+          WHERE EV.IdEvento=@IdEvento AND T.Codigo='EVENTO';
+        IF @Estado IS NULL THROW 76801,'El evento no existe.',1;
+        IF @Estado NOT IN ('EN_VIVO','PENDIENTE_RESULTADO')
+          THROW 76802,'La reconciliacion solo admite EN_VIVO y PENDIENTE_RESULTADO; otros estados requieren revision manual.',1;
+        DECLARE @Cantidad INT,@Cerrados INT,@Cuotas INT,@Restantes INT;
+        EXEC dbo.sp_SincronizarCierreMercadosEvento @IdUsuarioProceso,@IdEvento,'CIERRE',@IpOrigen,
+          @Cantidad OUTPUT,@Cerrados OUTPUT,@Cuotas OUTPUT,@Restantes OUTPUT;
+        IF @Cerrados>0 OR @Cuotas>0
+          INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
+            VALUES(@IdUsuarioProceso,'MERCADOS_EVENTO_RECONCILIADOS','Evento',@IdEvento,@IpOrigen,
+              CONCAT('Estado conservado=',@Estado,'; mercados cerrados=',@Cerrados,'; cuotas desactivadas=',@Cuotas,'.'));
+        COMMIT;
+        SELECT @IdEvento AS IdEvento,@Estado AS EstadoEvento,@Cantidad AS CantidadMercados,
+          @Cerrados AS MercadosCerrados,@Cuotas AS CuotasDesactivadas,@Restantes AS MercadosIncompatiblesRestantes,
+          CONVERT(BIT,CASE WHEN @Cerrados=0 AND @Cuotas=0 THEN 1 ELSE 0 END) AS SinCambios;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE()<>0 ROLLBACK;
+        THROW;
+    END CATCH;
+END;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_CambiarEstadoEvento
 (
     @IdUsuarioProceso INT,
@@ -1857,6 +1970,15 @@ BEGIN
         IF @EstadoActual IS NULL
             THROW 59062, 'El evento indicado no existe.', 1;
 
+        /* Un reenvio sin transicion no sustituye la reparacion historica,
+           reservada a ADMINISTRADOR por su operacion especifica. */
+        IF @EstadoActual=@NuevoEstado AND @EstadoActual IN ('EN_VIVO','PENDIENTE_RESULTADO')
+          AND (EXISTS(SELECT 1 FROM dbo.Mercado M JOIN dbo.Estado E ON E.IdEstado=M.IdEstado
+            WHERE M.IdEvento=@IdEvento AND E.Codigo IN ('BORRADOR','ABIERTO','SUSPENDIDO'))
+          OR EXISTS(SELECT 1 FROM dbo.Cuota C JOIN dbo.Seleccion S ON S.IdSeleccion=C.IdSeleccion
+            JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado WHERE M.IdEvento=@IdEvento AND C.Activo=1))
+            THROW 76803,'El evento requiere reconciliacion administrativa de sus mercados.',1;
+
         IF @EstadoActual = @NuevoEstado
         BEGIN
             COMMIT TRANSACTION;
@@ -1902,6 +2024,15 @@ BEGIN
         UPDATE dbo.Evento
         SET IdEstado = @IdNuevoEstado
         WHERE IdEvento = @IdEvento;
+
+        IF @NuevoEstado IN ('EN_VIVO','PENDIENTE_RESULTADO','SUSPENDIDO')
+        BEGIN
+            DECLARE @ModoSincronizacion VARCHAR(10)=CASE WHEN @NuevoEstado='SUSPENDIDO' AND @EstadoActual='PROGRAMADO'
+              THEN 'SUSPENSION' ELSE 'CIERRE' END;
+            DECLARE @CantidadMercados INT,@MercadosAjustados INT,@CuotasDesactivadas INT,@IncompatiblesRestantes INT;
+            EXEC dbo.sp_SincronizarCierreMercadosEvento @IdUsuarioProceso,@IdEvento,@ModoSincronizacion,@IpOrigen,
+              @CantidadMercados OUTPUT,@MercadosAjustados OUTPUT,@CuotasDesactivadas OUTPUT,@IncompatiblesRestantes OUTPUT;
+        END;
 
         /* Al cancelar un evento, impedir nuevas apuestas cerrando
            mercados operativos. No se liquidan aquí; eso corresponde
@@ -2065,6 +2196,10 @@ BEGIN
 
         IF @EstadoActual IS NULL
             THROW 59069, 'El mercado indicado no existe.', 1;
+
+        /* Validar incluso cuando ABIERTO ya figura como estado del mercado. */
+        IF @NuevoEstado='ABIERTO' AND @EstadoEvento<>'PROGRAMADO'
+            THROW 59071, 'Solo se puede abrir un mercado cuando el evento esta PROGRAMADO.', 1;
 
         IF @EstadoActual = @NuevoEstado
         BEGIN

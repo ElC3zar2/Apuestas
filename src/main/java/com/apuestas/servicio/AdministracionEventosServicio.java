@@ -21,7 +21,8 @@ public class AdministracionEventosServicio {
             throws SQLException {
         autorizar(actor,rol);
         if(op==null || parametros==null) throw new IllegalArgumentException();
-        if(op==OperacionAdministracionEventos.GUARDAR_PLANTILLA_1X2 && !"ADMINISTRADOR".equals(rol))
+        if((op==OperacionAdministracionEventos.GUARDAR_PLANTILLA_1X2
+                ||op==OperacionAdministracionEventos.RECONCILIAR_CIERRE_MERCADOS) && !"ADMINISTRADOR".equals(rol))
             throw new SecurityException();
         for(Map.Entry<String,String[]> e:parametros.entrySet())
             if(!op.parametros.contains(e.getKey()) || e.getValue()==null || e.getValue().length!=1

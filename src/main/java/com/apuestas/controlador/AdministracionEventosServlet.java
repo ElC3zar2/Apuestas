@@ -12,6 +12,7 @@ import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.*;
 
 @WebServlet({
+    "/administrador/eventos/mercados/reconciliar",
     "/administrador/eventos/crear-convencional", "/administrador/eventos/plantilla-1x2",
     "/administrador/eventos/plantilla-1x2/guardar",
     "/administrador/ligas/crear", "/administrador/ligas/actualizar",

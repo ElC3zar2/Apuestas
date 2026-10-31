@@ -23,6 +23,11 @@ public final class AdministracionEventosModelos {
         public BigDecimal valor,valorResultado;
     }
     public interface Resultado { }
+    public static final class CierreMercadosReconciliado implements Resultado {
+        public Integer idEvento,cantidadMercados,mercadosCerrados,cuotasDesactivadas,mercadosIncompatiblesRestantes;
+        public String estadoEvento;
+        public Boolean sinCambios;
+    }
     public static final class Plantilla1X2 implements Resultado {
         public Integer idDeporte;
         public String identidadPlantilla,versionPlantilla;

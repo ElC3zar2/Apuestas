@@ -23,6 +23,8 @@ public class AdministracionEventosDAO {
             cs.setInt(1,actor);
             int posicionIp=cantidad;
             switch(op) {
+                case RECONCILIAR_CIERRE_MERCADOS:
+                    cs.setInt(2,s.idEvento);break;
                 case CONSULTAR_PLANTILLA_1X2:
                     cs.setInt(2,s.idDeporte);break;
                 case GUARDAR_PLANTILLA_1X2:
@@ -145,6 +147,22 @@ public class AdministracionEventosDAO {
 
     private static Resultado leer(OperacionAdministracionEventos op,Solicitud s,ResultSet rs) throws SQLException {
         switch(op) {
+            case RECONCILIAR_CIERRE_MERCADOS: {
+                CierreMercadosReconciliado r=new CierreMercadosReconciliado();
+                r.idEvento=id(rs,"IdEvento",false);igual(s.idEvento,r.idEvento);
+                r.estadoEvento=texto(rs,"EstadoEvento",false);
+                if(!Arrays.asList("EN_VIVO","PENDIENTE_RESULTADO").contains(r.estadoEvento))throw contrato();
+                r.cantidadMercados=dato(rs,"CantidadMercados",Integer.class,false);
+                r.mercadosCerrados=dato(rs,"MercadosCerrados",Integer.class,false);
+                r.cuotasDesactivadas=dato(rs,"CuotasDesactivadas",Integer.class,false);
+                r.mercadosIncompatiblesRestantes=dato(rs,"MercadosIncompatiblesRestantes",Integer.class,false);
+                r.sinCambios=bit(rs,"SinCambios",false);
+                if(r.cantidadMercados<0||r.mercadosCerrados<0||r.cuotasDesactivadas<0
+                    ||r.mercadosCerrados>r.cantidadMercados||r.mercadosIncompatiblesRestantes!=0
+                    ||(r.cantidadMercados==0&&r.cuotasDesactivadas!=0))throw contrato();
+                igual(r.mercadosCerrados==0&&r.cuotasDesactivadas==0,r.sinCambios);
+                return r;
+            }
             case CONSULTAR_PLANTILLA_1X2:case GUARDAR_PLANTILLA_1X2: {
                 Plantilla1X2 r=new Plantilla1X2();r.idDeporte=id(rs,"IdDeporte",false);igual(s.idDeporte,r.idDeporte);
                 r.identidadPlantilla=texto(rs,"IdentidadPlantilla",false);igual("BETZONE_1X2:"+s.idDeporte,r.identidadPlantilla);

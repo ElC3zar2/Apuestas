@@ -5,6 +5,11 @@ public final class AdministracionEventosHttp {
     private AdministracionEventosHttp() { }
     public static int estadoSql(int codigo) {
         switch(codigo) {
+            case 76800:return 400;
+            case 76801:return 404;
+            case 76802:case 76803:return 409;
+            case 76804:return 403;
+            // 76890: precondiciones internas/catalogos de sincronizacion, permanece 500.
             case 76700:return 400;
             case 76710:return 404;
             case 76702:return 403;

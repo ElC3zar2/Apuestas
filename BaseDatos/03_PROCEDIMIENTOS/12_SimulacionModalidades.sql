@@ -22,7 +22,14 @@ BEGIN
   SELECT @Estado=E.Codigo,@Sim=EV.EsSimulado,@Inicio=EV.FechaInicioRealUtc
   FROM dbo.Evento EV WITH(UPDLOCK,HOLDLOCK) JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado WHERE EV.IdEvento=@IdEvento;
   IF @Estado='EN_VIVO' AND @Inicio IS NOT NULL
-  BEGIN COMMIT; SELECT @IdEvento AS IdEvento,CAST(1 AS BIT) AS SinCambios; RETURN; END;
+  BEGIN
+    IF EXISTS(SELECT 1 FROM dbo.Mercado M JOIN dbo.Estado E ON E.IdEstado=M.IdEstado
+       WHERE M.IdEvento=@IdEvento AND E.Codigo IN('BORRADOR','ABIERTO','SUSPENDIDO'))
+       OR EXISTS(SELECT 1 FROM dbo.Cuota C JOIN dbo.Seleccion S ON S.IdSeleccion=C.IdSeleccion
+         JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado WHERE M.IdEvento=@IdEvento AND C.Activo=1)
+      THROW 76803,'El evento requiere reconciliacion administrativa de sus mercados.',1;
+    COMMIT; SELECT @IdEvento AS IdEvento,CAST(1 AS BIT) AS SinCambios; RETURN;
+  END;
   IF @Estado IS NULL OR @Estado<>'PROGRAMADO' OR @Sim<>1
     THROW 76201,'Se requiere una simulacion PROGRAMADA.',1;
   IF (SELECT COUNT(*) FROM dbo.EventoParticipante WHERE IdEvento=@IdEvento)<>2
@@ -31,15 +38,13 @@ BEGIN
   IF EXISTS(SELECT 1 FROM dbo.IncidenciaEvento WHERE IdEvento=@IdEvento)
     THROW 76203,'La simulacion ya posee historial y no puede reiniciarse.',1;
   DECLARE @Vivo INT=(SELECT E.IdEstado FROM dbo.Estado E JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
-                    WHERE T.Codigo='EVENTO' AND E.Codigo='EN_VIVO' AND E.Activo=1),
-          @Cerrado INT=(SELECT E.IdEstado FROM dbo.Estado E JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
-                    WHERE T.Codigo='MERCADO' AND E.Codigo='CERRADO' AND E.Activo=1);
+                    WHERE T.Codigo='EVENTO' AND E.Codigo='EN_VIVO' AND E.Activo=1);
+  IF @Vivo IS NULL THROW 76890,'No existe el estado EVENTO/EN_VIVO activo.',1;
   UPDATE dbo.Evento SET IdEstado=@Vivo,FechaInicioRealUtc=SYSUTCDATETIME() WHERE IdEvento=@IdEvento;
   UPDATE dbo.EventoParticipante SET MarcadorActual=0 WHERE IdEvento=@IdEvento;
-  UPDATE M SET IdEstado=@Cerrado FROM dbo.Mercado M JOIN dbo.Estado E ON E.IdEstado=M.IdEstado
-    WHERE M.IdEvento=@IdEvento AND E.Codigo IN('BORRADOR','ABIERTO','SUSPENDIDO');
-  UPDATE C SET Activo=0,FechaFin=CASE WHEN SYSDATETIME()>C.FechaInicio THEN SYSDATETIME() ELSE DATEADD(NANOSECOND,100,C.FechaInicio) END
-    FROM dbo.Cuota C JOIN dbo.Seleccion S ON S.IdSeleccion=C.IdSeleccion WHERE S.IdEvento=@IdEvento AND C.Activo=1;
+  DECLARE @CantidadMercados INT,@MercadosAjustados INT,@CuotasDesactivadas INT,@IncompatiblesRestantes INT;
+  EXEC dbo.sp_SincronizarCierreMercadosEvento @IdUsuarioProceso,@IdEvento,'CIERRE',@IpOrigen,
+    @CantidadMercados OUTPUT,@MercadosAjustados OUTPUT,@CuotasDesactivadas OUTPUT,@IncompatiblesRestantes OUTPUT;
   INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
     VALUES(@IdUsuarioProceso,'SIMULACION_INICIADA','Evento',@IdEvento,@IpOrigen,'Inicio manual; apuestas cerradas.');
   COMMIT;
@@ -179,11 +184,22 @@ BEGIN
   SELECT @Estado=E.Codigo,@Sim=EV.EsSimulado FROM dbo.Evento EV WITH(UPDLOCK,HOLDLOCK)
     JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado WHERE EV.IdEvento=@IdEvento;
   IF @Estado IN('PENDIENTE_RESULTADO','FINALIZADO') AND @Sim=1
-  BEGIN COMMIT; SELECT @IdEvento AS IdEvento,CAST(1 AS BIT) AS SinCambios; RETURN; END;
+  BEGIN
+    IF EXISTS(SELECT 1 FROM dbo.Mercado M JOIN dbo.Estado E ON E.IdEstado=M.IdEstado
+       WHERE M.IdEvento=@IdEvento AND E.Codigo IN('BORRADOR','ABIERTO','SUSPENDIDO'))
+       OR EXISTS(SELECT 1 FROM dbo.Cuota C JOIN dbo.Seleccion S ON S.IdSeleccion=C.IdSeleccion
+         JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado WHERE M.IdEvento=@IdEvento AND C.Activo=1)
+      THROW 76803,'El evento requiere revision administrativa de sus mercados; no se repara al reiterar su finalizacion.',1;
+    COMMIT; SELECT @IdEvento AS IdEvento,CAST(1 AS BIT) AS SinCambios; RETURN;
+  END;
   IF @Estado IS NULL OR @Estado<>'EN_VIVO' OR @Sim<>1 THROW 76215,'Se requiere simulacion EN_VIVO.',1;
   DECLARE @Pendiente INT=(SELECT E.IdEstado FROM dbo.Estado E JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
       WHERE T.Codigo='EVENTO' AND E.Codigo='PENDIENTE_RESULTADO' AND E.Activo=1);
+  IF @Pendiente IS NULL THROW 76890,'No existe el estado EVENTO/PENDIENTE_RESULTADO activo.',1;
   UPDATE dbo.Evento SET IdEstado=@Pendiente,FechaFinRealUtc=SYSUTCDATETIME() WHERE IdEvento=@IdEvento;
+  DECLARE @CantidadMercados INT,@MercadosAjustados INT,@CuotasDesactivadas INT,@IncompatiblesRestantes INT;
+  EXEC dbo.sp_SincronizarCierreMercadosEvento @IdUsuarioProceso,@IdEvento,'CIERRE',@IpOrigen,
+    @CantidadMercados OUTPUT,@MercadosAjustados OUTPUT,@CuotasDesactivadas OUTPUT,@IncompatiblesRestantes OUTPUT;
   DECLARE @Texto VARCHAR(250);
   SELECT @Texto=CONCAT(A.MarcadorActual,'-',B.MarcadorActual)
     FROM dbo.EventoParticipante A JOIN dbo.EventoParticipante B ON B.IdEvento=A.IdEvento AND B.OrdenParticipante=2

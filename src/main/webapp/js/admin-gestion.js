@@ -12,6 +12,7 @@
     const base = document.body.dataset.contextPath || '';
     const role = (document.body.dataset.adminRole || '').trim();
     const phase4 = page === 'catalogos' || page === 'eventos';
+    const reconcileRoute='eventos/mercados/reconciliar';
     const validId = value => /^[0-9]{1,10}$/.test(String(value)) && Number(value)>0 && Number(value)<=2147483647;
     const states = ['BORRADOR','PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO','FINALIZADO','CANCELADO'];
     function stamp(value) {
@@ -73,6 +74,13 @@
         if(w.route==='eventos/estado/cambiar')matches=event.estadoEvento===p.nuevoEstado;
         else if(w.route==='eventos/actualizar')matches=event.nombre===p.nombre&&sameStamp(event.fechaInicio,p.fechaInicio)&&(p.fechaFin?sameStamp(event.fechaFin,p.fechaFin):event.fechaFin===null);
         else if(w.route==='eventos/participantes/agregar')matches=event.participantes.some(row=>String(row.idParticipante)===p.idParticipante&&row.ordenParticipante===Number(p.ordenParticipante)&&row.esLocal===(p.esLocal===undefined?null:p.esLocal==='true'));
+        else if(w.route===reconcileRoute){
+            matches=['EN_VIVO','PENDIENTE_RESULTADO'].includes(event.estadoEvento)
+                &&event.mercados.every(m=>['CERRADO','LIQUIDADO','ANULADO'].includes(m.estadoMercado)
+                    &&Array.isArray(m.selecciones)&&m.selecciones.every(s=>[false,null].includes(s.cuotaActiva)));
+            verification4(matches?'La consulta muestra mercados compatibles y ninguna cuota activa. No recupera los contadores del POST ni confirma que aquella solicitud causó el cierre. Puedes revisar y habilitar manualmente para una reconciliación repetible.':'La consulta no permite verificar el cierre completo. Conserva el contexto y solicita revisión administrativa; continúa el bloqueo.',matches);
+            return;
+        }
         verification4(matches?'El detalle administrativo del evento afectado confirma la configuración solicitada. Puedes revisar y habilitar manualmente.':'El detalle del evento afectado no confirma la configuración solicitada. Requiere conciliación manual; se mantiene el bloqueo.',matches);
     }
     const field = (name, label, type = 'text', required = true, extra = {}) => ({ name, label, type, required, ...extra });
@@ -105,7 +113,8 @@
             ['eventos/crear', 'Crear evento', [id('idLiga','ID real de liga'), name(200), date('fechaInicio','Inicio (hora del servidor)'), date('fechaFin','Fin (opcional, hora del servidor)',false), choices('esSimulado','Evento simulado',[['false','No'],['true','Sí']]), id('duracionSimulacionSegundos','Duración simulada en segundos (opcional)',false)]],
             ['eventos/actualizar', 'Configurar evento', [id('idEvento','ID real del evento'), name(200), date('fechaInicio','Inicio (hora del servidor)'), date('fechaFin','Fin (opcional; vacío elimina el fin)',false)]],
             ['eventos/participantes/agregar', 'Asociar participante', [id('idEvento','ID real del evento'), id('idParticipante','ID real del participante'), field('ordenParticipante','Orden del participante','number',true,{min:'1',max:'255',step:'1'}), choices('esLocal','Es local (opcional)',[['true','Sí'],['false','No']],false)]],
-            ['eventos/estado/cambiar', 'Cambiar estado del evento', [id('idEvento','ID real del evento'), choices('nuevoEstado','Estado solicitado',['BORRADOR','PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO','FINALIZADO','CANCELADO']), reason()]]
+            ['eventos/estado/cambiar', 'Cambiar estado del evento', [id('idEvento','ID real del evento'), choices('nuevoEstado','Estado solicitado',['BORRADOR','PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO','FINALIZADO','CANCELADO']), reason()]],
+            [reconcileRoute, 'Reconciliar cierre de mercados históricos', [id('idEvento','Evento consultado')]]
         ],
         mercados: [
             ['mercados/crear', 'Crear mercado', [id('idEvento','ID real del evento'), name(), field('descripcion','Descripción (opcional)','textarea',false,{maxLength:250}), choices('tipoMercado','Modalidad oficial',['CONVENCIONAL','MARCADOR_FINAL','PRIMERA_ANOTACION'])]],
@@ -144,7 +153,8 @@
         if(phase4){
             $('acknowledge-write').disabled=busy||sessionBlocked||!uncertainChecked4;
             for(const form of document.querySelectorAll('.management-form')){
-                const unavailable=page==='eventos'&&!officialEvent4 || form.dataset.countryBlocked==='true';
+                const unavailable=page==='eventos'&&!officialEvent4 || form.dataset.countryBlocked==='true'
+                    ||(form.dataset.operation===reconcileRoute&&(role!=='ADMINISTRADOR'||!['EN_VIVO','PENDIENTE_RESULTADO'].includes(officialEvent4?.estadoEvento)));
                 if(unavailable)form.querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=true);
             }
             if(page==='catalogos'){
@@ -277,6 +287,8 @@
         }
         target.append(dl);
     }
+    Object.assign(labels,{cantidadMercados:'Cantidad de mercados',mercadosCerrados:'Mercados cerrados',
+        cuotasDesactivadas:'Cuotas desactivadas',mercadosIncompatiblesRestantes:'Mercados incompatibles restantes'});
     function resultContextMessage() {
         if (page !== 'resultados') return;
         $('result-context').textContent = !resultReady ? 'Consulta y confirma el detalle del evento antes de operar.'
@@ -296,6 +308,9 @@
     }
     function showResult(result, bindResult = true, route = '') {
         $('operation-values').replaceChildren(); resultValues($('operation-values'),result); $('operation-result').hidden = false;
+        if(route===reconcileRoute)$('operation-values').append(node('p',result.sinCambios
+            ?'Sin cambios: el servidor no encontró mercados o cuotas que corregir.'
+            :'El servidor confirmó la corrección de mercados y cuotas. No se modificaron resultados, boletos ni billeteras.','muted'));
         if (page === 'resultados') {
             if (result.idEvento) selectEvent(result.idEvento);
             const resultId = result.idResultado ?? result.idResultadoEvento;
@@ -309,7 +324,7 @@
         }
         if (result.idEvento) {
             selectEvent(result.idEvento);
-            if(role==='ADMINISTRADOR')$('operation-values').append(link('/administrador/liquidaciones?idEvento='+encodeURIComponent(result.idEvento),'Liquidar evento'),document.createTextNode(' · '));
+            if(role==='ADMINISTRADOR'&&route!==reconcileRoute)$('operation-values').append(link('/administrador/liquidaciones?idEvento='+encodeURIComponent(result.idEvento),'Liquidar evento'),document.createTextNode(' · '));
             $('operation-values').append(link('/administrador/eventos?idEvento='+encodeURIComponent(result.idEvento),'Consultar evento'),document.createTextNode(' · '),link('/administrador/en-vivo?idEvento='+encodeURIComponent(result.idEvento),'Abrir control en vivo'));
         }
         if (result.idMercado) document.querySelectorAll('.management-form [name="idMercado"]').forEach(input => {if(![...input.options].some(o=>o.value===String(result.idMercado)))input.append(window.BetZoneAdmin.option(result.idMercado,result.nombre||'Mercado creado'));input.value = String(result.idMercado); });
@@ -393,6 +408,8 @@
             if(route==='ligas/participantes/asociar'&&!catalogParticipants.find(p=>String(p.idParticipante)===payload.get('idParticipante'))?.activo)throw new Error('La asociación requiere un participante activo.');
         }else{
             if(!officialEvent4||payload.get('idEvento')!==String(officialEvent4.idEvento))throw new Error('Consulta el detalle de este evento antes de operar.');
+            if(route===reconcileRoute&&(role!=='ADMINISTRADOR'||!['EN_VIVO','PENDIENTE_RESULTADO'].includes(officialEvent4.estadoEvento)))
+                throw new Error('La reconciliación requiere ADMINISTRADOR y un evento consultado EN_VIVO o PENDIENTE_RESULTADO.');
             if(route==='eventos/actualizar'&&form.dataset.loadedId!==payload.get('idEvento'))throw new Error('Carga los datos oficiales antes de configurar el evento.');
             if(route==='eventos/actualizar'&&(!['BORRADOR','PROGRAMADO','SUSPENDIDO'].includes(officialEvent4.estadoEvento)||officialEvent4.simulacion?.fechaInicioRealUtc))throw new Error('El estado o inicio real del evento impide modificar su configuración.');
             if(route==='eventos/participantes/agregar'){
@@ -406,7 +423,15 @@
     async function confirmOperation4(route,result,payload) {
         const equal=(key)=>result[key]===Number(payload.get(key));
         let valid=false;
-        if(route.includes('ligas/participantes/'))valid=equal('idLiga')&&equal('idParticipante')&&result.activo===route.endsWith('/asociar');
+        if(route===reconcileRoute){
+            const counts=['cantidadMercados','mercadosCerrados','cuotasDesactivadas','mercadosIncompatiblesRestantes'];
+            valid=Number.isInteger(result.idEvento)&&equal('idEvento')&&['EN_VIVO','PENDIENTE_RESULTADO'].includes(result.estadoEvento)
+                &&counts.every(k=>Number.isInteger(result[k])&&result[k]>=0&&result[k]<=2147483647)
+                &&result.mercadosCerrados<=result.cantidadMercados&&result.mercadosIncompatiblesRestantes===0
+                &&(result.cantidadMercados!==0||result.cuotasDesactivadas===0)&&typeof result.sinCambios==='boolean'
+                &&result.sinCambios===(result.mercadosCerrados===0&&result.cuotasDesactivadas===0);
+        }
+        else if(route.includes('ligas/participantes/'))valid=equal('idLiga')&&equal('idParticipante')&&result.activo===route.endsWith('/asociar');
         else if(route.startsWith('ligas/')||route.startsWith('participantes/')){
             const league=route.startsWith('ligas/'),key=league?'idLiga':'idParticipante',old=(league?catalogLeagues:catalogParticipants).find(p=>p[key]===Number(payload.get(key)));
             valid=validId(result[key])&&Number.isInteger(result[key])&&result.nombre===payload.get('nombre')&&result.idPais===(payload.has('idPais')?Number(payload.get('idPais')):null)
@@ -438,6 +463,7 @@
         operations[page].forEach(([route,title,fields],index) => {
             if (page === 'eventos' && route === 'eventos/crear' && $('event-wizard')) return;
             const panel = node('section',undefined,'panel'); panel.append(node('h2',title));
+            if(route===reconcileRoute&&role!=='ADMINISTRADOR')panel.hidden=true;
             if(connected){
                 panel.id='operation-panel-'+index;panel.tabIndex=-1;operationPanels.set(route,panel);
                 const button=node('button',title);button.type='button';button.setAttribute('aria-controls',panel.id);button.setAttribute('aria-pressed','false');
@@ -446,7 +472,7 @@
                 operationButtons.set(route,button);$('management-flow').append(button);
             }
             const form = node('form',undefined,'live-form management-form'); form.dataset.operation = route; form.action = base+'/administrador/'+route; form.method = 'post';
-            if (route === 'resultados/corregir' || route === 'resultados/anular') {
+            if (route === 'resultados/corregir' || route === 'resultados/anular' || route === reconcileRoute) {
                 form.dataset.adminOnly = 'true'; panel.append(node('p','Acción exclusiva de ADMINISTRADOR.','warning'));
             }
             const fieldset = node('fieldset'); fieldset.append(node('legend','Los campos sin indicación de opcional son obligatorios.'));
@@ -479,6 +505,7 @@
             if (route === 'cuotas/registrar') fieldset.append(node('small','Punto decimal y hasta cuatro decimales. El backend decide qué valor exige cada modalidad y valida el rango; no se calculan cuotas aquí.'));
             if (route.includes('estado/cambiar')) fieldset.append(node('small','El backend valida la transición. Cambiar estado no sustituye la oficialización de resultados ni la liquidación de apuestas.'));
             if(page==='eventos'&&route==='eventos/estado/cambiar')fieldset.append(node('small','Según el estado y tipo del evento, el backend puede iniciar o finalizar su simulación, o anular resultados al cancelar. Revisa las consecuencias antes de confirmar.'));
+            if(route===reconcileRoute)fieldset.append(node('p','Corrige mercados y cuotas de un evento EN_VIVO o PENDIENTE_RESULTADO consultado. No cambia su estado, no modifica resultados ni liquida apuestas. Los estados FINALIZADO y CANCELADO requieren revisión manual.','muted'));
             if (route === 'eventos/crear') fieldset.append(node('small','La duración es opcional y la controla el backend. Las fechas se envían sin convertir la zona horaria.'));
             if(route==='ligas/participantes/desasociar')fieldset.append(node('small','Se desactiva la relación con la liga. El participante y sus asociaciones históricas a eventos se conservan.'));
             const submit = node('button',title,'primary'); submit.type = 'submit'; fieldset.append(submit);
@@ -498,14 +525,15 @@
                 if(phase4){try{validateOperation4(route,payload,form);}catch(error){report(error);return;}}
                 const fingerprint = payload.toString();
                 if (page === 'resultados' && payload.has('idEvento') && Number(payload.get('idEvento')) !== Number(resultEventContext)) { status('Consulta primero el detalle de ese evento para cambiar el contexto de resultados.',true); return; }
-                if (page !== 'resultados' && form.dataset.lastSuccess === fingerprint) { status('Este formulario ya recibió confirmación con los mismos datos. Consulta el resultado antes de crear otra operación.',true); return; }
+                if (page !== 'resultados' && route!==reconcileRoute && form.dataset.lastSuccess === fingerprint) { status('Este formulario ya recibió confirmación con los mismos datos. Consulta el resultado antes de crear otra operación.',true); return; }
                 const confirmation = page === 'resultados'
                     ? title+' · evento #'+resultEventContext+(payload.has('idResultadoEvento')?' · resultado #'+payload.get('idResultadoEvento'):'')
                         +(payload.has('idResultadoEvento') && !officialResultId ? '. El ID es manual: comprueba que pertenece al evento; no existe una consulta que permita verificarlo antes del envío.' : '')+' ¿Confirmar?'
+                    : route===reconcileRoute ? title+' · '+officialEvent4.nombre+' · evento #'+officialEvent4.idEvento+' · '+officialEvent4.estadoEvento+'. Se cerrarán mercados incompatibles y se desactivarán cuotas activas. No modifica resultados ni liquida apuestas. ¿Confirmar?'
                     : phase4 ? title+' · '+(payload.get('nombre')||officialEvent4?.nombre||catalogParticipants.find(p=>String(p.idParticipante)===payload.get('idParticipante'))?.nombre||'')+(route.includes('ligas/participantes/')?' · Liga: '+catalogLeagues.find(l=>String(l.idLiga)===payload.get('idLiga'))?.nombre:'')+(payload.has('nuevoEstado')?' · '+officialEvent4.estadoEvento+' → '+payload.get('nuevoEstado'):'')+'. ¿Confirmar?' : title+' con los datos indicados. ¿Confirmar?';
                 if (!window.confirm(confirmation)) return;
                 busy = true; sync(); status('Enviando operación…'); let sent = false;
-                if(!phase4)$('operation-result').hidden = true;
+                if(!phase4||route===reconcileRoute)$('operation-result').hidden = true;
                 try {
                     const token = await api('/administrador/seguridad/csrf');
                     if (typeof token.csrfToken !== 'string' || !token.csrfToken || (phase4&&!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(token.csrfToken))) throw new Error('Token CSRF no válido.');
@@ -523,6 +551,7 @@
                             if(detailData.evento?.idEvento!==Number(payload.get('idEvento')))throw new Error('El ID del detalle no coincide.');
                             renderDetail(detailData.evento);await eventParticipants4();
                         }catch(error){officialEvent4=null;report(error);status(title+': escritura confirmada; no se pudo actualizar el detalle. Consulta el evento antes de otra operación.',true);}
+                        if(route===reconcileRoute)$('operation-result').hidden=false;
                     }
                     if(page==='catalogos'){
                         catalogParticipants=[];catalogLeagues=[];participantTotal4=0;
@@ -543,6 +572,13 @@
                         uncertain = true;
                         if(phase4)captureUncertain4(route,payload);
                         status('El resultado de la escritura no está confirmado. Consulta los registros antes de repetir; estas operaciones no ofrecen una referencia de idempotencia.',true);
+                        if(route===reconcileRoute){
+                            try{
+                                const detailData=await api('/administrador/eventos/detalle?'+new URLSearchParams({idEvento:payload.get('idEvento')}));
+                                if(detailData.evento?.idEvento!==Number(payload.get('idEvento')))throw new Error('El detalle no corresponde al evento afectado.');
+                                renderDetail(detailData.evento);verifyEvent4(detailData.evento);
+                            }catch(consultaError){verification4('No se pudo verificar el cierre mediante el detalle oficial. Conserva el evento y solicita revisión; no se reenviará la operación.');}
+                        }
                     }
                 } finally { busy = false; sync(); }
             });
