@@ -49,6 +49,14 @@ public class ConsultasAdministrativasServicio {
         Integer deporte=params.containsKey("idDeporte")?numero(params,"idDeporte",1):null;
         String estado=params.containsKey("estado")?params.get("estado")[0].trim():null;
         if(estado!=null&&!Arrays.asList("BORRADOR","PROGRAMADO","EN_VIVO","SUSPENDIDO","PENDIENTE_RESULTADO","FINALIZADO","CANCELADO").contains(estado))throw new IllegalArgumentException();
+        boolean operables=false;
+        if(params.containsKey("operables")){
+            String valor=params.get("operables")[0];
+            if(!"true".equals(valor)&&!"false".equals(valor))throw new IllegalArgumentException();
+            operables="true".equals(valor);
+        }
+        if(operables&&estado!=null)throw new IllegalArgumentException();
+        if(operables)return Objects.requireNonNull(eventos.listarSelectores(deporte,estado,pagina,tamano,true));
         return Objects.requireNonNull(eventos.listarSelectores(deporte,estado,pagina,tamano));
     }
     private static int numero(Map<String,String[]> p,String k,int defecto){if(!p.containsKey(k))return defecto;String s=p.get(k)[0];if(!s.matches("[0-9]{1,10}"))throw new IllegalArgumentException();int n=Integer.parseInt(s);if(n<=0)throw new IllegalArgumentException();return n;}

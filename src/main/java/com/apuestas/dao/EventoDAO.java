@@ -237,12 +237,18 @@ public class EventoDAO {
     /** Variante paginada de listarEventos: solo datos de identificacion, sin analitica financiera. */
     public com.apuestas.modelo.ConsultasAdministrativasModelos.PaginaEventos listarSelectores(
             Integer deporte,String estado,int pagina,int tamano) throws SQLException {
+        return listarSelectores(deporte,estado,pagina,tamano,false);
+    }
+    public com.apuestas.modelo.ConsultasAdministrativasModelos.PaginaEventos listarSelectores(
+            Integer deporte,String estado,int pagina,int tamano,boolean operables) throws SQLException {
         long offset=((long)pagina-1)*tamano;
         if(pagina<1||tamano<1||tamano>100||offset>Integer.MAX_VALUE||(deporte!=null&&deporte<=0))throw new IllegalArgumentException();
+        if(operables&&estado!=null)throw new IllegalArgumentException();
         String from=" FROM dbo.Evento EV JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga"
                 +" JOIN dbo.Deporte D ON D.IdDeporte=L.IdDeporte JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado"
                 +" JOIN dbo.TipoEstado TE ON TE.IdTipoEstado=E.IdTipoEstado AND TE.Codigo='EVENTO'";
-        String where=" WHERE 1=1"+(deporte==null?"":" AND L.IdDeporte=?")+(estado==null?"":" AND E.Codigo=?");
+        String where=" WHERE 1=1"+(deporte==null?"":" AND L.IdDeporte=?")+(estado==null?"":" AND E.Codigo=?")
+                +(operables?" AND E.Codigo IN ('PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO')":"");
         try(Connection c=obtenerConexionSelector()) {
             long total;
             try(PreparedStatement ps=c.prepareStatement("SELECT COUNT_BIG(*) AS Total"+from+where)) {

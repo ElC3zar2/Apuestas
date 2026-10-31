@@ -1,7 +1,7 @@
 package com.apuestas.modelo;
 import java.util.*;
 public enum OperacionConsultaAdministrativa {
-    EVENTOS("/administrador/eventos/listar","idDeporte","estado","pagina","tamanoPagina"),
+    EVENTOS("/administrador/eventos/listar","idDeporte","estado","pagina","tamanoPagina","operables"),
     DETALLE_EVENTO("/administrador/eventos/detalle","idEvento"),
     PAISES("/administrador/catalogos/paises"),
     USUARIOS("/administrador/usuarios/buscar","buscar","estado","pagina","tamanoPagina");

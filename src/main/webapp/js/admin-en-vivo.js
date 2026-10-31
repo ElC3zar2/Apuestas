@@ -24,9 +24,14 @@
     };
     let eventId = null, official = null, busy = false, timer = null, stopped = false, authorized = false;
     let voidId = null, catalogBusy = false;
+    let catalogRevision = 0;
     let refreshTask = null, viewVersion = 0;
     const canOperate = ['ADMINISTRADOR','OPERADOR_EVENTOS'].includes(role);
     const states = ['BORRADOR','PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO','FINALIZADO','CANCELADO'];
+    const operableStates = ['PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO'];
+    const eventFilters = new Map([['OPERABLES','operables'],['EN_VIVO','EN_VIVO'],['PROGRAMADO','programados'],
+        ['SUSPENDIDO','suspendidos'],['PENDIENTE_RESULTADO','pendientes de resultado'],['BORRADOR','borradores'],
+        ['FINALIZADO','finalizados'],['CANCELADO','cancelados'],['TODOS','de todos los estados']]);
     const types = ['ANOTACION','FALTA','TARJETA_AMARILLA','TARJETA_ROJA','OTRA'];
     let context = null, fresh = false, uncertain = null;
     // Solo memoria de esta página: nunca persistir tokens ni permitir reenvíos inciertos.
@@ -472,35 +477,66 @@
                 || new Set(data.deportes.map(s=>s.idDeporte)).size !== data.deportes.length
                 || data.deportes.some(s=>!integer(s.idDeporte)||!text(s.nombre,150)||typeof s.activo!=='boolean'||typeof s.permiteSimulacion!=='boolean')) throw new Error('Respuesta de deportes inválida.');
             if (stopped) return;
+            ++catalogRevision; window.BetZoneAdmin.resetEvents();
+            $('event-list').replaceChildren(option('', 'Selecciona deporte y estado de eventos'));
             $('sport').replaceChildren(option('', 'Selecciona un deporte'));
             data.deportes.forEach(sport => $('sport').append(option(sport.idDeporte, sport.nombre)));
             status('catalog-status', data.deportes.length ? 'Selecciona deporte y busca eventos, o consulta un ID real.' : 'No hay deportes activos. Puedes localizar un evento por ID.');
         } catch (error) { report(error, 'catalog-status'); }
         finally { catalogBusy = false; syncControls(); schedule(); }
     }
-    $('sport').addEventListener('change',()=>{if(!busy&&!catalogBusy){window.BetZoneAdmin.resetEvents();$('event-list').replaceChildren(option('','Busca eventos del deporte seleccionado'));$('event-search').requestSubmit();}});
+    function catalogFiltersChanged() {
+        ++catalogRevision;
+        window.BetZoneAdmin.resetEvents();
+        $('event-list').replaceChildren(option('', 'Busca eventos con los filtros seleccionados'));
+        if (!canOperate || stopped) return;
+        if (busy || catalogBusy) { status('catalog-status', 'Los filtros cambiaron. Al terminar la operación pendiente, pulsa Buscar eventos.'); return; }
+        if (idInput($('sport').value)) $('event-search').requestSubmit();
+        else status('catalog-status', 'Selecciona un deporte para consultar el estado de eventos elegido.');
+    }
+    $('sport').addEventListener('change', catalogFiltersChanged);
+    $('event-state-filter').addEventListener('change', catalogFiltersChanged);
     $('retry-sports').addEventListener('click', sports);
     $('event-search').addEventListener('submit', async event => {
         event.preventDefault(); if (!canOperate || stopped || catalogBusy || busy || !idInput($('sport').value)) return;
+        const sport = $('sport').value, filter = $('event-state-filter').value;
+        if (!eventFilters.has(filter)) { status('catalog-status', 'Selecciona un estado de eventos válido.', true); return; }
+        const revision = ++catalogRevision, path = window.BetZoneAdmin.eventsPath(sport);
+        const paging = new URLSearchParams(path.split('?')[1]);
+        const page = Number(paging.get('pagina')), size = Number(paging.get('tamanoPagina'));
+        const selectedFilter = new URLSearchParams();
+        if (filter === 'OPERABLES') selectedFilter.set('operables', 'true');
+        else if (filter !== 'TODOS') selectedFilter.set('estado', filter);
+        const query = path + (selectedFilter.toString() ? '&' + selectedFilter.toString() : '');
+        const current = () => !stopped && revision === catalogRevision && sport === $('sport').value
+            && filter === $('event-state-filter').value && path === window.BetZoneAdmin.eventsPath(sport);
         catalogBusy = true; syncControls(); $('event-list').replaceChildren(option('', 'Cargando eventos…'));
-        status('catalog-status', 'Consultando eventos…');
+        status('catalog-status', 'Consultando eventos ' + eventFilters.get(filter) + '…');
         try {
             if (refreshTask) await refreshTask;
-            if (stopped) return;
-            const data = await api(window.BetZoneAdmin.eventsPath($('sport').value));
-            if (stopped) return;
-            if (!Array.isArray(data.eventos) || data.eventos.length > data.tamanoPagina
+            if (!current()) return;
+            const data = await api(query);
+            if (!current()) return;
+            if (!Array.isArray(data.eventos) || data.pagina !== page || data.tamanoPagina !== size
+                || !Number.isSafeInteger(data.total) || data.total < 0 || data.eventos.length > size || data.total < data.eventos.length
+                || data.eventos.some(e=>!e||typeof e!=='object'||Array.isArray(e))
                 || new Set(data.eventos.map(e=>e.idEvento)).size !== data.eventos.length
-                || data.eventos.some(e=>!integer(e.idEvento)||e.idDeporte!==Number($('sport').value)||!states.includes(e.estadoEvento)||!text(e.evento,200))) throw new Error('Respuesta de eventos inválida.');
+                || data.eventos.some(e=>!integer(e.idEvento)||e.idDeporte!==Number(sport)||!states.includes(e.estadoEvento)||!text(e.evento,200)
+                    || (filter === 'OPERABLES' && !operableStates.includes(e.estadoEvento))
+                    || (filter !== 'OPERABLES' && filter !== 'TODOS' && e.estadoEvento !== filter))) throw new Error('Respuesta de eventos inválida o incompatible con los filtros solicitados.');
             $('event-list').replaceChildren(option('', 'Selecciona un evento'));
             window.BetZoneAdmin.pageData(data);data.eventos.forEach(item => $('event-list').append(option(item.idEvento, window.BetZoneAdmin.eventLabel(item))));
-            status('catalog-status', data.eventos.length ? 'Eventos devueltos: ' + data.eventos.length + ' en esta página.' : 'No hay eventos en esta consulta. Puedes consultar un ID real.');
-        } catch (error) { $('event-list').replaceChildren(option('', 'Sin lista disponible')); report(error, 'catalog-status'); }
+            const description = 'eventos ' + eventFilters.get(filter) + ' del deporte seleccionado';
+            status('catalog-status', data.eventos.length
+                ? 'Mostrando ' + description + '. Total del servidor: ' + data.total + ' · En esta página: ' + data.eventos.length + '.'
+                : data.total === 0 ? 'No hay ' + description + '.'
+                : 'Esta página no contiene ' + description + '. Total actual del servidor: ' + data.total + '. Vuelve a la primera página o actualiza la consulta.');
+        } catch (error) { if (current()) { $('event-list').replaceChildren(option('', 'Sin lista disponible')); report(error, 'catalog-status'); } }
         finally { catalogBusy = false; syncControls(); schedule(); }
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) { stopPolling(); trackingStatus(); } else if (official?.estadoEvento === 'EN_VIVO') refresh(); else trackingStatus(); });
     window.addEventListener('beforeunload', event => { if (uncertain || busy) { event.preventDefault(); event.returnValue = ''; } });
-    window.addEventListener('pagehide', () => { stopped = true; fresh = false; ++viewVersion; stopPolling(); trackingStatus(); });
+    window.addEventListener('pagehide', () => { stopped = true; fresh = false; ++viewVersion; ++catalogRevision; stopPolling(); trackingStatus(); });
     window.addEventListener('pageshow', event => { if (event.persisted) { stopped = false; authorized = false; if (eventId) refresh(true); } });
     // Actualizar solo los avisos existentes; no hay nuevas acciones ni POST
     // en el polling. El estado operativo del ejecutor no forma parte del DTO.
