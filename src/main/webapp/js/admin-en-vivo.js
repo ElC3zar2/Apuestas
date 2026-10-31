@@ -116,8 +116,8 @@
         if (state.estadoEvento !== 'EN_VIVO') return 'Estado oficial: '+state.estadoEvento+'. El plazo se mide desde el inicio real registrado por el servidor, no desde la fecha programada ni desde esta página.';
         if (state.fechaInicioRealUtc === null || !integer(state.duracionSimulacionSegundos)) return 'Falta el inicio real o una duración válida en la respuesta oficial. No se deduce el vencimiento ni se solicita un cierre automático.';
         return state.tiempoVisualCumplido
-            ? 'El backend indica que se cumplió la duración de '+state.duracionSimulacionSegundos+' segundos, pero todavía informa EN_VIVO. El cierre autónomo no está habilitado; utiliza el cierre manual autorizado y comprueba su respuesta.'
-            : 'Tiempo y duración recibidos del servidor desde el inicio real. El navegador no adelanta el reloj ni cierra la simulación.';
+            ? 'El indicador visual del servidor alcanzó la duración de '+state.duracionSimulacionSegundos+' segundos, pero todavía informa EN_VIVO. SQL verifica el vencimiento completo antes del cierre automático. Esta vista no confirma si el servicio está habilitado u operativo; se conserva el cierre manual autorizado como respaldo.'
+            : 'Tiempo y duración recibidos del servidor desde el inicio real. El cierre automático depende de la configuración y disponibilidad del servidor, que esta vista no confirma. El navegador no adelanta el reloj ni cierra la simulación.';
     }
     function syncControls() {
         const available = canOperate && authorized && fresh && context && official && !busy && !catalogBusy && !refreshTask && !stopped && !uncertain;
@@ -502,6 +502,12 @@
     window.addEventListener('beforeunload', event => { if (uncertain || busy) { event.preventDefault(); event.returnValue = ''; } });
     window.addEventListener('pagehide', () => { stopped = true; fresh = false; ++viewVersion; stopPolling(); trackingStatus(); });
     window.addEventListener('pageshow', event => { if (event.persisted) { stopped = false; authorized = false; if (eventId) refresh(true); } });
+    // Actualizar solo los avisos existentes; no hay nuevas acciones ni POST
+    // en el polling. El estado operativo del ejecutor no forma parte del DTO.
+    const autoNotice=document.querySelector('#contenido > p.warning');
+    if(autoNotice)autoNotice.textContent='El cierre automático depende de la configuración y disponibilidad del servidor. Esta pantalla no confirma que esté activo: solo consulta el estado oficial. Conserva el cierre manual autorizado como respaldo.';
+    const manualNotice=$('state-form').parentElement.querySelector('p.warning');
+    if(manualNotice)manualNotice.textContent='Cerrar la simulación deja el resultado pendiente; no oficializa ni liquida apuestas. FINALIZADO solo se establece desde Resultados. El cierre manual sigue disponible y el seguimiento no ejecuta cierres.';
     window.BetZoneAdmin.eventPagination($('event-search'));incidentType(); syncControls();
     const initialEvent = new URLSearchParams(location.search).get('idEvento');
     if (!canOperate) { status('live-status','Este módulo requiere ADMINISTRADOR u OPERADOR_EVENTOS. No hay acceso de lectura ni escritura para este rol.',true); return; }

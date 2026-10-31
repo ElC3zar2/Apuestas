@@ -219,7 +219,7 @@ BEGIN
     WHERE A.IdEvento=@IdEvento AND A.OrdenParticipante=1;
   EXEC dbo.sp_RegistrarResultadoEvento @IdUsuarioProceso,@IdEvento,@Texto,NULL,@IpOrigen;
   INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
-    VALUES(@IdUsuarioProceso,'SIMULACION_FINALIZADA','Evento',@IdEvento,@IpOrigen,'Fin manual; pendiente de oficializacion.');
+    VALUES(@IdUsuarioProceso,'SIMULACION_FINALIZADA','Evento',@IdEvento,@IpOrigen,'Fin de simulacion; pendiente de oficializacion. El origen automatico, si corresponde, se audita por separado.');
   COMMIT; SELECT @IdEvento AS IdEvento,CAST(0 AS BIT) AS SinCambios;
  END TRY BEGIN CATCH IF XACT_STATE()<>0 ROLLBACK; THROW; END CATCH;
 END;
@@ -345,5 +345,109 @@ BEGIN
  OUTER APPLY(SELECT SUM(CONVERT(DECIMAL(38,2),BO.ReservaCasaPendiente)) Reservas,
    SUM(CASE WHEN BO.Resultado<>'PENDIENTE' AND BO.ReservaCasaPendiente>0 THEN 1 ELSE 0 END) FueraPendiente
    FROM dbo.Boleto BO WHERE BO.IdBilleteraCasaReserva=B.IdBilletera) X WHERE R.Nombre='CASA';
+END;
+GO
+
+/* FASE 5. Lectura acotada por cursor: un evento defectuoso no monopoliza
+   la primera pagina. La lista no autoriza el cierre; se revalida bajo cerrojo.
+   DATEDIFF_BIG(MILLISECOND) tambien cuenta limites: al empatar el umbral,
+   se compara el residuo submilisegundo para no adelantar el vencimiento. */
+CREATE OR ALTER PROCEDURE dbo.sp_ListarSimulacionesVencidas
+ @IdUsuarioProceso INT,@DespuesDeIdEvento INT=0,@Limite INT=20
+AS
+BEGIN
+ SET NOCOUNT ON;
+ IF @DespuesDeIdEvento IS NULL OR @DespuesDeIdEvento<0 OR @Limite IS NULL OR @Limite<1 OR @Limite>20
+   THROW 77901,'Parametros de listado automatico invalidos.',1;
+ EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+ DECLARE @Ahora DATETIME2=SYSUTCDATETIME();
+ SELECT TOP (@Limite) EV.IdEvento
+ FROM dbo.Evento EV JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado
+ JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+ CROSS APPLY(SELECT DATEDIFF_BIG(MILLISECOND,EV.FechaInicioRealUtc,@Ahora) AS Milisegundos) Tiempo
+ WHERE EV.IdEvento>@DespuesDeIdEvento AND EV.EsSimulado=1 AND T.Codigo='EVENTO' AND E.Codigo='EN_VIVO'
+   AND EV.FechaInicioRealUtc IS NOT NULL AND EV.DuracionSimulacionSegundos>0
+   AND Tiempo.Milisegundos>=CONVERT(BIGINT,EV.DuracionSimulacionSegundos)*1000
+   AND (Tiempo.Milisegundos>CONVERT(BIGINT,EV.DuracionSimulacionSegundos)*1000
+     OR DATEPART(NANOSECOND,@Ahora)%1000000>=DATEPART(NANOSECOND,EV.FechaInicioRealUtc)%1000000)
+ ORDER BY EV.IdEvento;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_AutoFinalizarSimulacionVencida
+ @IdUsuarioProceso INT,@IdEvento INT
+AS
+BEGIN
+ SET NOCOUNT ON;
+ SET XACT_ABORT ON;
+ /* Unicamente el DAO autonomo abre esta operacion, con conexion autocommit.
+    Las transacciones de los procedimientos delegados se anidan en esta. */
+ IF @@TRANCOUNT<>0 OR @IdEvento IS NULL OR @IdEvento<=0
+   THROW 77901,'La operacion automatica requiere evento valido y transaccion propia.',1;
+ BEGIN TRY
+  BEGIN TRANSACTION;
+  DECLARE @Lock INT;
+  EXEC @Lock=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+    @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=2000;
+  IF @Lock<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+  EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+  DECLARE @Estado VARCHAR(40),@Sim BIT,@Inicio DATETIME2,@Fin DATETIME2,@Duracion INT,
+    @Ahora DATETIME2,@Milisegundos BIGINT,@Realizado BIT=0,@IdResultado INT,@EstadoResultado VARCHAR(40);
+  SELECT @Estado=E.Codigo,@Sim=EV.EsSimulado,@Inicio=EV.FechaInicioRealUtc,
+    @Fin=EV.FechaFinRealUtc,@Duracion=EV.DuracionSimulacionSegundos
+  FROM dbo.Evento EV WITH(UPDLOCK,HOLDLOCK) JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado
+  JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+  WHERE EV.IdEvento=@IdEvento AND T.Codigo='EVENTO';
+  SET @Ahora=SYSUTCDATETIME();
+  SET @Milisegundos=DATEDIFF_BIG(MILLISECOND,@Inicio,@Ahora);
+  IF @Sim=1 AND @Estado='EN_VIVO' AND @Inicio IS NOT NULL AND @Duracion>0
+    AND @Milisegundos>=CONVERT(BIGINT,@Duracion)*1000
+    AND (@Milisegundos>CONVERT(BIGINT,@Duracion)*1000
+      OR DATEPART(NANOSECOND,@Ahora)%1000000>=DATEPART(NANOSECOND,@Inicio)%1000000)
+  BEGIN
+    /* Un resultado previo PENDIENTE se reutiliza por el flujo existente.
+       Otros estados exigen revision: nunca se oficializan ni cambian aqui. */
+    IF EXISTS(SELECT 1 FROM dbo.ResultadoEvento R WITH(UPDLOCK,HOLDLOCK)
+      JOIN dbo.Estado E ON E.IdEstado=R.IdEstado JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+      WHERE R.IdEvento=@IdEvento AND (T.Codigo<>'RESULTADO_EVENTO' OR E.Codigo<>'PENDIENTE'))
+      THROW 77902,'El resultado previo requiere revision administrativa.',1;
+    /* Delega los mercados, cuotas, marcador y resultado. Sus SELECT se
+       conservan: el DAO los consume, pero solo confirma con el ultimo SELECT
+       de este procedimiento, emitido despues del COMMIT exterior. */
+    EXEC dbo.sp_FinalizarSimulacionEvento @IdUsuarioProceso,@IdEvento,NULL;
+    IF @@TRANCOUNT<>1 OR XACT_STATE()<>1
+      THROW 77902,'La finalizacion delegada no conservo la transaccion exterior.',1;
+    SELECT @Estado=E.Codigo,@Fin=EV.FechaFinRealUtc FROM dbo.Evento EV
+      JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado
+      WHERE EV.IdEvento=@IdEvento AND EV.EsSimulado=1 AND EV.FechaInicioRealUtc=@Inicio
+        AND EV.DuracionSimulacionSegundos=@Duracion;
+    SELECT @IdResultado=R.IdResultado,@EstadoResultado=E.Codigo FROM dbo.ResultadoEvento R
+      JOIN dbo.Estado E ON E.IdEstado=R.IdEstado JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+      WHERE R.IdEvento=@IdEvento AND T.Codigo='RESULTADO_EVENTO';
+    IF @Estado<>'PENDIENTE_RESULTADO' OR @Fin IS NULL OR @IdResultado IS NULL
+      OR @EstadoResultado IS NULL OR @EstadoResultado<>'PENDIENTE'
+      OR EXISTS(SELECT 1 FROM dbo.Mercado M JOIN dbo.Estado E ON E.IdEstado=M.IdEstado
+        WHERE M.IdEvento=@IdEvento AND E.Codigo IN('BORRADOR','ABIERTO','SUSPENDIDO'))
+      OR EXISTS(SELECT 1 FROM dbo.Cuota C JOIN dbo.Seleccion S ON S.IdSeleccion=C.IdSeleccion
+        JOIN dbo.Mercado M ON M.IdMercado=S.IdMercado WHERE M.IdEvento=@IdEvento AND C.Activo=1)
+      THROW 77902,'La finalizacion delegada no confirmo el cierre completo y resultado pendiente.',1;
+    INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
+      VALUES(@IdUsuarioProceso,'SIMULACION_CERRADA_AUTOMATICAMENTE','Evento',@IdEvento,NULL,
+        CONCAT('Origen=servidor; actor tecnico=',@IdUsuarioProceso,'; evento=',@IdEvento,
+          '; estado=PENDIENTE_RESULTADO; fecha cierre UTC=',CONVERT(VARCHAR(33),@Fin,126),
+          '; duracion oficial segundos=',@Duracion,'. Sin oficializacion ni liquidacion.'));
+    SET @Realizado=1;
+  END;
+  COMMIT;
+  SELECT CAST('AUTOCIERRE_SIMULACION_V1' AS VARCHAR(32)) AS MarcaConfirmacion,
+    @IdEvento AS IdEvento,@Realizado AS CierreAutomaticoRealizado,CONVERT(BIT,1-@Realizado) AS SinCambios,
+    @Estado AS EstadoEvento,@Fin AS FechaFinRealUtc,@IdResultado AS IdResultado,@EstadoResultado AS EstadoResultado;
+ END TRY
+ BEGIN CATCH
+  /* Un ROLLBACK interno revierte tambien esta transaccion; no repetirlo
+     cuando el procedimiento delegado ya la haya terminado. */
+  IF XACT_STATE()<>0 ROLLBACK;
+  THROW;
+ END CATCH;
 END;
 GO
