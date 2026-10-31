@@ -8,6 +8,10 @@ public final class AdministracionEventosModelos {
     private AdministracionEventosModelos() { }
     /** Entrada tipada interna. Solo se rellenan los campos permitidos por la operacion. */
     public static final class Solicitud {
+        public Integer idParticipanteLocal,idParticipanteVisitante;
+        public java.util.UUID versionPlantilla,versionEsperada;
+        public BigDecimal cuotaLocal,cuotaEmpate,cuotaVisitante;
+        public Boolean habilitada,aprobada;
         public Integer idDeporte, idLiga, idPais, idParticipante, idEvento, idMercado, idSeleccion, ordenParticipante;
         public String nombre, tipoParticipante, descripcion, nuevoEstado, motivo, tipoMercado, tipoIncidencia;
         public java.util.UUID referenciaOperacion;
@@ -19,6 +23,21 @@ public final class AdministracionEventosModelos {
         public BigDecimal valor,valorResultado;
     }
     public interface Resultado { }
+    public static final class Plantilla1X2 implements Resultado {
+        public Integer idDeporte;
+        public String identidadPlantilla,versionPlantilla;
+        public Boolean existe,valida,habilitada,aprobada;
+        public BigDecimal cuotaLocal,cuotaEmpate,cuotaVisitante;
+    }
+    public static final class EventoConvencional1X2 implements Resultado {
+        public Integer idEvento,idDeporte,idLiga,idParticipanteLocal,idParticipanteVisitante,idMercado;
+        public Integer idSeleccionLocal,idSeleccionEmpate,idSeleccionVisitante;
+        public LocalDateTime fechaInicio;
+        public String nombre,deporte,liga,local,visitante,estadoEvento,tipoMercado,estadoMercado;
+        public String referenciaOperacion,identidadPlantilla,versionPlantilla,estadoEventoActual,estadoMercadoActual;
+        public BigDecimal cuotaLocal,cuotaEmpate,cuotaVisitante;
+        public Boolean solicitudIdempotente,disponibleParaApuestas;
+    }
     public static final class Liga implements Resultado {
         public Integer idLiga, idDeporte, idPais;
         public String nombre;

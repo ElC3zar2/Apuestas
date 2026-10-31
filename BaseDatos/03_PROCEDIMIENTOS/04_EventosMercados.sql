@@ -37,6 +37,297 @@ SET NOCOUNT ON;
 SET XACT_ABORT ON;
 GO
 
+/* FASE 2: plantilla compacta versionada en ConfiguracionSistema. Sin valores
+   iniciales. Auxiliar sin result sets; se invoca dentro del cerrojo comun.
+   Clave BETZONE_1X2:<IdDeporte>; JSON v=version, l/x/d=cuotas, h/a=bits. */
+CREATE OR ALTER PROCEDURE dbo.sp_LeerPlantillaConvencional1X2
+    @IdDeporte INT, @Existe BIT OUTPUT, @Valida BIT OUTPUT,
+    @Version UNIQUEIDENTIFIER OUTPUT, @Local DECIMAL(10,4) OUTPUT,
+    @Empate DECIMAL(10,4) OUTPUT, @Visitante DECIMAL(10,4) OUTPUT,
+    @Habilitada BIT OUTPUT, @Aprobada BIT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Json VARCHAR(150);
+    SELECT @Json=Valor FROM dbo.ConfiguracionSistema WITH (UPDLOCK,HOLDLOCK)
+      WHERE Clave=CONCAT('BETZONE_1X2:',@IdDeporte);
+    SELECT @Existe=CASE WHEN @Json IS NULL THEN 0 ELSE 1 END,@Valida=0,
+      @Version=NULL,@Local=NULL,@Empate=NULL,@Visitante=NULL,@Habilitada=0,@Aprobada=0;
+    IF ISJSON(@Json)<>1 OR @Json IS NULL RETURN;
+    IF (SELECT COUNT(*) FROM OPENJSON(@Json))<>6
+       OR EXISTS(SELECT [key] FROM OPENJSON(@Json) GROUP BY [key] HAVING COUNT(*)<>1)
+       OR EXISTS(SELECT 1 FROM OPENJSON(@Json) WHERE [key] NOT IN ('v','l','x','d','h','a')) RETURN;
+    SET @Version=TRY_CONVERT(UNIQUEIDENTIFIER,JSON_VALUE(@Json,'$.v'));
+    IF LEN(JSON_VALUE(@Json,'$.v'))<>36 OR @Version IS NULL RETURN;
+    IF JSON_VALUE(@Json,'$.h') NOT IN ('0','1') OR JSON_VALUE(@Json,'$.h') IS NULL
+       OR JSON_VALUE(@Json,'$.a') NOT IN ('0','1') OR JSON_VALUE(@Json,'$.a') IS NULL RETURN;
+    IF EXISTS(SELECT 1 FROM OPENJSON(@Json) WHERE [key] IN ('l','x','d') AND
+      ([value] IS NULL OR [value] LIKE '%[^0-9.]%'
+       OR (CHARINDEX('.',[value])>0 AND LEN([value])-CHARINDEX('.',[value])>4)
+       OR TRY_CONVERT(DECIMAL(10,4),[value]) IS NULL OR TRY_CONVERT(DECIMAL(10,4),[value])<=1)) RETURN;
+    SELECT @Local=TRY_CONVERT(DECIMAL(10,4),JSON_VALUE(@Json,'$.l')),
+      @Empate=TRY_CONVERT(DECIMAL(10,4),JSON_VALUE(@Json,'$.x')),
+      @Visitante=TRY_CONVERT(DECIMAL(10,4),JSON_VALUE(@Json,'$.d')),
+      @Habilitada=CONVERT(BIT,JSON_VALUE(@Json,'$.h')),@Aprobada=CONVERT(BIT,JSON_VALUE(@Json,'$.a'));
+    IF @Local IS NOT NULL AND @Empate IS NOT NULL AND @Visitante IS NOT NULL SET @Valida=1;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_ConsultarPlantillaConvencional1X2
+    @IdUsuarioProceso INT, @IdDeporte INT, @IpOrigen VARCHAR(45)=NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        DECLARE @Lock INT;
+        EXEC @Lock=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+          @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @Lock<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+        EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+        IF NOT EXISTS(SELECT 1 FROM dbo.Deporte WHERE IdDeporte=@IdDeporte)
+          THROW 76710,'El recurso de catalogo no existe.',1;
+        IF NOT EXISTS(SELECT 1 FROM dbo.Deporte WHERE IdDeporte=@IdDeporte AND Activo=1
+          AND Nombre COLLATE Latin1_General_100_CI_AI='Futbol')
+          THROW 76701,'El flujo 1X2 requiere el deporte Futbol activo.',1;
+        DECLARE @Existe BIT,@Valida BIT,@Version UNIQUEIDENTIFIER,@L DECIMAL(10,4),@X DECIMAL(10,4),@D DECIMAL(10,4),@H BIT,@A BIT;
+        EXEC dbo.sp_LeerPlantillaConvencional1X2 @IdDeporte,@Existe OUTPUT,@Valida OUTPUT,
+          @Version OUTPUT,@L OUTPUT,@X OUTPUT,@D OUTPUT,@H OUTPUT,@A OUTPUT;
+        COMMIT;
+        SELECT @IdDeporte AS IdDeporte,CONCAT('BETZONE_1X2:',@IdDeporte) AS IdentidadPlantilla,
+          @Existe AS Existe,@Valida AS Valida,CONVERT(VARCHAR(36),@Version) AS VersionPlantilla,
+          @L AS CuotaLocal,@X AS CuotaEmpate,@D AS CuotaVisitante,@H AS Habilitada,@A AS Aprobada;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE()<>0 ROLLBACK;
+        THROW;
+    END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_GuardarPlantillaConvencional1X2
+    @IdUsuarioProceso INT, @IdDeporte INT, @CuotaLocal DECIMAL(10,4),
+    @CuotaEmpate DECIMAL(10,4), @CuotaVisitante DECIMAL(10,4),
+    @Habilitada BIT, @Aprobada BIT, @VersionEsperada UNIQUEIDENTIFIER,
+    @ReferenciaOperacion UNIQUEIDENTIFIER, @IpOrigen VARCHAR(45)=NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    IF @CuotaLocal IS NULL OR @CuotaEmpate IS NULL OR @CuotaVisitante IS NULL
+       OR @CuotaLocal<=1 OR @CuotaEmpate<=1 OR @CuotaVisitante<=1
+       OR @Habilitada IS NULL OR @Aprobada IS NULL OR @ReferenciaOperacion IS NULL
+      THROW 76700,'Parametros de plantilla invalidos.',1;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        DECLARE @Lock INT;
+        EXEC @Lock=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+          @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @Lock<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+        EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+        IF NOT EXISTS(SELECT 1 FROM dbo.Usuario U JOIN dbo.Rol R ON R.IdRol=U.IdRol
+          WHERE U.IdUsuario=@IdUsuarioProceso AND R.Nombre='ADMINISTRADOR')
+          THROW 76702,'Solo ADMINISTRADOR puede aprobar o modificar plantillas.',1;
+        IF NOT EXISTS(SELECT 1 FROM dbo.Deporte WHERE IdDeporte=@IdDeporte)
+          THROW 76710,'El recurso de catalogo no existe.',1;
+        IF NOT EXISTS(SELECT 1 FROM dbo.Deporte WHERE IdDeporte=@IdDeporte AND Activo=1
+          AND Nombre COLLATE Latin1_General_100_CI_AI='Futbol')
+          THROW 76701,'El flujo 1X2 requiere el deporte Futbol activo.',1;
+        DECLARE @Existe BIT,@Valida BIT,@Version UNIQUEIDENTIFIER,@L DECIMAL(10,4),@X DECIMAL(10,4),@D DECIMAL(10,4),@H BIT,@A BIT;
+        EXEC dbo.sp_LeerPlantillaConvencional1X2 @IdDeporte,@Existe OUTPUT,@Valida OUTPUT,
+          @Version OUTPUT,@L OUTPUT,@X OUTPUT,@D OUTPUT,@H OUTPUT,@A OUTPUT;
+        IF (@VersionEsperada IS NULL AND @Existe=1) OR (@VersionEsperada IS NOT NULL
+          AND (@Version IS NULL OR @VersionEsperada<>@Version))
+          THROW 76703,'La plantilla cambio; consulte su version antes de actualizar.',1;
+        IF EXISTS(SELECT 1 FROM dbo.Auditoria WITH (UPDLOCK,HOLDLOCK) WHERE ReferenciaOperacion=@ReferenciaOperacion)
+          THROW 76704,'La referencia ya fue utilizada; consulte el resultado antes de otra operacion.',1;
+        DECLARE @Clave VARCHAR(100)=CONCAT('BETZONE_1X2:',@IdDeporte);
+        DECLARE @Json VARCHAR(MAX)=CONCAT('{"v":"',CONVERT(VARCHAR(36),@ReferenciaOperacion),
+          '","l":',@CuotaLocal,',"x":',@CuotaEmpate,',"d":',@CuotaVisitante,',"h":',CONVERT(INT,@Habilitada),',"a":',CONVERT(INT,@Aprobada),'}');
+        IF LEN(@Json)>150 THROW 76790,'La plantilla excede el contrato de configuracion.',1;
+        UPDATE dbo.ConfiguracionSistema SET Valor=@Json,Descripcion='Plantilla convencional 1X2 de futbol; aprobacion administrativa explicita.',
+          FechaModificacion=SYSDATETIME() WHERE Clave=@Clave;
+        IF @@ROWCOUNT=0 INSERT dbo.ConfiguracionSistema(Clave,Valor,Descripcion)
+          VALUES(@Clave,@Json,'Plantilla convencional 1X2 de futbol; aprobacion administrativa explicita.');
+        INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,ReferenciaOperacion,IpOrigen,Descripcion)
+          VALUES(@IdUsuarioProceso,'PLANTILLA_1X2_GUARDADA','ConfiguracionSistema',
+            (SELECT IdConfiguracion FROM dbo.ConfiguracionSistema WHERE Clave=@Clave),
+            @ReferenciaOperacion,@IpOrigen,CONCAT('Deporte=',@IdDeporte,'; anterior=',CONVERT(VARCHAR(36),@Version),'; nueva=',@Json));
+        COMMIT;
+        SELECT @IdDeporte AS IdDeporte,@Clave AS IdentidadPlantilla,CAST(1 AS BIT) AS Existe,CAST(1 AS BIT) AS Valida,
+          CONVERT(VARCHAR(36),@ReferenciaOperacion) AS VersionPlantilla,@CuotaLocal AS CuotaLocal,
+          @CuotaEmpate AS CuotaEmpate,@CuotaVisitante AS CuotaVisitante,@Habilitada AS Habilitada,@Aprobada AS Aprobada;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE()<>0 ROLLBACK;
+        THROW;
+    END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CrearEventoConvencional1X2
+    @IdUsuarioProceso INT, @IdDeporte INT, @IdLiga INT,
+    @IdParticipanteLocal INT, @IdParticipanteVisitante INT, @FechaInicio DATETIME2,
+    @VersionPlantilla UNIQUEIDENTIFIER, @ReferenciaOperacion UNIQUEIDENTIFIER, @IpOrigen VARCHAR(45)=NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    IF @IdDeporte IS NULL OR @IdLiga IS NULL OR @IdParticipanteLocal IS NULL OR @IdParticipanteVisitante IS NULL
+      OR @IdParticipanteLocal=@IdParticipanteVisitante OR @FechaInicio IS NULL
+      OR @VersionPlantilla IS NULL OR @ReferenciaOperacion IS NULL
+      THROW 76700,'Parametros de creacion 1X2 invalidos.',1;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        DECLARE @Lock INT;
+        EXEC @Lock=sys.sp_getapplock @Resource='PlataformaApuestas:Operacion',
+          @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
+        IF @Lock<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
+        EXEC dbo.sp_ValidarPermisoEventos @IdUsuarioProceso;
+        DECLARE @IdEvento INT,@IdMercado INT,@S1 INT,@SX INT,@S2 INT,@Registro VARCHAR(500),@Actor INT,
+          @IdAuditoria BIGINT,@IdEventoAuditoria BIGINT,@Recuperada BIT=0;
+        SELECT @IdAuditoria=IdAuditoria,@Actor=IdUsuario,@IdEventoAuditoria=IdRegistro,@Registro=Descripcion
+          FROM dbo.Auditoria WITH (UPDLOCK,HOLDLOCK) WHERE ReferenciaOperacion=@ReferenciaOperacion
+          AND Accion='EVENTO_CONVENCIONAL_1X2' AND TablaAfectada='Evento';
+        IF @IdAuditoria IS NOT NULL
+        BEGIN
+            IF (SELECT COUNT(*) FROM dbo.Auditoria WHERE ReferenciaOperacion=@ReferenciaOperacion)<>1
+              OR @Registro IS NULL OR ISJSON(@Registro)<>1 THROW 76790,'Auditoria de creacion inconsistente.',1;
+            IF @Actor IS NULL OR @IdEventoAuditoria IS NULL
+              OR TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.d')) IS NULL
+              OR TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.l')) IS NULL
+              OR TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.p')) IS NULL
+              OR TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.q')) IS NULL
+              OR TRY_CONVERT(DATETIME2,JSON_VALUE(@Registro,'$.f'),126) IS NULL
+              OR TRY_CONVERT(UNIQUEIDENTIFIER,JSON_VALUE(@Registro,'$.v')) IS NULL
+              THROW 76790,'Identidad auditada incompleta.',1;
+            IF @Actor<>@IdUsuarioProceso OR TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.d'))<>@IdDeporte
+              OR TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.l'))<>@IdLiga
+              OR TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.p'))<>@IdParticipanteLocal
+              OR TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.q'))<>@IdParticipanteVisitante
+              OR TRY_CONVERT(DATETIME2,JSON_VALUE(@Registro,'$.f'),126)<>@FechaInicio
+              OR TRY_CONVERT(UNIQUEIDENTIFIER,JSON_VALUE(@Registro,'$.v'))<>@VersionPlantilla
+              THROW 76704,'La referencia pertenece a otra solicitud.',1;
+            SET @IdEvento=TRY_CONVERT(INT,@IdEventoAuditoria);
+            SET @Recuperada=1;
+        END
+        ELSE
+        BEGIN
+            IF EXISTS(SELECT 1 FROM dbo.Auditoria WITH (UPDLOCK,HOLDLOCK) WHERE ReferenciaOperacion=@ReferenciaOperacion)
+              THROW 76704,'La referencia pertenece a otra operacion.',1;
+            IF NOT EXISTS(SELECT 1 FROM dbo.Deporte WHERE IdDeporte=@IdDeporte)
+              OR NOT EXISTS(SELECT 1 FROM dbo.Liga WHERE IdLiga=@IdLiga)
+              OR (SELECT COUNT(*) FROM dbo.Participante WHERE IdParticipante IN (@IdParticipanteLocal,@IdParticipanteVisitante))<>2
+              THROW 76710,'El recurso de catalogo no existe.',1;
+            IF NOT EXISTS(SELECT 1 FROM dbo.Deporte WITH (UPDLOCK,HOLDLOCK) WHERE IdDeporte=@IdDeporte
+              AND Activo=1 AND Nombre COLLATE Latin1_General_100_CI_AI='Futbol')
+              THROW 76701,'El flujo 1X2 requiere el deporte Futbol activo.',1;
+            IF NOT EXISTS(SELECT 1 FROM dbo.Liga WITH (UPDLOCK,HOLDLOCK) WHERE IdLiga=@IdLiga AND IdDeporte=@IdDeporte AND Activo=1)
+              THROW 76705,'La liga no existe, esta inactiva o no corresponde al deporte.',1;
+            IF (SELECT COUNT(*) FROM dbo.Participante P WITH (UPDLOCK,HOLDLOCK)
+              JOIN dbo.LigaParticipante LP WITH (UPDLOCK,HOLDLOCK) ON LP.IdParticipante=P.IdParticipante AND LP.IdLiga=@IdLiga AND LP.Activo=1
+              WHERE P.IdParticipante IN (@IdParticipanteLocal,@IdParticipanteVisitante)
+                AND P.IdDeporte=@IdDeporte AND P.Activo=1 AND P.TipoParticipante='EQUIPO')<>2
+              THROW 76706,'Se requieren dos equipos activos asociados a la liga y deporte.',1;
+            DECLARE @Anticipacion INT,@Ahora DATETIME2=CAST(SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'Central America Standard Time' AS DATETIME2);
+            SELECT @Anticipacion=TRY_CONVERT(INT,Valor) FROM dbo.ConfiguracionSistema WITH (UPDLOCK,HOLDLOCK)
+              WHERE Clave='ANTICIPACION_CIERRE_APUESTA_MIN';
+            IF @Anticipacion IS NULL OR @Anticipacion<0 THROW 76790,'Configuracion de cierre invalida.',1;
+            IF @FechaInicio<=@Ahora OR DATEDIFF_BIG(SECOND,@Ahora,@FechaInicio)<=CONVERT(BIGINT,@Anticipacion)*60
+              THROW 76707,'El horario no permite publicar un evento apto para apuestas.',1;
+            IF EXISTS(SELECT 1 FROM dbo.Evento E WITH (UPDLOCK,HOLDLOCK)
+              JOIN dbo.EventoParticipante L ON L.IdEvento=E.IdEvento AND L.IdParticipante=@IdParticipanteLocal AND L.OrdenParticipante=1
+              JOIN dbo.EventoParticipante V ON V.IdEvento=E.IdEvento AND V.IdParticipante=@IdParticipanteVisitante AND V.OrdenParticipante=2
+              WHERE E.IdLiga=@IdLiga AND E.FechaInicio=@FechaInicio AND E.EsSimulado=0)
+              OR EXISTS(SELECT 1 FROM dbo.Auditoria WHERE Accion='EVENTO_CONVENCIONAL_1X2' AND TablaAfectada='Evento'
+                AND JSON_VALUE(CASE WHEN ISJSON(Descripcion)=1 THEN Descripcion ELSE '{}' END,'$.l')=CONVERT(VARCHAR(10),@IdLiga)
+                AND JSON_VALUE(CASE WHEN ISJSON(Descripcion)=1 THEN Descripcion ELSE '{}' END,'$.p')=CONVERT(VARCHAR(10),@IdParticipanteLocal)
+                AND JSON_VALUE(CASE WHEN ISJSON(Descripcion)=1 THEN Descripcion ELSE '{}' END,'$.q')=CONVERT(VARCHAR(10),@IdParticipanteVisitante)
+                AND TRY_CONVERT(DATETIME2,JSON_VALUE(CASE WHEN ISJSON(Descripcion)=1 THEN Descripcion ELSE '{}' END,'$.f'),126)=@FechaInicio)
+              THROW 76708,'Ya existe una creacion equivalente para liga, local, visitante y horario.',1;
+            DECLARE @Existe BIT,@Valida BIT,@Version UNIQUEIDENTIFIER,@C1 DECIMAL(10,4),@CX DECIMAL(10,4),@C2 DECIMAL(10,4),@H BIT,@A BIT;
+            EXEC dbo.sp_LeerPlantillaConvencional1X2 @IdDeporte,@Existe OUTPUT,@Valida OUTPUT,
+              @Version OUTPUT,@C1 OUTPUT,@CX OUTPUT,@C2 OUTPUT,@H OUTPUT,@A OUTPUT;
+            IF @Existe=0 OR @Valida=0 OR @H=0 OR @A=0
+              THROW 76709,'Configure y apruebe una plantilla 1X2 valida antes de publicar.',1;
+            IF @Version<>@VersionPlantilla THROW 76703,'La plantilla cambio; consulte y revise sus cuotas.',1;
+            DECLARE @EstadoEvento INT,@EstadoMercado INT;
+            SELECT @EstadoEvento=E.IdEstado FROM dbo.Estado E JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+              WHERE T.Codigo='EVENTO' AND E.Codigo='PROGRAMADO' AND E.Activo=1;
+            SELECT @EstadoMercado=E.IdEstado FROM dbo.Estado E JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+              WHERE T.Codigo='MERCADO' AND E.Codigo='ABIERTO' AND E.Activo=1;
+            IF @EstadoEvento IS NULL OR @EstadoMercado IS NULL THROW 76790,'Faltan estados oficiales para publicacion.',1;
+            DECLARE @Nombre VARCHAR(200),@NL VARCHAR(150),@NV VARCHAR(150);
+            SELECT @NL=Nombre FROM dbo.Participante WHERE IdParticipante=@IdParticipanteLocal;
+            SELECT @NV=Nombre FROM dbo.Participante WHERE IdParticipante=@IdParticipanteVisitante;
+            SET @Nombre=LEFT(CONCAT(@NL,' vs ',@NV),200);
+            INSERT dbo.Evento(IdLiga,IdEstado,Nombre,FechaInicio,EsSimulado) VALUES(@IdLiga,@EstadoEvento,@Nombre,@FechaInicio,0);
+            SET @IdEvento=CONVERT(INT,SCOPE_IDENTITY());
+            INSERT dbo.EventoParticipante(IdEvento,IdParticipante,OrdenParticipante,EsLocal)
+              VALUES(@IdEvento,@IdParticipanteLocal,1,1),(@IdEvento,@IdParticipanteVisitante,2,0);
+            INSERT dbo.Mercado(IdEvento,IdEstado,Nombre,Descripcion,TipoMercado)
+              VALUES(@IdEvento,@EstadoMercado,'Resultado final — 1X2','1 LOCAL, X EMPATE, 2 VISITANTE','CONVENCIONAL');
+            SET @IdMercado=CONVERT(INT,SCOPE_IDENTITY());
+            INSERT dbo.Seleccion(IdMercado,IdEvento,IdParticipante,Nombre,Activo)
+              VALUES(@IdMercado,@IdEvento,@IdParticipanteLocal,CASE WHEN LEN(@NL)<=146 THEN CONCAT('1 - ',@NL) ELSE '1 - LOCAL' END,1);
+            SET @S1=CONVERT(INT,SCOPE_IDENTITY());
+            INSERT dbo.Seleccion(IdMercado,IdEvento,IdParticipante,Nombre,Activo) VALUES(@IdMercado,@IdEvento,NULL,'X - Empate',1);
+            SET @SX=CONVERT(INT,SCOPE_IDENTITY());
+            INSERT dbo.Seleccion(IdMercado,IdEvento,IdParticipante,Nombre,Activo)
+              VALUES(@IdMercado,@IdEvento,@IdParticipanteVisitante,CASE WHEN LEN(@NV)<=146 THEN CONCAT('2 - ',@NV) ELSE '2 - VISITANTE' END,1);
+            SET @S2=CONVERT(INT,SCOPE_IDENTITY());
+            INSERT dbo.Cuota(IdSeleccion,Valor,Activo) VALUES(@S1,@C1,1),(@SX,@CX,1),(@S2,@C2,1);
+            SET @Registro=(SELECT @IdDeporte AS d,@IdLiga AS l,@IdParticipanteLocal AS p,@IdParticipanteVisitante AS q,
+              CONVERT(VARCHAR(33),@FechaInicio,126) AS f,@IdMercado AS m,@S1 AS s1,@SX AS sx,@S2 AS s2,
+              @C1 AS c1,@CX AS cx,@C2 AS c2,CONVERT(VARCHAR(36),@Version) AS v,
+              'PROGRAMADO' AS ee,'ABIERTO' AS em FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+            IF LEN(@Registro)>=500 OR ISJSON(@Registro)<>1 THROW 76790,'El resultado no cabe en la auditoria.',1;
+            INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,ReferenciaOperacion,IpOrigen,Descripcion)
+              VALUES(@IdUsuarioProceso,'EVENTO_CONVENCIONAL_1X2','Evento',@IdEvento,@ReferenciaOperacion,@IpOrigen,@Registro);
+        END;
+        /* La salida recupera el snapshot de creacion; disponibilidad y estados actuales
+           se consultan aparte. Un reintento no promete que el partido siga abierto. */
+        IF @IdEvento IS NULL OR NOT EXISTS(SELECT 1 FROM dbo.Evento WHERE IdEvento=@IdEvento)
+          THROW 76790,'El evento auditado no esta disponible.',1;
+        SELECT @IdMercado=TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.m')),
+          @S1=TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.s1')),@SX=TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.sx')),
+          @S2=TRY_CONVERT(INT,JSON_VALUE(@Registro,'$.s2'));
+        DECLARE @Salida TABLE(IdEvento INT,IdDeporte INT,IdLiga INT,IdParticipanteLocal INT,IdParticipanteVisitante INT,
+          FechaInicio DATETIME2,Nombre VARCHAR(200),Deporte VARCHAR(100),Liga VARCHAR(150),[Local] VARCHAR(150),Visitante VARCHAR(150),
+          EstadoEvento VARCHAR(40),IdMercado INT,TipoMercado VARCHAR(30),EstadoMercado VARCHAR(40),
+          IdSeleccionLocal INT,IdSeleccionEmpate INT,IdSeleccionVisitante INT,CuotaLocal DECIMAL(10,4),CuotaEmpate DECIMAL(10,4),CuotaVisitante DECIMAL(10,4),
+          ReferenciaOperacion VARCHAR(36),IdentidadPlantilla VARCHAR(100),VersionPlantilla VARCHAR(36),SolicitudIdempotente BIT,
+          EstadoEventoActual VARCHAR(40),EstadoMercadoActual VARCHAR(40),DisponibleParaApuestas BIT);
+        INSERT @Salida SELECT @IdEvento,@IdDeporte,@IdLiga,@IdParticipanteLocal,@IdParticipanteVisitante,@FechaInicio,E.Nombre,D.Nombre,L.Nombre,PL.Nombre,PV.Nombre,
+          JSON_VALUE(@Registro,'$.ee'),@IdMercado,M.TipoMercado,JSON_VALUE(@Registro,'$.em'),@S1,@SX,@S2,
+          TRY_CONVERT(DECIMAL(10,4),JSON_VALUE(@Registro,'$.c1')),TRY_CONVERT(DECIMAL(10,4),JSON_VALUE(@Registro,'$.cx')),TRY_CONVERT(DECIMAL(10,4),JSON_VALUE(@Registro,'$.c2')),
+          CONVERT(VARCHAR(36),@ReferenciaOperacion),CONCAT('BETZONE_1X2:',@IdDeporte),JSON_VALUE(@Registro,'$.v'),@Recuperada,EE.Codigo,EM.Codigo,
+          CONVERT(BIT,CASE WHEN EE.Codigo='PROGRAMADO' AND EM.Codigo='ABIERTO'
+            AND DATEDIFF_BIG(SECOND,CAST(SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'Central America Standard Time' AS DATETIME2),E.FechaInicio)>
+              CONVERT(BIGINT,TRY_CONVERT(INT,(SELECT Valor FROM dbo.ConfiguracionSistema WHERE Clave='ANTICIPACION_CIERRE_APUESTA_MIN')))*60
+            AND (SELECT COUNT(*) FROM dbo.Seleccion S WHERE S.IdMercado=M.IdMercado AND S.Activo=1)=3
+            AND NOT EXISTS(SELECT 1 FROM dbo.Seleccion S WHERE S.IdMercado=M.IdMercado AND S.Activo=1
+              AND (SELECT COUNT(*) FROM dbo.Cuota C WHERE C.IdSeleccion=S.IdSeleccion AND C.Activo=1 AND C.Valor>1)<>1)
+            THEN 1 ELSE 0 END)
+          FROM dbo.Evento E JOIN dbo.Liga L ON L.IdLiga=@IdLiga JOIN dbo.Deporte D ON D.IdDeporte=@IdDeporte
+          JOIN dbo.Participante PL ON PL.IdParticipante=@IdParticipanteLocal JOIN dbo.Participante PV ON PV.IdParticipante=@IdParticipanteVisitante
+          JOIN dbo.Mercado M ON M.IdMercado=@IdMercado AND M.IdEvento=E.IdEvento
+          JOIN dbo.Estado EE ON EE.IdEstado=E.IdEstado JOIN dbo.Estado EM ON EM.IdEstado=M.IdEstado
+          WHERE E.IdEvento=@IdEvento;
+        IF @@ROWCOUNT<>1 THROW 76790,'Resultado de creacion inconsistente.',1;
+        IF @Recuperada=0 AND EXISTS(SELECT 1 FROM @Salida WHERE DisponibleParaApuestas=0)
+          THROW 76707,'El periodo de apuestas cerro durante la preparacion; no se publico el evento.',1;
+        COMMIT;
+        SELECT * FROM @Salida;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE()<>0 ROLLBACK;
+        THROW;
+    END CATCH;
+END;
+GO
+
 
 /* ============================================================
    1. VALIDAR PERMISO DEL MODULO DE EVENTOS

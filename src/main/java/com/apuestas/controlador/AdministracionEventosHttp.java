@@ -5,6 +5,10 @@ public final class AdministracionEventosHttp {
     private AdministracionEventosHttp() { }
     public static int estadoSql(int codigo) {
         switch(codigo) {
+            case 76700:return 400;
+            case 76710:return 404;
+            case 76702:return 403;
+            case 76701:case 76703:case 76704:case 76705:case 76706:case 76707:case 76708:case 76709:return 409;
             case 76900:case 1205:case 1222:return 503;
             case 76600:return 400;
             case 76601:case 76602:case 76605:return 404;
@@ -33,6 +37,23 @@ public final class AdministracionEventosHttp {
             case 59055:case 59059:case 59060:case 59061:case 59066:case 59067:case 59068:return 400;
             // 59032, 59047, 59065: catalogos internos incompletos. Desconocidos: 500.
             default:return 500;
+        }
+    }
+    /** Solo errores de negocio de FASE 2; nunca se devuelve el texto de SQLException. */
+    public static String mensaje1X2(int codigo) {
+        switch(codigo) {
+            case 76700:return "Revisa los parámetros del evento o de la plantilla 1X2.";
+            case 76701:return "La creación rápida 1X2 requiere el deporte Fútbol activo.";
+            case 76702:return "Solo ADMINISTRADOR puede modificar o aprobar la plantilla 1X2.";
+            case 76703:return "La plantilla cambió. Consúltala y revisa sus cuotas antes de confirmar.";
+            case 76704:return "La referencia ya pertenece a otra solicitud. Conserva los datos originales para su revisión.";
+            case 76705:return "La liga no está activa o no pertenece al deporte seleccionado.";
+            case 76706:return "Selecciona dos equipos distintos, activos y asociados a la liga y deporte.";
+            case 76707:return "La fecha y hora no permiten publicar el evento dentro del periodo de apuestas.";
+            case 76708:return "Ya existe un partido con la misma liga, local, visitante y horario.";
+            case 76709:return "La plantilla 1X2 está ausente, deshabilitada, sin aprobar o es inválida. Un ADMINISTRADOR debe configurarla y aprobarla.";
+            case 76710:return "No existe el deporte, liga o participante solicitado. Actualiza los catálogos.";
+            default:return null;
         }
     }
 }

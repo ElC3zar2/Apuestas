@@ -12,6 +12,8 @@ import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.*;
 
 @WebServlet({
+    "/administrador/eventos/crear-convencional", "/administrador/eventos/plantilla-1x2",
+    "/administrador/eventos/plantilla-1x2/guardar",
     "/administrador/ligas/crear", "/administrador/ligas/actualizar",
     "/administrador/ligas/participantes/asociar", "/administrador/ligas/participantes/desasociar",
     "/administrador/participantes/crear", "/administrador/participantes/actualizar",
@@ -65,7 +67,15 @@ public class AdministracionEventosServlet extends HttpServlet {
         } catch(java.util.NoSuchElementException e) { AdministracionUsuarioHttp.error(res,404); }
         catch(SecurityException e) { AdministracionUsuarioHttp.error(res,403); }
         catch(IllegalArgumentException | DateTimeException e) { AdministracionUsuarioHttp.error(res,400); }
-        catch(SQLException e) { AdministracionUsuarioHttp.error(res,AdministracionEventosHttp.estadoSql(e.getErrorCode())); }
+        catch(SQLException e) {
+            String mensaje=AdministracionEventosHttp.mensaje1X2(e.getErrorCode());
+            if(mensaje==null)AdministracionUsuarioHttp.error(res,AdministracionEventosHttp.estadoSql(e.getErrorCode()));
+            else {
+                Map<String,Object> cuerpo=new LinkedHashMap<>();cuerpo.put("ok",false);cuerpo.put("mensaje",mensaje);
+                cuerpo.put("codigo",e.getErrorCode());
+                AdministracionUsuarioHttp.escribir(res,AdministracionEventosHttp.estadoSql(e.getErrorCode()),cuerpo);
+            }
+        }
         catch(RuntimeException | LinkageError e) { AdministracionUsuarioHttp.error(res,500); }
     }
 }

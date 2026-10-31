@@ -23,6 +23,16 @@ public class AdministracionEventosDAO {
             cs.setInt(1,actor);
             int posicionIp=cantidad;
             switch(op) {
+                case CONSULTAR_PLANTILLA_1X2:
+                    cs.setInt(2,s.idDeporte);break;
+                case GUARDAR_PLANTILLA_1X2:
+                    cs.setInt(2,s.idDeporte);decimal(cs,3,s.cuotaLocal);decimal(cs,4,s.cuotaEmpate);decimal(cs,5,s.cuotaVisitante);
+                    cs.setBoolean(6,s.habilitada);cs.setBoolean(7,s.aprobada);
+                    cadena(cs,8,s.versionEsperada==null?null:s.versionEsperada.toString());cs.setString(9,s.referenciaOperacion.toString());break;
+                case CREAR_CONVENCIONAL_1X2:
+                    cs.setInt(2,s.idDeporte);cs.setInt(3,s.idLiga);cs.setInt(4,s.idParticipanteLocal);cs.setInt(5,s.idParticipanteVisitante);
+                    cs.setTimestamp(6,Timestamp.valueOf(s.fechaInicio));cs.setString(7,s.versionPlantilla.toString());
+                    cs.setString(8,s.referenciaOperacion.toString());break;
                 case CREAR_LIGA:
                     cs.setInt(2,s.idDeporte);cs.setString(3,s.nombre);entero(cs,4,s.idPais);break;
                 case ACTUALIZAR_LIGA:
@@ -135,6 +145,51 @@ public class AdministracionEventosDAO {
 
     private static Resultado leer(OperacionAdministracionEventos op,Solicitud s,ResultSet rs) throws SQLException {
         switch(op) {
+            case CONSULTAR_PLANTILLA_1X2:case GUARDAR_PLANTILLA_1X2: {
+                Plantilla1X2 r=new Plantilla1X2();r.idDeporte=id(rs,"IdDeporte",false);igual(s.idDeporte,r.idDeporte);
+                r.identidadPlantilla=texto(rs,"IdentidadPlantilla",false);igual("BETZONE_1X2:"+s.idDeporte,r.identidadPlantilla);
+                r.existe=bit(rs,"Existe",false);r.valida=bit(rs,"Valida",false);r.habilitada=bit(rs,"Habilitada",false);r.aprobada=bit(rs,"Aprobada",false);
+                r.versionPlantilla=texto(rs,"VersionPlantilla",true);
+                UUID versionPlantilla=r.versionPlantilla==null?null:validarUuid(r.versionPlantilla);
+                if(versionPlantilla!=null)r.versionPlantilla=versionPlantilla.toString();
+                r.cuotaLocal=dato(rs,"CuotaLocal",BigDecimal.class,true);r.cuotaEmpate=dato(rs,"CuotaEmpate",BigDecimal.class,true);r.cuotaVisitante=dato(rs,"CuotaVisitante",BigDecimal.class,true);
+                if(r.valida) {
+                    if(!r.existe||versionPlantilla==null)throw contrato();cuota1X2(r.cuotaLocal);cuota1X2(r.cuotaEmpate);cuota1X2(r.cuotaVisitante);
+                }
+                if(op==OperacionAdministracionEventos.GUARDAR_PLANTILLA_1X2) {
+                    igual(true,r.valida);igual(s.referenciaOperacion,versionPlantilla);
+                    igual(s.habilitada,r.habilitada);igual(s.aprobada,r.aprobada);
+                    if(r.cuotaLocal.compareTo(s.cuotaLocal)!=0||r.cuotaEmpate.compareTo(s.cuotaEmpate)!=0||r.cuotaVisitante.compareTo(s.cuotaVisitante)!=0)throw contrato();
+                }
+                return r;
+            }
+            case CREAR_CONVENCIONAL_1X2: {
+                EventoConvencional1X2 r=new EventoConvencional1X2();
+                r.idEvento=id(rs,"IdEvento",false);r.idDeporte=id(rs,"IdDeporte",false);r.idLiga=id(rs,"IdLiga",false);
+                r.idParticipanteLocal=id(rs,"IdParticipanteLocal",false);r.idParticipanteVisitante=id(rs,"IdParticipanteVisitante",false);
+                r.idMercado=id(rs,"IdMercado",false);r.idSeleccionLocal=id(rs,"IdSeleccionLocal",false);
+                r.idSeleccionEmpate=id(rs,"IdSeleccionEmpate",false);r.idSeleccionVisitante=id(rs,"IdSeleccionVisitante",false);
+                igual(s.idDeporte,r.idDeporte);igual(s.idLiga,r.idLiga);igual(s.idParticipanteLocal,r.idParticipanteLocal);igual(s.idParticipanteVisitante,r.idParticipanteVisitante);
+                if(new HashSet<>(Arrays.asList(r.idSeleccionLocal,r.idSeleccionEmpate,r.idSeleccionVisitante)).size()!=3)throw contrato();
+                r.fechaInicio=fecha(rs,"FechaInicio",false);igual(s.fechaInicio,r.fechaInicio);
+                r.nombre=texto(rs,"Nombre",false);r.deporte=texto(rs,"Deporte",false);r.liga=texto(rs,"Liga",false);
+                r.local=texto(rs,"Local",false);r.visitante=texto(rs,"Visitante",false);
+                r.estadoEvento=texto(rs,"EstadoEvento",false);r.tipoMercado=texto(rs,"TipoMercado",false);r.estadoMercado=texto(rs,"EstadoMercado",false);
+                igual("PROGRAMADO",r.estadoEvento);igual("CONVENCIONAL",r.tipoMercado);igual("ABIERTO",r.estadoMercado);
+                r.cuotaLocal=dato(rs,"CuotaLocal",BigDecimal.class,false);r.cuotaEmpate=dato(rs,"CuotaEmpate",BigDecimal.class,false);r.cuotaVisitante=dato(rs,"CuotaVisitante",BigDecimal.class,false);
+                cuota1X2(r.cuotaLocal);cuota1X2(r.cuotaEmpate);cuota1X2(r.cuotaVisitante);
+                UUID referenciaOperacion=validarUuid(texto(rs,"ReferenciaOperacion",false));igual(s.referenciaOperacion,referenciaOperacion);
+                r.referenciaOperacion=referenciaOperacion.toString();
+                r.identidadPlantilla=texto(rs,"IdentidadPlantilla",false);igual("BETZONE_1X2:"+s.idDeporte,r.identidadPlantilla);
+                UUID versionPlantilla=validarUuid(texto(rs,"VersionPlantilla",false));igual(s.versionPlantilla,versionPlantilla);
+                r.versionPlantilla=versionPlantilla.toString();
+                r.solicitudIdempotente=bit(rs,"SolicitudIdempotente",false);r.disponibleParaApuestas=bit(rs,"DisponibleParaApuestas",false);
+                r.estadoEventoActual=texto(rs,"EstadoEventoActual",false);r.estadoMercadoActual=texto(rs,"EstadoMercadoActual",false);
+                if(!com.apuestas.servicio.AdministracionEventosServicio.estadosEvento().contains(r.estadoEventoActual)
+                    ||!com.apuestas.servicio.AdministracionEventosServicio.estadosMercado().contains(r.estadoMercadoActual)
+                    ||(r.disponibleParaApuestas&&(!"PROGRAMADO".equals(r.estadoEventoActual)||!"ABIERTO".equals(r.estadoMercadoActual))))throw contrato();
+                return r;
+            }
             case CREAR_LIGA:case ACTUALIZAR_LIGA: {
                 Liga r=new Liga();
                 r.idLiga=id(rs,"IdLiga",false);r.idDeporte=id(rs,"IdDeporte",false);
@@ -252,6 +307,13 @@ public class AdministracionEventosDAO {
         if(!siguiente(cs,primero))throw contrato();ResultSet rs=cs.getResultSet();if(rs==null)throw contrato();
         try{for(String nombre:columnas.split(","))if(!columna(rs,nombre))throw contrato();return rs;}
         catch(SQLException | RuntimeException e){rs.close();throw e;}
+    }
+    private static void cuota1X2(BigDecimal valor)throws SQLException {
+        if(valor==null||valor.scale()>4||valor.compareTo(BigDecimal.ONE)<=0||valor.compareTo(new BigDecimal("999999.9999"))>0)throw contrato();
+    }
+    private static UUID validarUuid(String valor)throws SQLException {
+        if(valor==null||!valor.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))throw contrato();
+        return UUID.fromString(valor);
     }
     private static String version(ResultSet rs)throws SQLException {
         byte[] bytes=dato(rs,"VersionFila",byte[].class,false);if(bytes.length!=8)throw contrato();

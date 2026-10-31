@@ -4,6 +4,9 @@ import java.util.*;
 
 /** Contratos cerrados de 04_EventosMercados.sql; nunca nombres SQL del cliente. */
 public enum OperacionAdministracionEventos {
+    CONSULTAR_PLANTILLA_1X2(true,"eventos/plantilla-1x2","ConsultarPlantillaConvencional1X2","idDeporte"),
+    GUARDAR_PLANTILLA_1X2("eventos/plantilla-1x2/guardar","GuardarPlantillaConvencional1X2","idDeporte","cuotaLocal","cuotaEmpate","cuotaVisitante","habilitada","aprobada","versionEsperada","referenciaOperacion"),
+    CREAR_CONVENCIONAL_1X2("eventos/crear-convencional","CrearEventoConvencional1X2","idDeporte","idLiga","idParticipanteLocal","idParticipanteVisitante","fechaInicio","versionPlantilla","referenciaOperacion"),
     CREAR_LIGA("ligas/crear","CrearLiga","idDeporte","nombre","idPais"),
     ACTUALIZAR_LIGA("ligas/actualizar","ActualizarLiga","idLiga","nombre","idPais","activo"),
     ASOCIAR_PARTICIPANTE_LIGA("ligas/participantes/asociar","AsociarParticipanteLiga","idLiga","idParticipante"),

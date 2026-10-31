@@ -12,6 +12,7 @@ window.BetZoneEventWizard = function (options) {
     let participantPage=1,participantTotal=0,leaving=false,catalogRevision=0,suggestedName='';
     let recoveryPage=1,recoveryTotal=0,configurationConflict=false;
     let officialDetail=null,contextConflict=false;
+    let quick=null;
     const participantTypes=new Set();
     const states=['BORRADOR','PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO','FINALIZADO','CANCELADO'];
     function stamp(value,precision=9){
@@ -46,6 +47,8 @@ window.BetZoneEventWizard = function (options) {
     }
     function complete() {return Boolean(eventId)&&!contextConflict&&!needsCheck&&!configurationConflict&&officialParticipantCount===2&&snapshot?.participants.length===2&&snapshot.participants.every(p=>p.status==='confirmed');}
     function sync(disabled=false) {
+        const sharedDisabled=disabled;
+        disabled=disabled||Boolean(quick&&quick.pending());
         blocked=disabled;
         root.querySelectorAll('button,input,select').forEach(el=>{el.disabled=disabled||!canWrite;});
         if(snapshot)root.querySelectorAll('[data-wizard-step="1"] input,[data-wizard-step="1"] select,[data-wizard-step="1"] button,[data-wizard-step="2"] input,[data-wizard-step="2"] select,[data-wizard-step="2"] button,[data-wizard-step="3"] input').forEach(el=>{el.disabled=true;});
@@ -77,6 +80,7 @@ window.BetZoneEventWizard = function (options) {
         if(contextConflict)root.querySelectorAll('button,input,select').forEach(el=>{el.disabled=true;});
         if(snapshot&&step===5)preparation();
         root.setAttribute('aria-busy',String(disabled));
+        if(quick)quick.sync(sharedDisabled,Boolean(snapshot&&(!complete()||snapshot.programming?.state==='uncertain')));
     }
     function showStep(next,focus=true) {
         step=next;
@@ -451,5 +455,278 @@ window.BetZoneEventWizard = function (options) {
     function observe(e){
         if(snapshot&&eventId===e.idEvento&&!contextConflict)reconcile(eventId,false,e).catch(error=>{needsCheck=true;outcome();failure(error);});
     }
+    quick=window.BetZoneQuickEventWizard(options);
+    sync(false);
     return {sync,loadSports,refresh,observe};
+};
+
+/* Flujo convencional independiente del almacenamiento v1 del asistente avanzado. */
+window.BetZoneQuickEventWizard = function ({request,run,base,role,onError}) {
+    'use strict';
+    const $=id=>document.getElementById(id),root=$('quick-event');
+    const canWrite=['ADMINISTRADOR','OPERADOR_EVENTOS'].includes(role),admin=role==='ADMINISTRADOR';
+    const actor=document.body.dataset.adminUser;
+    const key='betzone-event-1x2:v1:'+base+':'+actor;
+    const id=v=>Number.isInteger(Number(v))&&Number(v)>0&&Number(v)<=2147483647;
+    const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const node=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);return e;};
+    const option=(v,text)=>{const e=node('option',text);e.value=String(v);return e;};
+    const sports=new Map(),leagues=new Map(),teams=new Map();
+    let busy=false,sharedBlocked=false,legacyPending=false,storageBlocked=!id(actor),operation=null,template=null,page=1,total=0;
+    const status=(text,error=false)=>{$('quick-status').textContent=text;$('quick-status').dataset.error=String(error);};
+    const pending=()=>storageBlocked||operation?.status==='pending';
+    const locked=()=>sharedBlocked||busy||!canWrite||storageBlocked||(legacyPending&&operation?.status!=='pending');
+    const approved=()=>template?.valida===true&&template.habilitada===true&&template.aprobada===true;
+    function date(v) {
+        if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(v))return null;
+        const [y,m,d,h,n,s=0]=v.match(/\d+/g).map(Number),value=new Date(0);
+        value.setUTCFullYear(y,m-1,d);value.setUTCHours(h,n,s,0);
+        if(y<1||value.getUTCFullYear()!==y||value.getUTCMonth()!==m-1||value.getUTCDate()!==d||h>23||n>59||s>59)return null;
+        return v.length===16?v+':00':v;
+    }
+    function sync(disabled=sharedBlocked,legacy=legacyPending) {
+        if(legacy&&!legacyPending&&operation?.status!=='pending')status('Hay un proceso anterior pendiente en el asistente avanzado. Consérvalo y completa su revisión antes de iniciar otra creación.',true);
+        sharedBlocked=disabled;legacyPending=legacy;
+        const frozen=locked()||Boolean(operation&&operation.status!=='rejected');
+        root.querySelectorAll('button,input,select').forEach(e=>{e.disabled=frozen;});
+        $('quick-league').disabled=frozen||!leagues.size;
+        for(const name of ['quick-local','quick-visitor'])$(name).disabled=frozen||!teams.size;
+        $('quick-create').disabled=frozen||!approved();
+        $('quick-retry').hidden=operation?.status!=='pending';$('quick-retry').disabled=locked();
+        $('quick-new').hidden=operation?.status!=='confirmed';$('quick-new').disabled=locked();
+        $('quick-prev').disabled=frozen||page<=1;$('quick-next').disabled=frozen||page*100>=total;
+        $('quick-template-admin').hidden=!admin;$('quick-template-action').hidden=approved()||!admin;
+        $('quick-template-form').querySelectorAll('button,input').forEach(e=>{e.disabled=frozen||!admin||!template;});
+        // Consultar una plantilla tras una respuesta de guardado incierta es seguro.
+        $('quick-template-query').disabled=locked()||Boolean(operation&&operation.status!=='rejected')||!sports.has($('quick-sport').value);
+        root.setAttribute('aria-busy',String(busy||sharedBlocked));
+    }
+    async function work(action,form=null) {
+        if(locked()||(form&&!form.reportValidity()))return;
+        return run(async()=>{
+            busy=true;sync();
+            try{await action();}catch(e){if(e.status===401||e.status===403)onError(e);status(e.message||'No fue posible completar la operación.',true);}
+            finally{busy=false;sync();}
+        });
+    }
+    function remember() {
+        const value=JSON.stringify(operation);
+        try{sessionStorage.setItem(key,value);if(sessionStorage.getItem(key)!==value)throw new Error();}
+        catch{throw new Error('No se pudo conservar y verificar la UUID. No se enviará una operación nueva.');}
+    }
+    function uuid() {
+        if(!window.crypto?.randomUUID)throw new Error('No se puede generar una UUID segura en este navegador.');
+        return window.crypto.randomUUID();
+    }
+    function rows(data,key) {
+        return Array.isArray(data)&&data.every(r=>r&&id(r[key])&&typeof r.nombre==='string'&&r.nombre.trim())&&new Set(data.map(r=>r[key])).size===data.length;
+    }
+    function resetTeams() {
+        teams.clear();page=1;total=0;$('quick-page').textContent='';
+        for(const name of ['quick-local','quick-visitor'])$(name).replaceChildren(option('','Selecciona un equipo'));
+    }
+    function resetTemplate() {template=null;$('quick-template').textContent='Sin consultar.';$('quick-template-form').reset();}
+    async function loadSports() {
+        const d=await request('/deportes/exploracion');
+        if(!rows(d.deportes,'idDeporte')||d.deportes.some(r=>r.activo!==true))throw new Error('Catálogo de deportes inválido.');
+        sports.clear();leagues.clear();resetTeams();resetTemplate();$('quick-sport').replaceChildren(option('','Selecciona un deporte'));
+        $('quick-league').replaceChildren(option('','Selecciona un deporte'));
+        // El backend también restringe explícitamente la primera plantilla a fútbol.
+        d.deportes.filter(r=>r.nombre.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()==='futbol')
+            .forEach(r=>{sports.set(String(r.idDeporte),r);$('quick-sport').append(option(r.idDeporte,r.nombre));});
+        status('Selecciona fútbol y su liga. Otros deportes y simulaciones utilizan el asistente avanzado.');summary();
+    }
+    async function loadLeagues() {
+        leagues.clear();resetTeams();resetTemplate();$('quick-league').replaceChildren(option('','Selecciona una liga'));
+        const sport=$('quick-sport').value;if(!sports.has(sport))return;
+        const d=await request('/ligas/exploracion?'+new URLSearchParams({idDeporte:sport}));
+        if(Number(d.idDeporte)!==Number(sport)||!rows(d.ligas,'idLiga')||d.ligas.some(r=>r.idDeporte!==Number(sport)||r.activo!==true))throw new Error('Catálogo de ligas incompatible.');
+        d.ligas.forEach(r=>{leagues.set(String(r.idLiga),r);$('quick-league').append(option(r.idLiga,r.nombre));});
+        await queryTemplate();summary();
+    }
+    async function loadTeams(reset=false) {
+        if(reset)resetTeams();
+        const sport=$('quick-sport').value,league=$('quick-league').value;if(!leagues.has(league))return;
+        const search=$('quick-search').value.trim();if(search.length>150)throw new Error('La búsqueda admite hasta 150 caracteres.');
+        const d=await request('/administrador/participantes/listar?'+new URLSearchParams({idDeporte:sport,idLiga:league,activo:'true',pagina:page,tamanoPagina:100,...(search?{buscar:search}:{})}));
+        if(!rows(d.participantes,'idParticipante')||d.pagina!==page||d.tamanoPagina!==100||!Number.isSafeInteger(d.total)||d.total<0
+          ||d.participantes.length!==Math.min(100,Math.max(0,d.total-(page-1)*100))
+          ||d.participantes.some(r=>r.idDeporte!==Number(sport)||r.activo!==true))throw new Error('Página de participantes incompatible.');
+        const chosen=[$('quick-local').value,$('quick-visitor').value];
+        for(const [k] of teams)if(!chosen.includes(k))teams.delete(k);
+        d.participantes.filter(r=>r.tipoParticipante==='EQUIPO').forEach(r=>teams.set(String(r.idParticipante),r));
+        for(const [i,name] of ['quick-local','quick-visitor'].entries()){
+            $(name).replaceChildren(option('','Selecciona un equipo'));for(const [k,r] of teams)$(name).append(option(k,r.nombre));
+            if(teams.has(chosen[i]))$(name).value=chosen[i];
+        }
+        total=d.total;$('quick-page').textContent='Página '+page+' · '+total+' participantes de liga';choose();
+        status('Equipos activos de la liga consultados. La publicación vuelve a validar su elegibilidad.');
+    }
+    function choose() {
+        if($('quick-local').value&&$('quick-local').value===$('quick-visitor').value)$('quick-visitor').value='';
+        for(const [a,b] of [['quick-local','quick-visitor'],['quick-visitor','quick-local']])
+            for(const o of $(a).options)o.disabled=Boolean(o.value)&&o.value===$(b).value;
+        summary();
+    }
+    function validTemplate(r) {
+        if(!r||r.idDeporte!==Number($('quick-sport').value)||r.identidadPlantilla!=='BETZONE_1X2:'+r.idDeporte
+          ||['existe','valida','habilitada','aprobada'].some(k=>typeof r[k]!=='boolean'))throw new Error('Respuesta de plantilla incompatible.');
+        if(r.valida&&(!r.existe||!uuidPattern.test(r.versionPlantilla)||['cuotaLocal','cuotaEmpate','cuotaVisitante'].some(k=>!odd(r[k]))))throw new Error('Cuotas de plantilla inválidas.');
+        return r;
+    }
+    const odd=v=>typeof v==='number'&&Number.isFinite(v)&&v>1&&v<=999999.9999;
+    function templateView() {
+        $('quick-template').textContent=template.valida?template.identidadPlantilla+' · versión '+template.versionPlantilla
+          +' · LOCAL '+template.cuotaLocal+' · EMPATE '+template.cuotaEmpate+' · VISITANTE '+template.cuotaVisitante
+          +' · '+(approved()?'Habilitada y aprobada':'No habilitada para publicar'):'No existe una plantilla válida. Un ADMINISTRADOR debe configurarla y aprobarla.';
+        if(template.valida){for(const [name,k] of [['quick-odd-local','cuotaLocal'],['quick-odd-draw','cuotaEmpate'],['quick-odd-visitor','cuotaVisitante']])$(name).value=String(template[k]);
+          $('quick-template-enabled').checked=template.habilitada;$('quick-template-approved').checked=template.aprobada;}
+        summary();
+    }
+    async function queryTemplate() {
+        resetTemplate();
+        const d=await request('/administrador/eventos/plantilla-1x2?'+new URLSearchParams({idDeporte:$('quick-sport').value}));
+        template=validTemplate(d.resultado);templateView();
+        if(!approved())status('La publicación requiere plantilla habilitada y aprobada. '+(admin?'Configúrala en el apartado de plantilla.':'Solicita su configuración a un ADMINISTRADOR.'),true);
+    }
+    function summary() {
+        if(operation?.status==='pending'){
+            const p=operation.payload,review=operation.review||{},dl=node('dl');
+            const values=[['Operación pendiente',p.referenciaOperacion],['Deporte',review.sport||'Se verificará con el servidor'],
+              ['Liga',review.league||'Se verificará con el servidor'],['LOCAL',review.local||'Conservado en la solicitud'],
+              ['VISITANTE',review.visitor||'Conservado en la solicitud'],['Fecha programada',p.fechaInicio],['Versión de plantilla',p.versionPlantilla]];
+            values.forEach(([k,v])=>dl.append(node('dt',k),node('dd',v)));$('quick-summary').replaceChildren(dl);return;
+        }
+        const dl=node('dl');
+        const values=[['Deporte',sports.get($('quick-sport').value)?.nombre],['Liga',leagues.get($('quick-league').value)?.nombre],
+          ['LOCAL',teams.get($('quick-local').value)?.nombre],['VISITANTE',teams.get($('quick-visitor').value)?.nombre],['Inicio',date($('quick-start').value)],
+          ['Cuotas aprobadas',approved()?template.cuotaLocal+' / '+template.cuotaEmpate+' / '+template.cuotaVisitante:'Pendientes de aprobación'],['Estado solicitado','PROGRAMADO · Mercado CONVENCIONAL 1X2 ABIERTO']];
+        values.forEach(([k,v])=>dl.append(node('dt',k),node('dd',v||'Por seleccionar')));$('quick-summary').replaceChildren(dl);
+    }
+    function payload() {
+        const sport=$('quick-sport').value,league=$('quick-league').value,local=$('quick-local').value,visitor=$('quick-visitor').value;
+        if(!sports.has(sport)||!leagues.has(league)||leagues.get(league).idDeporte!==Number(sport)||!teams.has(local)||!teams.has(visitor)||local===visitor||!date($('quick-start').value)||!approved())throw new Error('Revisa deporte, liga, equipos, fecha y plantilla aprobada.');
+        return {idDeporte:sport,idLiga:league,idParticipanteLocal:local,idParticipanteVisitante:visitor,fechaInicio:date($('quick-start').value),versionPlantilla:template.versionPlantilla,referenciaOperacion:uuid()};
+    }
+    function validOperation(o) {
+        const p=o?.payload;
+        return o?.version===1&&['pending','confirmed','rejected'].includes(o.status)&&p
+          &&Object.keys(p).sort().join(',')==='fechaInicio,idDeporte,idLiga,idParticipanteLocal,idParticipanteVisitante,referenciaOperacion,versionPlantilla'
+          &&['idDeporte','idLiga','idParticipanteLocal','idParticipanteVisitante'].every(k=>typeof p[k]==='string'&&/^[1-9][0-9]*$/.test(p[k])&&id(p[k]))
+          &&p.idParticipanteLocal!==p.idParticipanteVisitante&&typeof p.fechaInicio==='string'&&date(p.fechaInicio)===p.fechaInicio
+          &&typeof p.versionPlantilla==='string'&&uuidPattern.test(p.versionPlantilla)
+          &&typeof p.referenciaOperacion==='string'&&uuidPattern.test(p.referenciaOperacion);
+    }
+    function validateResult(r,p) {
+        if(!r||!['idEvento','idMercado','idSeleccionLocal','idSeleccionEmpate','idSeleccionVisitante'].every(k=>Number.isInteger(r[k])&&id(r[k]))
+          ||new Set([r.idSeleccionLocal,r.idSeleccionEmpate,r.idSeleccionVisitante]).size!==3
+          ||['idDeporte','idLiga','idParticipanteLocal','idParticipanteVisitante'].some(k=>r[k]!==Number(p[k]))
+          ||date(r.fechaInicio)!==p.fechaInicio||r.referenciaOperacion!==p.referenciaOperacion||r.versionPlantilla!==p.versionPlantilla
+          ||r.identidadPlantilla!=='BETZONE_1X2:'+p.idDeporte||r.estadoEvento!=='PROGRAMADO'||r.estadoMercado!=='ABIERTO'||r.tipoMercado!=='CONVENCIONAL'
+          ||typeof r.solicitudIdempotente!=='boolean'||typeof r.disponibleParaApuestas!=='boolean'
+          ||!['BORRADOR','PROGRAMADO','EN_VIVO','SUSPENDIDO','PENDIENTE_RESULTADO','FINALIZADO','CANCELADO'].includes(r.estadoEventoActual)
+          ||!['BORRADOR','ABIERTO','SUSPENDIDO','CERRADO','LIQUIDADO','ANULADO'].includes(r.estadoMercadoActual)
+          ||['cuotaLocal','cuotaEmpate','cuotaVisitante'].some(k=>!odd(r[k]))
+          ||['nombre','deporte','liga','local','visitante'].some(k=>typeof r[k]!=='string'||!r[k].trim()))throw new Error('La respuesta no confirma la identidad completa del evento. Conserva la UUID y reintenta los mismos datos.');
+    }
+    function resultView(r,cached=false) {
+        const box=$('quick-result'),dl=node('dl');
+        const values=[['Evento creado',r.nombre],['IdEvento',r.idEvento],['Deporte',r.deporte],['Liga',r.liga],['LOCAL',r.local],['VISITANTE',r.visitante],['Fecha programada',r.fechaInicio],
+          ['Estado al crear',r.estadoEvento],['Mercado creado',r.tipoMercado+' 1X2 · '+r.estadoMercado],['1 LOCAL',r.idSeleccionLocal+' · cuota '+r.cuotaLocal],
+          ['X EMPATE',r.idSeleccionEmpate+' · cuota '+r.cuotaEmpate],['2 VISITANTE',r.idSeleccionVisitante+' · cuota '+r.cuotaVisitante],
+          ['Plantilla',r.identidadPlantilla+' · '+r.versionPlantilla],['Referencia',r.referenciaOperacion],['Estado actual informado',r.estadoEventoActual+' · '+r.estadoMercadoActual],
+          ['Disponibilidad informada',cached?'Resultado guardado; consulta el evento oficial para su disponibilidad actual.':r.disponibleParaApuestas?'Disponible para apuestas según el servidor al confirmar.':'No disponible para apuestas al consultar el servidor.'],['Recuperación idempotente',r.solicitudIdempotente?'Sí':'No']];
+        values.forEach(([k,v])=>dl.append(node('dt',k),node('dd',v)));box.replaceChildren(node('h3','Resultado oficial de creación'),dl);
+        for(const [title,path] of [['Ver evento','/administrador/eventos?idEvento='],['Administrar mercado','/administrador/mercados?idEvento='],['Control en vivo','/administrador/en-vivo?idEvento=']]){
+            const link=node('a',title);link.href=base+path+encodeURIComponent(r.idEvento);box.append(link,document.createTextNode(' · '));
+        }
+        box.hidden=false;
+    }
+    async function post(path,data) {
+        const token=await window.BetZoneAdmin.csrf();
+        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);
+        try {
+            const response=await fetch(base+path,{method:'POST',credentials:'same-origin',cache:'no-store',signal:controller.signal,
+              headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','X-CSRF-Token':token},body:new URLSearchParams(data)});
+            if(response.status===401)window.BetZoneAdmin.sessionExpired();
+            if(response.redirected||!/^application\/json\b/i.test(response.headers.get('content-type')||''))throw new Error('Respuesta inesperada. Conserva la UUID para recuperar el resultado.');
+            const d=await response.json();
+            if(!response.ok){
+                const known=d?.ok===false&&Number.isInteger(d.codigo)&&d.codigo>=76700&&d.codigo<=76710
+                  &&[400,403,404,409].includes(response.status)&&typeof d.mensaje==='string';
+                const e=new Error(known?d.mensaje:(window.BetZoneAdmin.messages[response.status]||'No se pudo verificar el resultado.'));
+                e.status=response.status;
+                e.definitive=(known&&d.codigo!==76704)||(response.status===400&&d?.ok===false&&d.mensaje==='Los parámetros no son válidos.');
+                throw e;
+            }
+            if(response.status!==200||d?.ok!==true)throw new Error('No se recibió una confirmación oficial.');
+            return d.resultado;
+        }finally{clearTimeout(timer);}
+    }
+    async function create(retry=false) {
+        if(!retry){
+            if(operation?.status==='pending'||operation?.status==='confirmed')return;
+            const p=payload();
+            if(!window.confirm('¿Crear y publicar '+teams.get(p.idParticipanteLocal).nombre+' vs '+teams.get(p.idParticipanteVisitante).nombre+' el '+p.fechaInicio+' con las cuotas aprobadas '+template.cuotaLocal+' / '+template.cuotaEmpate+' / '+template.cuotaVisitante+'?'))return;
+            operation={version:1,status:'pending',payload:p,review:{sport:sports.get(p.idDeporte).nombre,league:leagues.get(p.idLiga).nombre,
+              local:teams.get(p.idParticipanteLocal).nombre,visitor:teams.get(p.idParticipanteVisitante).nombre}};
+        }
+        if(!validOperation(operation)||operation.status!=='pending')throw new Error('No se puede verificar la referencia pendiente. Conserva el almacenamiento para revisión.');
+        remember();summary();status('Preparando evento convencional... UUID: '+operation.payload.referenciaOperacion);
+        try {
+            const r=await post('/administrador/eventos/crear-convencional',operation.payload);
+            validateResult(r,operation.payload);operation.status='confirmed';operation.result=r;
+            resultView(r);status('Evento completo confirmado. No se requiere completar mercados ni cuotas.');
+            try{remember();}catch{status('Evento confirmado. Conserva IdEvento y UUID: no se pudo guardar la respuesta; el registro anterior permite recuperarla.',true);}
+        }catch(e){
+            if(operation.status==='confirmed'){
+                try{remember();}catch{/* La UUID previa permanece disponible para recuperación. */}
+                status('El servidor confirmó el evento #'+operation.result.idEvento+'. Conserva la UUID '+operation.payload.referenciaOperacion+'; hubo un problema al presentar el resultado.',true);
+                return;
+            }
+            if(e.definitive===true)operation.status='rejected';
+            summary();
+            try{remember();}catch{/* El registro verificado previo al envío permanece disponible. */}
+            status(e.message+(operation.status==='pending'?' Resultado incierto: conserva esta UUID y reintenta únicamente los mismos datos.':' Corrige los campos y revisa la plantilla antes de una nueva confirmación.'),true);
+            if(e.status===401||e.status===403)onError(e);
+        }
+    }
+    $('quick-catalogs').addEventListener('click',()=>work(loadSports));
+    $('quick-sport').addEventListener('change',()=>work(loadLeagues));
+    $('quick-league').addEventListener('change',()=>work(()=>loadTeams(true)));
+    $('quick-search-button').addEventListener('click',()=>work(()=>{page=1;return loadTeams();}));
+    for(const [name,delta] of [['quick-prev',-1],['quick-next',1]])$(name).addEventListener('click',()=>{if(!$(name).disabled)work(()=>{page+=delta;return loadTeams();});});
+    for(const name of ['quick-local','quick-visitor'])$(name).addEventListener('change',choose);
+    $('quick-start').addEventListener('input',summary);
+    $('quick-template-query').addEventListener('click',()=>work(queryTemplate));
+    $('quick-template-action').addEventListener('click',()=>{$('quick-template-admin').open=true;});
+    $('quick-form').addEventListener('submit',e=>{e.preventDefault();work(()=>create(),$('quick-form'));});
+    $('quick-retry').addEventListener('click',()=>work(()=>create(true)));
+    $('quick-new').addEventListener('click',()=>work(async()=>{
+        if(operation?.status!=='confirmed')return;
+        operation=null;remember();$('quick-result').hidden=true;$('quick-form').reset();await loadSports();
+    }));
+    $('quick-template-form').addEventListener('submit',e=>{
+        e.preventDefault();if(!admin)return;
+        work(async()=>{
+            if(!template)return;
+            if(!window.confirm('¿Guardar estos valores oficiales y su estado de aprobación como nueva versión para futuras creaciones?'))return;
+            const data={idDeporte:$('quick-sport').value,cuotaLocal:$('quick-odd-local').value,cuotaEmpate:$('quick-odd-draw').value,cuotaVisitante:$('quick-odd-visitor').value,
+              habilitada:String($('quick-template-enabled').checked),aprobada:String($('quick-template-approved').checked),versionEsperada:template.versionPlantilla||'',referenciaOperacion:uuid()};
+            // Ante pérdida de respuesta se exige consultar antes de otra modificación.
+            resetTemplate();
+            try{template=validTemplate(await post('/administrador/eventos/plantilla-1x2/guardar',data));templateView();status('Versión de plantilla guardada y auditada.');}
+            catch(error){status(error.message+' Consulta la plantilla oficial antes de modificarla nuevamente.',true);if(error.status===401||error.status===403)onError(error);}
+        },$('quick-template-form'));
+    });
+    try{
+        const saved=sessionStorage.getItem(key);
+        if(saved&&saved!=='null'){
+            operation=JSON.parse(saved);if(!validOperation(operation))throw new Error();
+            if(operation.status==='confirmed'){validateResult(operation.result,operation.payload);resultView(operation.result,true);status('Se conserva una creación confirmada anteriormente.');}
+            else if(operation.status==='pending')status('Hay una creación pendiente. UUID: '+operation.payload.referenciaOperacion+'. Reintenta únicamente los mismos datos para recuperar el resultado.',true);
+        }
+    }catch{storageBlocked=true;status('El proceso guardado no puede recuperarse con seguridad. Se conserva sin sobrescribirlo; solicita revisión.',true);}
+    sync();summary();
+    return {sync,pending};
 };

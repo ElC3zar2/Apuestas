@@ -21,6 +21,8 @@ public class AdministracionEventosServicio {
             throws SQLException {
         autorizar(actor,rol);
         if(op==null || parametros==null) throw new IllegalArgumentException();
+        if(op==OperacionAdministracionEventos.GUARDAR_PLANTILLA_1X2 && !"ADMINISTRADOR".equals(rol))
+            throw new SecurityException();
         for(Map.Entry<String,String[]> e:parametros.entrySet())
             if(!op.parametros.contains(e.getKey()) || e.getValue()==null || e.getValue().length!=1
                     || e.getValue()[0]==null) throw new IllegalArgumentException();
@@ -29,6 +31,15 @@ public class AdministracionEventosServicio {
             String[] valores=parametros.get(campo);
             String v=valores==null?null:valores[0];
             switch(campo) {
+                case "idParticipanteLocal":s.idParticipanteLocal=id(v,false);break;
+                case "idParticipanteVisitante":s.idParticipanteVisitante=id(v,false);break;
+                case "cuotaLocal":s.cuotaLocal=decimal(v);if(s.cuotaLocal==null)throw new IllegalArgumentException();break;
+                case "cuotaEmpate":s.cuotaEmpate=decimal(v);if(s.cuotaEmpate==null)throw new IllegalArgumentException();break;
+                case "cuotaVisitante":s.cuotaVisitante=decimal(v);if(s.cuotaVisitante==null)throw new IllegalArgumentException();break;
+                case "habilitada":s.habilitada=bit(v,false);break;
+                case "aprobada":s.aprobada=bit(v,false);break;
+                case "versionPlantilla":s.versionPlantilla=uuid(v,false);break;
+                case "versionEsperada":s.versionEsperada=uuid(v,true);break;
                 case "idDeporte":s.idDeporte=id(v,false);break;
                 case "idLiga":s.idLiga=id(v,false);break;
                 case "idPais":s.idPais=id(v,true);break;
@@ -77,6 +88,8 @@ public class AdministracionEventosServicio {
                 default:throw new IllegalArgumentException();
             }
         }
+        if(op==OperacionAdministracionEventos.CREAR_CONVENCIONAL_1X2
+                && s.idParticipanteLocal.equals(s.idParticipanteVisitante))throw new IllegalArgumentException();
         if(op==OperacionAdministracionEventos.REGISTRAR_INCIDENCIA &&
                 ("ANOTACION".equals(s.tipoIncidencia)?s.idParticipante==null || s.valorAnotacion==null:s.valorAnotacion!=null))throw new IllegalArgumentException();
         Resultado resultado=dao.ejecutar(op,actor,s,texto(ip,45,false));
@@ -97,6 +110,12 @@ public class AdministracionEventosServicio {
         BigDecimal valor=new BigDecimal(limpio);
         if(valor.compareTo(BigDecimal.ONE)<=0 || valor.compareTo(new BigDecimal("999999.9999"))>0)throw new IllegalArgumentException();
         return valor;
+    }
+    private static UUID uuid(String valor,boolean nullable) {
+        String limpio=texto(valor,36,!nullable);
+        if(limpio==null)return null;
+        if(!limpio.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))throw new IllegalArgumentException();
+        return UUID.fromString(limpio);
     }
     private static String texto(String v,int max,boolean requerido) {
         String limpio=v==null?null:v.trim();

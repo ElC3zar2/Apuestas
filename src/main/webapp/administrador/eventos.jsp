@@ -2,9 +2,12 @@
 <%
     // session=false evita crear sesiones: leer la ya validada por el filtro, sin sessionScope.
     String adminRoleForView = "";
+    int adminUserForView = 0;
     try {
         javax.servlet.http.HttpSession existingAdminSession = request.getSession(false);
         Object existingAdminRole = existingAdminSession == null ? null : existingAdminSession.getAttribute("adminRol");
+        Object existingAdminUser = existingAdminSession == null ? null : existingAdminSession.getAttribute("adminIdUsuario");
+        if (existingAdminUser instanceof Integer && (Integer) existingAdminUser > 0) adminUserForView = (Integer) existingAdminUser;
         for (String allowedAdminRole : new String[]{"ADMINISTRADOR", "OPERADOR_EVENTOS", "CAJERO", "AUDITOR"}) {
             if (allowedAdminRole.equals(existingAdminRole)) {
                 adminRoleForView = allowedAdminRole;
@@ -24,7 +27,7 @@
 <script src="${pageContext.request.contextPath}/js/admin.js" defer></script>
 <script src="${pageContext.request.contextPath}/js/admin-evento-asistente.js" defer></script>
 <script src="${pageContext.request.contextPath}/js/admin-gestion.js" defer></script>
-</head><body data-context-path="${pageContext.request.contextPath}" data-management="eventos" data-admin-role="<%= adminRoleForView %>">
+</head><body data-context-path="${pageContext.request.contextPath}" data-management="eventos" data-admin-role="<%= adminRoleForView %>" data-admin-user="<%= adminUserForView %>">
 <a class="skip-link" href="#contenido">Ir al contenido</a>
 <aside class="sidebar"><a class="brand" href="${pageContext.request.contextPath}/administrador/inicio">BetZone <span>ADMIN</span></a><p class="eyebrow">CENTRO DE OPERACIONES</p>
 <nav aria-label="Navegación administrativa">
@@ -44,8 +47,37 @@
 <p id="management-status" class="live-status" role="status" aria-live="polite">Selecciona una consulta o completa un formulario.</p>
 <a id="management-login" href="${pageContext.request.contextPath}/administrador/login" hidden>Volver a iniciar sesión</a>
 <button id="acknowledge-write" type="button" class="critical" hidden>Ya comprobé el resultado; habilitar formularios</button>
+<section id="quick-event" class="panel event-wizard" aria-labelledby="quick-title">
+<p class="eyebrow">EVENTO CONVENCIONAL 1X2</p><h2 id="quick-title">Crear y publicar un partido de fútbol</h2>
+<p class="muted">Una confirmación prepara el evento PROGRAMADO y su mercado 1X2 completo con cuotas aprobadas. No inicia el partido en vivo. Para simulaciones y eventos especiales utiliza el asistente avanzado de abajo.</p>
+<p id="quick-status" class="live-status" role="status" aria-live="polite">Consulta los catálogos y la plantilla antes de crear.</p>
+<form id="quick-form">
+<button id="quick-catalogs" type="button">Consultar deportes</button>
+<div class="wizard-fields"><label>Deporte<select id="quick-sport" required><option value="">Consulta deportes</option></select></label>
+<label>Liga<select id="quick-league" required disabled><option value="">Selecciona un deporte</option></select></label></div>
+<div class="toolbar"><label>Buscar equipo<input id="quick-search" type="search" maxlength="150"></label><button id="quick-search-button" type="button">Buscar equipos</button><button id="quick-prev" type="button">Anteriores</button><span id="quick-page" role="status"></span><button id="quick-next" type="button">Siguientes</button></div>
+<div class="wizard-fields"><label>Equipo LOCAL<select id="quick-local" required disabled><option value="">Selecciona una liga</option></select></label>
+<label>Equipo VISITANTE<select id="quick-visitor" required disabled><option value="">Selecciona una liga</option></select></label>
+<label>Fecha y hora programadas (Guatemala)<input id="quick-start" type="datetime-local" step="1" min="0001-01-01T00:00:00" max="9999-12-31T23:59:59" required></label></div>
+<h3>Plantilla de cuotas aprobada</h3><p id="quick-template" class="muted">Sin consultar.</p><button id="quick-template-query" type="button">Consultar / actualizar plantilla</button>
+<a href="#quick-template-admin" id="quick-template-action" hidden>Configurar o aprobar plantilla</a>
+<h3>Resumen de confirmación</h3><div id="quick-summary" aria-live="polite"></div>
+<button id="quick-create" class="primary" type="submit">Confirmar creación y publicación</button>
+<button id="quick-retry" type="button" hidden>Reintentar los mismos datos y UUID</button>
+<button id="quick-new" type="button" hidden>Preparar otro partido</button>
+</form>
+<details id="quick-template-admin" data-admin-only="true"><summary>Configurar y aprobar plantilla 1X2 — ADMINISTRADOR</summary>
+<p class="muted">Consulta primero la plantilla del deporte seleccionado. Introduce únicamente valores oficiales autorizados. Los cambios afectan futuras creaciones.</p>
+<form id="quick-template-form"><div class="wizard-fields">
+<label>Cuota LOCAL<input id="quick-odd-local" type="number" step="0.0001" min="1.0001" max="999999.9999" required></label>
+<label>Cuota EMPATE<input id="quick-odd-draw" type="number" step="0.0001" min="1.0001" max="999999.9999" required></label>
+<label>Cuota VISITANTE<input id="quick-odd-visitor" type="number" step="0.0001" min="1.0001" max="999999.9999" required></label>
+<label><input id="quick-template-enabled" type="checkbox"> Habilitada</label><label><input id="quick-template-approved" type="checkbox"> Cuotas oficialmente aprobadas</label>
+</div><button type="submit">Guardar versión de plantilla</button></form></details>
+<div id="quick-result" hidden></div>
+</section>
 <section id="event-wizard" class="panel event-wizard" aria-labelledby="wizard-title">
-<p class="eyebrow">NUEVO EVENTO</p><h2 id="wizard-title" tabindex="-1">Crea tu evento paso a paso</h2>
+<p class="eyebrow">CREACIÓN AVANZADA Y RECUPERACIÓN</p><h2 id="wizard-title" tabindex="-1">Eventos especiales, simulaciones y procesos anteriores</h2>
 <ol class="wizard-steps" aria-label="Progreso de creación"><li data-step-marker="1">1 · Deporte y liga</li><li data-step-marker="2">2 · Participantes</li><li data-step-marker="3">3 · Configuración</li><li data-step-marker="4">4 · Revisar y crear</li><li data-step-marker="5">5 · Mercados y cuotas</li></ol>
 <p id="wizard-status" class="live-status" role="status" aria-live="polite">Empieza seleccionando un deporte y una liga reales.</p>
 <form id="wizard-form" novalidate>
