@@ -88,8 +88,8 @@ BEGIN
   SELECT @Estado=E.Codigo,@Inicio=EV.FechaInicioRealUtc,@Sim=EV.EsSimulado,@Unidad=D.UnidadMarcador
     FROM dbo.Evento EV WITH(UPDLOCK,HOLDLOCK) JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado
     JOIN dbo.Liga L ON L.IdLiga=EV.IdLiga JOIN dbo.Deporte D ON D.IdDeporte=L.IdDeporte WHERE EV.IdEvento=@IdEvento;
-  IF @Estado IS NULL OR @Estado<>'EN_VIVO' OR @Inicio IS NULL OR @Sim<>1
-    THROW 76206,'Solo se registran incidencias en simulaciones EN_VIVO.',1;
+  IF @Estado IS NULL OR @Estado<>'EN_VIVO' OR (@Sim=1 AND @Inicio IS NULL)
+    THROW 76206,'Se requiere un evento EN_VIVO; las simulaciones deben tener inicio real registrado.',1;
   IF @IdParticipante IS NOT NULL AND NOT EXISTS
       (SELECT 1 FROM dbo.EventoParticipante WHERE IdEvento=@IdEvento AND IdParticipante=@IdParticipante)
     THROW 76207,'El participante no pertenece al evento.',1;
@@ -97,7 +97,8 @@ BEGIN
      OR (@TipoIncidencia<>'ANOTACION' AND @ValorAnotacion IS NOT NULL)
     THROW 76208,'Anotacion requiere participante y valor positivo; otras incidencias no suman.',1;
   IF @TipoIncidencia='ANOTACION' AND
-    ((@Unidad='GOL' AND @ValorAnotacion<>1) OR (@Unidad='PUNTO' AND @ValorAnotacion NOT IN(1,2,3)))
+    (@Unidad IS NULL OR @Unidad NOT IN('GOL','PUNTO','CARRERA')
+     OR (@Unidad='GOL' AND @ValorAnotacion<>1) OR (@Unidad='PUNTO' AND @ValorAnotacion NOT IN(1,2,3)))
     THROW 76209,'Valor de anotacion incompatible con el deporte.',1;
   IF @TipoIncidencia IN('TARJETA_AMARILLA','TARJETA_ROJA') AND ISNULL(@Unidad,'')<>'GOL'
     THROW 76210,'Las tarjetas solo se habilitan inicialmente para futbol.',1;
@@ -105,7 +106,9 @@ BEGIN
   INSERT dbo.IncidenciaEvento(IdEvento,Secuencia,ReferenciaOperacion,TipoIncidencia,IdParticipante,ValorAnotacion,
     SegundoSimulacion,FechaRegistroUtc,Descripcion,IdUsuarioRegistro)
   VALUES(@IdEvento,@Secuencia,@ReferenciaOperacion,@TipoIncidencia,@IdParticipante,@ValorAnotacion,
-    CASE WHEN @Ahora<@Inicio THEN 0 ELSE DATEDIFF(SECOND,@Inicio,@Ahora) END,@Ahora,@Descripcion,@IdUsuarioProceso);
+    /* Convencional: 0 es compatibilidad tecnica, no tiempo real del partido.
+       Su cronologia oficial procede de Secuencia y FechaRegistroUtc. */
+    CASE WHEN @Sim=0 OR @Ahora<@Inicio THEN 0 ELSE DATEDIFF(SECOND,@Inicio,@Ahora) END,@Ahora,@Descripcion,@IdUsuarioProceso);
   DECLARE @IdIncidencia BIGINT=SCOPE_IDENTITY();
   IF @TipoIncidencia='ANOTACION'
     UPDATE dbo.EventoParticipante SET MarcadorActual=ISNULL(MarcadorActual,0)+@ValorAnotacion
@@ -135,16 +138,24 @@ BEGIN
              @LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000;
         IF @CerrojoModelo<0 THROW 76900,'No fue posible obtener el bloqueo de operacion; reintente.',1;
 
-  DECLARE @IdEvento INT,@Anulada BIT,@Estado VARCHAR(40);
+  DECLARE @IdEvento INT,@Anulada BIT,@Estado VARCHAR(40),@Sim BIT;
   SELECT @IdEvento=IdEvento,@Anulada=EsAnulada FROM dbo.IncidenciaEvento WITH(UPDLOCK,HOLDLOCK) WHERE IdIncidencia=@IdIncidencia;
   IF @IdEvento IS NULL THROW 76212,'Incidencia inexistente.',1;
   IF @Anulada=1 BEGIN COMMIT; SELECT @IdIncidencia AS IdIncidencia,CAST(1 AS BIT) AS SinCambios; RETURN; END;
-  SELECT @Estado=E.Codigo FROM dbo.Evento EV WITH(UPDLOCK,HOLDLOCK) JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado WHERE EV.IdEvento=@IdEvento;
-  IF @Estado NOT IN('EN_VIVO','PENDIENTE_RESULTADO')
+  SELECT @Estado=E.Codigo,@Sim=EV.EsSimulado FROM dbo.Evento EV WITH(UPDLOCK,HOLDLOCK) JOIN dbo.Estado E ON E.IdEstado=EV.IdEstado WHERE EV.IdEvento=@IdEvento;
+  IF @Estado IS NULL OR @Estado NOT IN('EN_VIVO','PENDIENTE_RESULTADO')
     THROW 76213,'No se corrigen incidencias de un evento oficializado o cancelado.',1;
   IF EXISTS(SELECT 1 FROM dbo.DetalleBoleto D JOIN dbo.Seleccion S ON S.IdSeleccion=D.IdSeleccion
      JOIN dbo.LiquidacionBoleto L ON L.IdBoleto=D.IdBoleto WHERE S.IdEvento=@IdEvento)
     THROW 76214,'Existen liquidaciones; no se permite corregir el historial deportivo.',1;
+  /* El flujo de Resultados es la autoridad sobre un resultado convencional.
+     Reutiliza el conflicto 76213 ya reconocido por el contrato HTTP existente. */
+  IF @Sim=0 AND EXISTS(SELECT 1 FROM dbo.ResultadoEvento WITH(UPDLOCK,HOLDLOCK) WHERE IdEvento=@IdEvento)
+    THROW 76213,'El evento convencional ya tiene resultado registrado; requiere revision mediante el flujo de Resultados.',1;
+  IF @Sim=1 AND EXISTS(SELECT 1 FROM dbo.ResultadoEvento R WITH(UPDLOCK,HOLDLOCK)
+    JOIN dbo.Estado E ON E.IdEstado=R.IdEstado JOIN dbo.TipoEstado T ON T.IdTipoEstado=E.IdTipoEstado
+    WHERE R.IdEvento=@IdEvento AND (T.Codigo<>'RESULTADO_EVENTO' OR E.Codigo NOT IN('PENDIENTE','CORREGIDO')))
+    THROW 76213,'No se corrige una incidencia asociada a un resultado oficial o incompatible.',1;
   UPDATE dbo.IncidenciaEvento SET EsAnulada=1,MotivoAnulacion=@Motivo,IdUsuarioAnulacion=@IdUsuarioProceso,FechaAnulacionUtc=SYSUTCDATETIME()
     WHERE IdIncidencia=@IdIncidencia;
   UPDATE EP SET MarcadorActual=CONVERT(INT,ISNULL(A.Total,0))
@@ -158,7 +169,9 @@ BEGIN
       WHERE IdEvento=@IdEvento AND TipoIncidencia='ANOTACION' AND EsAnulada=0 ORDER BY Secuencia),
     ResultadoTexto=CONCAT(A.MarcadorActual,'-',B.MarcadorActual)
   FROM dbo.ResultadoEvento R JOIN dbo.EventoParticipante A ON A.IdEvento=R.IdEvento AND A.OrdenParticipante=1
-    JOIN dbo.EventoParticipante B ON B.IdEvento=R.IdEvento AND B.OrdenParticipante=2 WHERE R.IdEvento=@IdEvento;
+    JOIN dbo.EventoParticipante B ON B.IdEvento=R.IdEvento AND B.OrdenParticipante=2
+    JOIN dbo.Estado ER ON ER.IdEstado=R.IdEstado JOIN dbo.TipoEstado TR ON TR.IdTipoEstado=ER.IdTipoEstado
+    WHERE R.IdEvento=@IdEvento AND @Sim=1 AND TR.Codigo='RESULTADO_EVENTO' AND ER.Codigo IN('PENDIENTE','CORREGIDO');
   INSERT dbo.Auditoria(IdUsuario,Accion,TablaAfectada,IdRegistro,IpOrigen,Descripcion)
     VALUES(@IdUsuarioProceso,'INCIDENCIA_ANULADA','IncidenciaEvento',@IdIncidencia,@IpOrigen,@Motivo);
   COMMIT; SELECT @IdIncidencia AS IdIncidencia,CAST(0 AS BIT) AS SinCambios;

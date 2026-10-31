@@ -109,7 +109,7 @@
         $('tracking-status').textContent = message;
     }
     function simulationNote(state) {
-        if (!state.esSimulado) return 'Evento no simulado. El plazo de simulación no se aplica y esta pantalla no cambia su estado automáticamente.';
+        if (!state.esSimulado) return 'Evento convencional: tiempo deportivo no disponible. Las incidencias se ordenan por secuencia y fecha de registro administrativo (UTC); el segundo técnico de compatibilidad no representa el tiempo real del partido. Esta pantalla no cambia su estado automáticamente.';
         if (state.estadoEvento === 'PENDIENTE_RESULTADO') return 'Simulación cerrada según el estado oficial. El resultado está pendiente de revisión; este panel no oficializa ni liquida apuestas.';
         if (state.estadoEvento === 'FINALIZADO') return 'El backend informa FINALIZADO. Este panel no ha oficializado resultados ni ejecutado operaciones financieras.';
         if (state.estadoEvento === 'CANCELADO') return 'El backend informa CANCELADO; no se reinicia ni se cierra de nuevo desde el seguimiento.';
@@ -129,7 +129,11 @@
         $('state-form').querySelector('[type="submit"]').disabled = !available || !transitions().includes($('new-state').value);
         const participant = $('participant').value;
         const participantValid = !participant || official?.participantes.some(p => String(p.idParticipante) === participant);
-        $('incident-form').querySelector('[type="submit"]').disabled = !available || official?.esSimulado !== true || official?.estadoEvento !== 'EN_VIVO' || !participantValid;
+        const annotation = $('incident-type').value === 'ANOTACION';
+        const incidentValid = types.includes($('incident-type').value) && $('description').value.trim().length <= 500
+            && participantValid && (!annotation || Boolean(participant) && idInput($('annotation').value));
+        $('incident-form').querySelector('[type="submit"]').disabled = !available || official?.estadoEvento !== 'EN_VIVO'
+            || (official?.esSimulado === true && official.fechaInicioRealUtc === null) || !incidentValid;
         $('void-form').querySelector('[type="submit"]').disabled = !available || !['EN_VIVO','PENDIENTE_RESULTADO'].includes(official?.estadoEvento) || !official?.incidencias.some(i=>i.idIncidencia===voidId&&!i.esAnulada);
         $('refresh-event').disabled = busy || Boolean(refreshTask) || !eventId || stopped;
         for (const id of ['event-search', 'event-select', 'event-id-form']) {
@@ -217,9 +221,9 @@
         $('event-name').textContent = display(state.nombre);
         $('official-id').textContent = display(state.idEvento);
         $('official-state').textContent = state.estadoEvento;
-        $('official-simulated').textContent = state.esSimulado ? 'Sí' : 'No';
+        $('official-simulated').textContent = state.esSimulado ? 'Simulado' : 'Convencional';
         $('official-time').textContent = state.esSimulado && Number.isInteger(state.segundosTranscurridos)
-            ? state.segundosTranscurridos + ' s / ' + display(state.duracionSimulacionSegundos) + ' s' : 'Tiempo de simulación no disponible';
+            ? state.segundosTranscurridos + ' s / ' + display(state.duracionSimulacionSegundos) + ' s' : 'Tiempo deportivo no disponible';
         const progress = $('official-progress');
         progress.hidden = !(state.esSimulado && state.duracionSimulacionSegundos > 0 && Number.isInteger(state.segundosTranscurridos));
         if (!progress.hidden) { progress.max = state.duracionSimulacionSegundos; progress.value = state.segundosTranscurridos; }
@@ -240,6 +244,7 @@
         const first = state.participantes.find(p => p.idParticipante === state.idPrimerParticipanteAnotador);
         $('first-score').textContent = state.idPrimerParticipanteAnotador == null ? 'Sin primera anotación informada.' : 'Primera anotación oficial: ' + (first ? first.nombre : display(state.idPrimerParticipanteAnotador)) + ' · Incidencia ' + state.idPrimeraAnotacion;
         const body = $('incidents-body');
+        $('incident-time-heading').textContent = state.esSimulado ? 'Segundo de simulación / registro (UTC)' : 'Registro administrativo (UTC)';
         // Conservar también el foco de una acción del historial mientras se navega con teclado.
         if (body.contains(document.activeElement)) return;
         body.replaceChildren();
@@ -248,7 +253,8 @@
             const row = body.insertRow();
             const participant = state.participantes.find(p => p.idParticipante === incident.idParticipante);
             for (const value of [display(incident.idIncidencia) + ' / ' + display(incident.secuencia), incident.tipoIncidencia,
-                participant ? participant.nombre : incident.idParticipante, incident.valorAnotacion, incident.segundoSimulacion,
+                participant ? participant.nombre : incident.idParticipante, incident.valorAnotacion,
+                (state.esSimulado ? incident.segundoSimulacion + ' s · ' : '') + incident.fechaRegistroUtc + ' UTC',
                 incident.descripcion, incident.esAnulada ? 'ANULADA · ' + display(incident.motivoAnulacion) : 'VIGENTE']) {
                 row.insertCell().textContent = display(value);
             }
@@ -318,6 +324,7 @@
         const annotation = $('incident-type').value === 'ANOTACION';
         $('annotation-label').hidden = !annotation; $('annotation').disabled = !annotation; $('annotation').required = annotation;
         $('participant').required = annotation;
+        syncControls();
     }
     function ready() { return canOperate && authorized && fresh && context && official && !busy && !catalogBusy && !refreshTask && !stopped && !uncertain; }
     function reconciliationEvidence() {
@@ -384,7 +391,9 @@
             if (stopped) return;
             report(error);
             if (sent) {
-                status('live-status', 'Resultado de escritura incierto. Nuevas escrituras bloqueadas; conserva esta página y concilia el contexto original. ' + (messages[error.status] || error.message), true);
+                const resultReview = path === paths.void && !snapshot.esSimulado && error.status === 409
+                    ? ' La anulación convencional puede estar impedida por un resultado registrado o liquidaciones. Revisa el evento en el flujo de Resultados; este panel no modifica ese resultado.' : '';
+                status('live-status', 'Resultado de escritura incierto. Nuevas escrituras bloqueadas; conserva esta página y concilia el contexto original. ' + (messages[error.status] || error.message) + resultReview, true);
                 showUncertain();
             }
         } finally { busy = false; syncControls(); schedule(); }
@@ -403,7 +412,9 @@
         mutate(paths.change, payload, 'Solicitud de transición aceptada.', () => { $('state-reason').value = ''; });
     });
     $('incident-form').addEventListener('submit', event => {
-        event.preventDefault(); if (!ready() || official?.estadoEvento !== 'EN_VIVO' || official?.esSimulado !== true) return;
+        event.preventDefault(); if (!ready() || official?.estadoEvento !== 'EN_VIVO'
+            || (official.esSimulado && official.fechaInicioRealUtc === null)) return;
+        if (!$('incident-form').reportValidity()) return;
         if (!types.includes($('incident-type').value) || $('description').value.trim().length > 500
             || ($('incident-type').value === 'ANOTACION' && (!$('participant').value || !idInput($('annotation').value)))) {
             status('live-status','Revisa el tipo, participante, anotación entera positiva y descripción (máximo 500 caracteres).',true); return;
@@ -420,6 +431,7 @@
         mutate(paths.register, payload, 'Incidencia registrada.', () => { $('incident-form').reset(); incidentType(); });
     });
     $('incident-type').addEventListener('change', incidentType);
+    for (const id of ['annotation','description']) $(id).addEventListener('input', syncControls);
     $('void-form').addEventListener('submit', event => {
         event.preventDefault(); if (!ready() || !bigintId(voidId) || !['EN_VIVO','PENDIENTE_RESULTADO'].includes(official?.estadoEvento)
             || !official.incidencias.some(i=>i.idIncidencia===voidId&&!i.esAnulada)) return;
